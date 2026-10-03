@@ -14,8 +14,12 @@ begin
   perform autonomy_level, notification_prefs, home_area, default_handoff_place_id from public.profiles limit 1;
   perform id, owner_id, status, title, willingness, category, brand, model, variant, condition_grade, defects,
           value_low_cents, value_mid_cents, value_high_cents, identity_conf, condition_conf,
-          reserved_by_deal_id, created_at, updated_at
+          reserved_by_deal_id, follow_up, capture_id, appraising, created_at, updated_at
     from public.items limit 1;
+  perform storage_path, position from public.item_media limit 1;
+  perform product_key, condition_grade, value_low_cents, value_mid_cents, value_high_cents,
+          confidence, basis, research, model, prompt_version, created_at
+    from public.price_cache limit 1;
 end $$;
 
 select 'api contract tests passed' as result;

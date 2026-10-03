@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "noEmit": true },
+  "compilerOptions": { "noEmit": true, "customConditions": ["@throwin/source"] },
   "include": ["src", "test", "vitest.config.ts"]
 }
