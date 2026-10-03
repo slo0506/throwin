@@ -52,7 +52,7 @@ final class AppModel {
     /// so intake and the GM sheet share 1 thread.
     let gm = GMChatModel()
 
-    // Content. Deals and Circles are demo data until Milestone 3.
+    // Content. Demo mode fills these with sample data.
     var shelf: [ShelfItem] = []
     var asks: [Ask] = []
     var dealsWaiting: [DealSheet] = []
@@ -173,14 +173,16 @@ final class AppModel {
     // MARK: Content
 
     func loadContent() {
-        dealsWaiting = [DemoData.deal]
-        circles = DemoData.circles
         if isLive {
             Task {
                 await refreshAsks()
                 await loadTasteFacts()
             }
+            Task { await refreshCircles() }
+            Task { await refreshDeals() }
         } else {
+            dealsWaiting = [DemoData.deal]
+            circles = DemoData.circles
             // Keep the Ask the demo intake made, if there is 1.
             if asks.isEmpty { asks = [DemoData.ask] }
             if tasteFacts.isEmpty { tasteFacts = DemoData.tasteFacts }
@@ -663,6 +665,121 @@ final class AppModel {
                 shelfError = "Couldn't forget that. Try again."
             }
         }
+    }
+
+    // MARK: Circles
+
+    /// The user's Circles with their rosters. A Circle whose roster fails to load still shows,
+    /// with just its member count.
+    func refreshCircles() async {
+        guard let api else { return }
+        guard let listed = try? await api.circles() else { return }
+        var loaded: [TradeCircle] = []
+        for circle in listed {
+            if let detail = try? await api.circle(circle.id) {
+                loaded.append(TradeCircle(detail))
+            } else {
+                loaded.append(TradeCircle(circle))
+            }
+        }
+        withAnimation(Motion.bouncy) { circles = loaded }
+    }
+
+    /// Starts a Circle with the user as its owner.
+    func createCircle(named name: String) async throws {
+        guard let api else {
+            let circle = TradeCircle(
+                id: UUID().uuidString,
+                name: name,
+                members: [Person(id: "me", name: firstName, hue: 2)],
+                memberCount: 1,
+                isOwner: true,
+                inviteURL: URL(string: "https://\(AppConfig.inviteHost)/i/DEMO")
+            )
+            withAnimation(Motion.bouncy) { circles.append(circle) }
+            return
+        }
+        _ = try await api.createCircle(name: name)
+        await refreshCircles()
+    }
+
+    /// A link to share. Live Circles get a fresh code each time, so old links can expire
+    /// without stranding anyone.
+    func inviteLink(for circle: TradeCircle) async throws -> URL {
+        guard let api else {
+            return circle.inviteURL ?? URL(string: "https://\(AppConfig.inviteHost)")!
+        }
+        let invite = try await api.createInvite(circleID: circle.id)
+        return Self.inviteURL(code: invite.code)
+    }
+
+    nonisolated static func inviteURL(code: String) -> URL {
+        URL(string: "https://\(AppConfig.inviteHost)/i/\(code)")!
+    }
+
+    /// Accepts a pasted link or a bare code.
+    nonisolated static func inviteCode(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let code = trimmed.split(separator: "/").last.map(String.init) ?? trimmed
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+        guard (6...32).contains(code.count), code.unicodeScalars.allSatisfy(allowed.contains) else {
+            return nil
+        }
+        return code
+    }
+
+    func previewInvite(_ code: String) async throws -> InvitePreview {
+        guard let api else {
+            return InvitePreview(code: code, circleName: "Thursday Lego Circle", inviterFirstName: "Jordan", memberCount: 5, status: .open)
+        }
+        return try await api.invitePreview(code)
+    }
+
+    func joinCircle(code: String) async throws {
+        guard let api else { return }
+        _ = try await api.acceptInvite(code)
+        await refreshCircles()
+        // A new Circle means new Shelves to match against.
+        await refreshDeals()
+    }
+
+    // MARK: Deals
+
+    func refreshDeals() async {
+        guard let api else { return }
+        guard let fetched = try? await api.deals() else { return }
+        withAnimation(Motion.bouncy) {
+            dealsWaiting = fetched.map(DealSheet.init)
+            approvedDealIDs = Set(dealsWaiting.filter { $0.myApproval == .approved }.map(\.id))
+        }
+    }
+
+    /// Call only after the device confirmation (Face ID or passcode) succeeded.
+    func approve(_ deal: DealSheet) async throws {
+        guard let api else {
+            markApproved(deal)
+            return
+        }
+        let updated = DealSheet(try await api.approveDeal(deal.id))
+        replaceDeal(updated)
+        approvedDealIDs.insert(updated.id)
+        if updated.status == .approved { await refreshAsks() }
+    }
+
+    /// Cancels the Deal for everyone. The GM keeps looking, and won't offer this Item again.
+    func decline(_ deal: DealSheet, reason: String?) async throws {
+        if let api {
+            _ = try await api.declineDeal(deal.id, reason: reason)
+        }
+        withAnimation(Motion.bouncy) { dealsWaiting.removeAll { $0.id == deal.id } }
+        if isLive { await refreshAsks() }
+    }
+
+    private func replaceDeal(_ deal: DealSheet) {
+        if let index = dealsWaiting.firstIndex(where: { $0.id == deal.id }) {
+            dealsWaiting[index] = deal
+        }
+        if presentedDeal?.id == deal.id { presentedDeal = deal }
     }
 
     func markApproved(_ deal: DealSheet) {

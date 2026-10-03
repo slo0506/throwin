@@ -358,10 +358,32 @@ nonisolated struct Person: Identifiable, Hashable, Sendable {
     var id: String
     var name: String
     var hue: Int          // index into the Loop palette, for avatar tint
-    var rating: Double
-    var circle: String
+    /// Ratings arrive with handoffs (Milestone 4). Nil until then for live people.
+    var rating: Double? = nil
+    /// The Circle to show under their name, when there is one to show.
+    var circle: String? = nil
+    var photoURL: URL? = nil
 
     var initials: String { String(name.prefix(1)) }
+}
+
+/// Where a Deal is. Mirrors the server's deal_status; the app shows only these.
+nonisolated enum DealPhase: String, Codable, Hashable, Sendable {
+    case pendingApprovals = "pending_approvals"
+    case approved
+    case scheduling
+    case inHandoff = "in_handoff"
+    case completed
+    case failed
+    case cancelled
+    case staged
+
+    /// Still waiting on someone's answer.
+    var isOpen: Bool { self == .pendingApprovals }
+}
+
+nonisolated enum ApprovalState: String, Codable, Hashable, Sendable {
+    case pending, approved, declined
 }
 
 nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
@@ -369,20 +391,30 @@ nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
     var give: [ShelfItem]
     var receive: [ShelfItem]
     var throwInCents: Int          // positive: you pay; negative: you receive
+    /// In Loop order, the caller included.
     var participants: [Person]
-    var why: String
-    var expiresInHours: Int
+    /// Null until the Prospector's review writes it.
+    var why: String?
+    var expiresAt: Date
+    var status: DealPhase = .pendingApprovals
+    var myApproval: ApprovalState = .pending
 
     var giveValue: Int { give.compactMap(\.value?.midCents).reduce(0, +) }
     var getValue: Int { receive.compactMap(\.value?.midCents).reduce(0, +) }
     var isLoop: Bool { participants.count > 2 }
+    var expiresInHours: Int { max(0, Int(expiresAt.timeIntervalSinceNow / 3600)) }
 }
 
 nonisolated struct TradeCircle: Identifiable, Hashable, Sendable {
     var id: String
     var name: String
-    var focus: String
+    /// What the Circle is mostly into, like "LEGO". Nil when it has no focus set.
+    var focus: String?
     var members: [Person]
-    var defaultSpot: String
-    var inviteURL: URL
+    var memberCount: Int
+    var isOwner: Bool = false
+    /// The Circle's usual handoff spot. Not set up for live Circles yet.
+    var defaultSpot: String?
+    /// Demo Circles carry a fixed link; live ones make a fresh invite on demand.
+    var inviteURL: URL?
 }

@@ -17,24 +17,22 @@ struct HomeView: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
                     }
 
-                    if model.isLive {
-                        Pill(text: "Preview: Deal Sheets are samples until matching ships", symbol: "sparkles", tint: Palette.iris)
-                    }
-
-                    if let deal = model.dealsWaiting.first {
+                    ForEach(model.dealsWaiting) { deal in
+                        let approved = model.approvedDealIDs.contains(deal.id)
                         VStack(alignment: .leading, spacing: Space.sm) {
                             SectionHeader(
-                                title: model.approvedDealIDs.contains(deal.id) ? "Approved" : "Waiting on you",
-                                trailing: model.approvedDealIDs.contains(deal.id) ? nil : "Expires in \(deal.expiresInHours)h"
+                                title: deal.status == .approved ? "Approved" : approved ? "Waiting on the others" : "Waiting on you",
+                                trailing: deal.status.isOpen && !approved ? "Expires in \(deal.expiresInHours)h" : nil
                             )
                             Button {
                                 model.presentedDeal = deal
                             } label: {
-                                DealTeaserCard(deal: deal, isApproved: model.approvedDealIDs.contains(deal.id))
+                                DealTeaserCard(deal: deal, isApproved: approved)
                             }
                             .buttonStyle(.pressable)
                             .matchedTransitionSource(id: deal.id, in: dealNamespace)
                         }
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
 
                     VStack(alignment: .leading, spacing: Space.sm) {
@@ -68,8 +66,14 @@ struct HomeView: View {
             .scrollIndicators(.hidden)
             .background(Palette.canvas)
             .animation(Motion.bouncy, value: model.showsPushPrompt)
-            .task { await model.refreshAsks() }
-            .refreshable { await model.refreshAsks() }
+            .task {
+                await model.refreshAsks()
+                await model.refreshDeals()
+            }
+            .refreshable {
+                await model.refreshAsks()
+                await model.refreshDeals()
+            }
             .navigationDestination(for: AskRoute.self) { route in
                 AskDetailView(askID: route.id, fallback: route.ask)
             }
