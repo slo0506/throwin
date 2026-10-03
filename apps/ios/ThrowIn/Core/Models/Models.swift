@@ -80,6 +80,11 @@ nonisolated struct ShelfItem: Codable, Identifiable, Hashable, Sendable {
     var thumbnailUrl: String?
     /// A specific photo the Appraiser needs, e.g. "Photo of the size tag".
     var followUp: String?
+    /// True while the Appraiser is still pricing or re-reading the Item. `value` may be nil then.
+    var isAppraising: Bool = false
+
+    /// Still being priced: show the Pricing placeholder instead of a range.
+    var isPricing: Bool { isAppraising && value == nil }
 
     /// Plain-language confidence. We never show raw scores.
     var confidenceLabel: String {
@@ -89,6 +94,35 @@ nonisolated struct ShelfItem: Codable, Identifiable, Hashable, Sendable {
         case 0.7..<0.85: return "Pretty sure"
         default: return "Needs 1 more photo"
         }
+    }
+}
+
+nonisolated extension ShelfItem {
+    enum CodingKeys: String, CodingKey {
+        case id, status, title, willingness, category, brand, model, variant, conditionGrade, defects, value
+        case identityConfidence, conditionConfidence, isReserved, thumbnailUrl, followUp, isAppraising
+    }
+
+    /// Hand-written so a missing `is_appraising` (older servers) decodes as false.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        status = try c.decode(ItemStatus.self, forKey: .status)
+        title = try c.decode(String.self, forKey: .title)
+        willingness = try c.decode(Willingness.self, forKey: .willingness)
+        category = try c.decodeIfPresent(String.self, forKey: .category)
+        brand = try c.decodeIfPresent(String.self, forKey: .brand)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        variant = try c.decodeIfPresent(String.self, forKey: .variant)
+        conditionGrade = try c.decodeIfPresent(ConditionGrade.self, forKey: .conditionGrade)
+        defects = try c.decode([String].self, forKey: .defects)
+        value = try c.decodeIfPresent(ValueRange.self, forKey: .value)
+        identityConfidence = try c.decodeIfPresent(Double.self, forKey: .identityConfidence)
+        conditionConfidence = try c.decodeIfPresent(Double.self, forKey: .conditionConfidence)
+        isReserved = try c.decode(Bool.self, forKey: .isReserved)
+        thumbnailUrl = try c.decodeIfPresent(String.self, forKey: .thumbnailUrl)
+        followUp = try c.decodeIfPresent(String.self, forKey: .followUp)
+        isAppraising = try c.decodeIfPresent(Bool.self, forKey: .isAppraising) ?? false
     }
 }
 
@@ -130,6 +164,20 @@ nonisolated struct CaptureMediaInput: Encodable, Sendable {
     var width: Int?
     var height: Int?
     var sharpness: Double?
+}
+
+/// `POST /v1/items/:id/media/uploads`: 1 to 5 more photos for an Item.
+nonisolated struct ItemUploadRequest: Encodable, Sendable {
+    var count: Int
+}
+
+nonisolated struct ItemUploadResponse: Decodable, Sendable {
+    var uploads: [UploadSlot]
+}
+
+/// `POST /v1/items/:id/media`: the uploaded photos, so the Appraiser takes another look.
+nonisolated struct ItemMediaRequest: Encodable, Sendable {
+    var media: [CaptureMediaInput]
 }
 
 nonisolated struct CaptureRequest: Encodable, Sendable {

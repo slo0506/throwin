@@ -142,7 +142,7 @@ struct ItemCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
-            ItemArtwork(item: item)
+            ItemArtwork(item: item, studio: .ifReady)
                 .aspectRatio(1, contentMode: .fit)
                 .appraiseScan(trigger: localScan, duration: 1.5)
                 .overlay(alignment: .topTrailing) {
@@ -151,7 +151,8 @@ struct ItemCard: View {
                 }
                 .overlay(alignment: .bottomLeading) {
                     if item.status == .needsPhotos {
-                        Label("1 more photo", systemImage: "camera.viewfinder")
+                        Label(item.isAppraising ? "Taking another look" : "1 more photo",
+                              systemImage: item.isAppraising ? "sparkles" : "camera.viewfinder")
                             .font(Typo.caption)
                             .foregroundStyle(Palette.ink)
                             .padding(.horizontal, 10)
@@ -172,9 +173,13 @@ struct ItemCard: View {
                 }
                 if let value = item.value {
                     ValueRangeBar(range: value, tint: ArtworkStyle(category: item.category).tint)
+                } else if item.isPricing {
+                    PricingPlaceholder()
+                        .transition(.opacity)
                 }
             }
             .padding(.horizontal, 4)
+            .animation(Motion.soft, value: item.value)
         }
         .padding(Space.sm)
         .background {

@@ -167,6 +167,31 @@ struct ValueRangeBar: View {
     }
 }
 
+// MARK: - Pricing placeholder
+
+/// Stands in for a range bar while the Appraiser is still pricing. Same height as the bar so
+/// nothing jumps when the range lands.
+struct PricingPlaceholder: View {
+    var showsLabels: Bool = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Capsule()
+                .fill(Palette.ink.opacity(0.14))
+                .frame(height: 6)
+                .frame(height: 12)
+            if showsLabels {
+                Text("Pricing")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.inkSecondary)
+            }
+        }
+        .loopShimmer()
+        .accessibilityElement()
+        .accessibilityLabel("Pricing")
+    }
+}
+
 // MARK: - Avatar
 
 struct Avatar: View {

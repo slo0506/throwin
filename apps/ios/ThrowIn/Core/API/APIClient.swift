@@ -103,6 +103,21 @@ final class APIClient {
         let _: EmptyResponse = try await send("DELETE", "v1/items/\(id)")
     }
 
+    func item(_ id: String) async throws -> ShelfItem {
+        try await send("GET", "v1/items/\(id)")
+    }
+
+    /// Reserves 1 signed upload URL per new photo for an Item (1 to 5).
+    func requestItemUploads(_ id: String, count: Int) async throws -> ItemUploadResponse {
+        try await send("POST", "v1/items/\(id)/media/uploads", body: ItemUploadRequest(count: count))
+    }
+
+    /// Attaches uploaded photos so the Appraiser takes another look. Returns the Item with
+    /// `isAppraising` true. 409: reserved by a Deal or already appraising.
+    func addItemMedia(_ id: String, _ media: [CaptureMediaInput]) async throws -> ShelfItem {
+        try await send("POST", "v1/items/\(id)/media", body: ItemMediaRequest(media: media))
+    }
+
     // MARK: Capture
 
     /// Reserves a capture and returns 1 signed upload URL per photo.
@@ -110,8 +125,50 @@ final class APIClient {
         try await send("POST", "v1/media/uploads", body: UploadRequest(count: count))
     }
 
+    /// Waits between upload attempts. Mobile networks drop out for a moment, then come back.
+    static let uploadBackoff: [Duration] = [.milliseconds(500), .seconds(2), .seconds(5)]
+    static let maxConcurrentUploads = 4
+
     /// PUTs JPEG bytes straight to storage. The signed URL is the credential, so no bearer token.
+    /// Retries up to 3 times on network errors and 5xx, waiting 0.5, 2, then 5 seconds.
     func upload(_ jpeg: Data, to url: URL) async throws {
+        var attempt = 0
+        while true {
+            do {
+                try await putOnce(jpeg, to: url)
+                return
+            } catch {
+                guard attempt < Self.uploadBackoff.count, Self.isRetryable(error) else {
+                    if error is CancellationError || error is APIError { throw error }
+                    throw APIError(status: 0, code: "upload_failed", message: "A photo didn't upload. Check your connection and try again.")
+                }
+                try await Task.sleep(for: Self.uploadBackoff[attempt])
+                attempt += 1
+            }
+        }
+    }
+
+    /// Uploads every photo, at most 4 at a time, and reports each 1 that lands.
+    func uploadAll(_ jobs: [(jpeg: Data, url: URL)], onProgress: (_ done: Int) -> Void = { _ in }) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var next = 0
+            var done = 0
+            while next < jobs.count || done < next {
+                // Keep up to 4 in flight, then wait for 1 to land before starting the next.
+                if next < jobs.count, next - done < Self.maxConcurrentUploads {
+                    let job = jobs[next]
+                    next += 1
+                    group.addTask { try await self.upload(job.jpeg, to: job.url) }
+                    continue
+                }
+                guard try await group.next() != nil else { break }
+                done += 1
+                onProgress(done)
+            }
+        }
+    }
+
+    private func putOnce(_ jpeg: Data, to url: URL) async throws {
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
@@ -120,6 +177,13 @@ final class APIClient {
         guard (200..<300).contains(status) else {
             throw APIError(status: status, code: "upload_failed", message: "A photo didn't upload. Try again.")
         }
+    }
+
+    /// Network errors and server errors are worth another try. 4xx and cancellation are not.
+    nonisolated static func isRetryable(_ error: any Error) -> Bool {
+        if let apiError = error as? APIError { return apiError.status >= 500 || apiError.status == 0 }
+        if let urlError = error as? URLError { return urlError.code != .cancelled }
+        return false
     }
 
     func submitCapture(_ request: CaptureRequest) async throws -> Capture {
