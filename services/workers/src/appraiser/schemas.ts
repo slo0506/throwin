@@ -75,7 +75,17 @@ export type ValueEstimate = z.infer<typeof ValueEstimate>;
  */
 const nullable = (schema: object) => ({ anyOf: [schema, { type: "null" }] });
 
-export const detectionJsonSchema = {
+/** Structured outputs require `additionalProperties: false` on every object, explicitly. */
+export function strict<T>(schema: T): T {
+  if (Array.isArray(schema)) return schema.map(strict) as T;
+  if (!schema || typeof schema !== "object") return schema;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(schema)) out[k] = strict(v);
+  if (out.type === "object") out.additionalProperties = false;
+  return out as T;
+}
+
+export const detectionJsonSchema = strict({
   type: "object",
   properties: {
     objects: {
@@ -115,9 +125,9 @@ export const detectionJsonSchema = {
     },
   },
   required: ["objects"],
-} as const;
+} as const);
 
-export const identificationJsonSchema = {
+export const identificationJsonSchema = strict({
   type: "object",
   properties: {
     is_tradeable_item: {
@@ -176,9 +186,9 @@ export const identificationJsonSchema = {
     "condition_confidence",
     "follow_up",
   ],
-} as const;
+} as const);
 
-export const valueJsonSchema = {
+export const valueJsonSchema = strict({
   type: "object",
   properties: {
     low_usd: { type: "number" },
@@ -192,4 +202,4 @@ export const valueJsonSchema = {
     confidence: { type: "number", description: "0 to 1" },
   },
   required: ["low_usd", "mid_usd", "high_usd", "basis", "confidence"],
-} as const;
+} as const);
