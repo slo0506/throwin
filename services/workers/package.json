@@ -3,6 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./eval": {
+      "@throwin/source": "./src/eval-exports.ts",
+      "types": "./dist/eval-exports.d.ts",
+      "default": "./dist/eval-exports.js"
+    }
+  },
   "scripts": {
     "build": "pnpm --filter @throwin/shared build && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",

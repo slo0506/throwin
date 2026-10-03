@@ -6,9 +6,18 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval:appraisal": "tsx --conditions=@throwin/source src/cli.ts appraisal",
+    "eval:label": "tsx --conditions=@throwin/source src/cli.ts label"
   },
   "dependencies": {
+    "@throwin/workers": "workspace:*",
+    "sharp": "^0.35.5",
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "4.23.15",
+    "vitest": "^3.2.7"
   }
 }
