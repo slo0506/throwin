@@ -74,6 +74,16 @@ struct SettingsView: View {
 
                     VStack(alignment: .leading, spacing: Space.sm) {
                         SectionHeader(title: "Account")
+                        Button {
+                            Task { await model.signOut() }
+                        } label: {
+                            Text("Sign out")
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 36)
+                        }
+                        .buttonStyle(.glass)
+                        .tint(Palette.ink)
                         Button(role: .destructive) {
                             confirmDelete = true
                         } label: {
