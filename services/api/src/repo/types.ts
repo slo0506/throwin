@@ -1,4 +1,6 @@
 import type {
+  AskStatus,
+  AskTarget,
   AutonomyLevel,
   ConditionGrade,
   ItemReadiness,
@@ -6,6 +8,8 @@ import type {
   ItemWillingness,
   NotificationPrefs,
   QuestionKind,
+  TasteFactCategory,
+  TasteFactSource,
 } from "@throwin/shared";
 
 /** A user row joined with its profile, in domain (camelCase) form. */
@@ -115,6 +119,66 @@ export interface CaptureMediaInput {
   sharpness?: number | undefined;
 }
 
+/** An Item in an Ask's offer set, with what its value range adds to the offer. */
+export interface OfferItemRecord {
+  id: string;
+  valueLowCents: number | null;
+  valueHighCents: number | null;
+}
+
+export interface AskRecord {
+  id: string;
+  userId: string;
+  rawText: string;
+  title: string | null;
+  status: AskStatus;
+  /** Null until resolved. Stored as jsonb in the wire shape. */
+  target: AskTarget | null;
+  /** Offer Items still on the Shelf or held by a Deal (removed and traded ones drop out). */
+  offerItems: OfferItemRecord[];
+  /** Private to the owner. Never leaves through network reads. */
+  cashCeilingCents: number;
+  autonomy: AutonomyLevel;
+  deadline: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AskInsert {
+  rawText: string;
+  target: AskTarget | null;
+  title: string | null;
+  status: AskStatus;
+  cashCeilingCents: number;
+  autonomy: AutonomyLevel;
+}
+
+/** Only the fields present change. A null deadline clears it. */
+export interface AskUpdate {
+  rawText?: string;
+  target?: AskTarget;
+  title?: string | null;
+  offerItemIds?: string[];
+  cashCeilingCents?: number;
+  autonomy?: AutonomyLevel;
+  deadline?: Date | null;
+  cancel?: true;
+}
+
+export type AskUpdateResult = AskRecord | "not_found" | "invalid_offer_item" | "ask_closed";
+
+export interface TasteFactRecord {
+  id: string;
+  userId: string;
+  key: string;
+  value: string;
+  category: TasteFactCategory;
+  source: TasteFactSource;
+  alwaysOn: boolean;
+  status: "active" | "superseded" | "deleted";
+  createdAt: Date;
+}
+
 /** Statuses shown on the Shelf. Removed and traded Items are history, not inventory. */
 export const SHELF_STATUSES: readonly ItemStatus[] = [
   "draft",
@@ -171,4 +235,21 @@ export interface Repository {
     media: CaptureMediaInput[],
   ): Promise<CaptureRecord | null>;
   listCaptureItems(userId: string, captureId: string): Promise<ItemRecord[]>;
+
+  /** The user's Asks, newest first, without cancelled ones. */
+  listAsks(userId: string): Promise<AskRecord[]>;
+  /** Null when missing or someone else's. */
+  getAsk(userId: string, askId: string): Promise<AskRecord | null>;
+  createAsk(userId: string, input: AskInsert): Promise<AskRecord>;
+  /**
+   * Applies an owner's edit atomically (public.patch_ask). Offer Items must be the owner's,
+   * on the Shelf and not reserved; a non-empty offer set moves a drafting or offering Ask to
+   * prospecting, and a target moves a drafting Ask to offering.
+   */
+  updateAsk(userId: string, askId: string, update: AskUpdate): Promise<AskUpdateResult>;
+
+  /** Active facts only: always-on first, then newest. */
+  listTasteFacts(userId: string): Promise<TasteFactRecord[]>;
+  /** Marks the user's fact deleted. False when missing or someone else's. */
+  deleteTasteFact(userId: string, factId: string): Promise<boolean>;
 }

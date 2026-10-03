@@ -27,3 +27,6 @@ supabase/.branches/
 # Eval captures are photos of people's homes: local only, never committed
 evals/media/
 evals/reports/
+
+# Agent worktrees and local Claude state
+.claude/

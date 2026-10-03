@@ -56,7 +56,10 @@ export const idempotency = (store: IdempotencyStore, logger: Logger, now: () => 
       case "replay": {
         const headers = new Headers({ [REPLAYED_HEADER]: "true" });
         if (begun.response.contentType) headers.set("Content-Type", begun.response.contentType);
-        return new Response(begun.response.body, { status: begun.response.status, headers });
+        // 204 and 304 must not carry a body, or the Response constructor throws.
+        const { status, body } = begun.response;
+        const empty = status === 204 || status === 304;
+        return new Response(empty ? null : body, { status, headers });
       }
       case "started":
         break;

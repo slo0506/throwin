@@ -6,6 +6,9 @@ import { type AppraiserDeps, appraiseCapture, reappraiseItem } from "./appraiser
 import { CachedPricer } from "./appraiser/price-cache.js";
 import { loadEnv } from "./env.js";
 import { createLogger } from "./log.js";
+import { ExtractMemoryPayload, extractMemory } from "./memory/extract.js";
+import { ClaudeMemoryModel } from "./memory/model.js";
+import { SupabaseMemoryStore } from "./memory/store.js";
 import { ClaudeRefinerModels } from "./refiner/models.js";
 import {
   type RefineReason,
@@ -23,6 +26,7 @@ const db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
 const queue = new SupabaseQueue(db);
 // The Refiner's store is the Appraiser's plus questions, so 1 instance serves both.
 const store = new SupabaseRefinerStore(db);
+const memoryStore = new SupabaseMemoryStore(db);
 const anthropic = new Anthropic({
   apiKey: env.ANTHROPIC_API_KEY,
   maxRetries: env.ANTHROPIC_MAX_RETRIES,
@@ -45,7 +49,7 @@ const refiner: RefinerConfig = {
   photo: { sharpnessLow: env.REFINER_SHARPNESS_LOW, sharpnessHigh: env.REFINER_SHARPNESS_HIGH },
 };
 
-const KINDS = ["appraise_capture", "reappraise_item", "refine_item"];
+const KINDS = ["appraise_capture", "reappraise_item", "refine_item", "extract_memory"];
 const REASONS: readonly RefineReason[] = ["created", "answer", "photos"];
 let stopping = false;
 
@@ -97,7 +101,22 @@ async function runJob(job: Job) {
   const runs: Promise<void>[] = [];
   const started = Date.now();
   try {
-    if (job.kind === "refine_item") {
+    if (job.kind === "extract_memory") {
+      const payload = ExtractMemoryPayload.parse(job.payload);
+      const outcome = await extractMemory(payload, {
+        store: memoryStore,
+        createModel: (onRun) => new ClaudeMemoryModel(anthropic, onRun),
+        logger,
+      });
+      await queue.finish(job.id);
+      logger.info("job_done", {
+        job_id: job.id,
+        kind: job.kind,
+        outcome: outcome.status,
+        written: outcome.written,
+        ms: Date.now() - started,
+      });
+    } else if (job.kind === "refine_item") {
       const reason = reasonOf(job.payload.reason);
       const deps = depsFor(userId, `refine_${reason}`, runs);
       const outcome = await refineItem(itemId, userId, reason, deps.refiner);
@@ -154,9 +173,10 @@ async function runJob(job: Job) {
         await store
           .setAppraising(itemId, false)
           .catch((e) => logger.error("clear_appraising_failed", { error: String(e) }));
-      } else {
+      } else if (job.kind === "appraise_capture") {
         await store.failCapture(captureId, "Something went wrong reading these photos. Try again.");
       }
+      // extract_memory: nothing to undo. A missed turn only means nothing was noted from it.
     }
   } finally {
     await Promise.all(runs);

@@ -7,10 +7,8 @@ describe("GET /v1/me", () => {
     const { request, repo } = makeHarness();
     repo.addItem({ id: "6f1c1c5e-6a8a-4b7a-9f0e-2a0d1c3b4e5f", ownerId: ALICE });
     repo.addItem({ id: "7f1c1c5e-6a8a-4b7a-9f0e-2a0d1c3b4e5f", ownerId: BOB });
-    repo.asks.push(
-      { userId: ALICE, status: "prospecting" },
-      { userId: ALICE, status: "fulfilled" },
-    );
+    repo.addAsk({ id: "a1", userId: ALICE, status: "prospecting" });
+    repo.addAsk({ id: "a2", userId: ALICE, status: "fulfilled" });
     repo.memberships.push({ userId: ALICE, circleId: "c1" });
 
     const res = await request("/v1/me", { as: ALICE });

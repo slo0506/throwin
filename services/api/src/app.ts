@@ -5,6 +5,7 @@ import { appAttest } from "./middleware/app-attest.js";
 import { requireAuth } from "./middleware/auth.js";
 import { createErrorHandler, notFound } from "./middleware/error-handler.js";
 import { idempotency } from "./middleware/idempotency.js";
+import { askRoutes } from "./routes/asks.js";
 import { authRoutes } from "./routes/auth.js";
 import { captureRoutes, mediaRoutes } from "./routes/captures.js";
 import { gmRoutes } from "./routes/gm.js";
@@ -12,6 +13,7 @@ import { healthRoutes } from "./routes/health.js";
 import { itemRoutes } from "./routes/items.js";
 import { meRoutes } from "./routes/me.js";
 import { questionRoutes } from "./routes/questions.js";
+import { tasteFactRoutes } from "./routes/taste-facts.js";
 import type { AppDeps, AppEnv } from "./types.js";
 
 /** Builds the API with injected dependencies so tests can swap in fakes. */
@@ -30,7 +32,9 @@ export function createApp(deps: AppDeps) {
   v1.use(requireAuth(deps.tokens));
   v1.use(appAttest(deps.appAttest.mode, deps.appAttest.verifier, deps.logger));
   v1.use(idempotency(deps.idempotency, deps.logger, now));
+  v1.route("/me/taste-facts", tasteFactRoutes(deps.repo));
   v1.route("/me", meRoutes(deps.repo, now));
+  v1.route("/asks", askRoutes(deps.repo));
   v1.route("/items", itemRoutes(deps.repo, deps.media));
   v1.route("/media", mediaRoutes(deps.repo, deps.media));
   v1.route("/captures", captureRoutes(deps.repo, deps.media));

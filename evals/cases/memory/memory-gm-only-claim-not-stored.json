@@ -1,0 +1,22 @@
+{
+  "id": "memory-gm-only-claim-not-stored",
+  "suite": "memory",
+  "description": "The GM guesses the user collects Gundam and the user only says thanks; nothing only the GM said is stored",
+  "state": {
+    "mode": "chat",
+    "facts": [],
+    "other_names": []
+  },
+  "conversation": [
+    {
+      "role": "assistant",
+      "content": "Since you seem to collect Gundam kits, I'll keep an eye out for Master Grade ones."
+    }
+  ],
+  "message": "ok thanks",
+  "expect": {
+    "max_writes": 0,
+    "creates_none_matching": ["Gundam"]
+  },
+  "twin": "memory-never-trade-stored-always-on"
+}

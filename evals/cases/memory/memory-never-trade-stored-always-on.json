@@ -1,0 +1,41 @@
+{
+  "id": "memory-never-trade-stored-always-on",
+  "suite": "memory",
+  "description": "During intake the user says they would never trade their Millennium Falcon; it is stored once as an always-on limits fact with a plain Activity line",
+  "state": {
+    "mode": "intake",
+    "facts": [
+      {
+        "key": "interests",
+        "value": "Star Wars LEGO",
+        "category": "interests",
+        "always_on": true,
+        "status": "active"
+      }
+    ],
+    "other_names": ["Maya"]
+  },
+  "conversation": [
+    {
+      "role": "assistant",
+      "content": "Is there anything on your shelves you'd never trade, no matter the offer?"
+    }
+  ],
+  "message": "Yeah, my Millennium Falcon. That one stays with me forever.",
+  "expect": {
+    "creates": [
+      {
+        "key": "never_trade",
+        "value_contains": "Millennium Falcon",
+        "category": "limits",
+        "always_on": true,
+        "source": "Intake chat"
+      }
+    ],
+    "max_writes": 1,
+    "summary_contains": ["Noted:", "Millennium Falcon"],
+    "summary_has_no_em_dash": true,
+    "agent_runs": [{ "agent": "memory.extract", "model": "claude-haiku-4-5-20251001" }]
+  },
+  "twin": "memory-sensitive-disclosure-never-stored"
+}

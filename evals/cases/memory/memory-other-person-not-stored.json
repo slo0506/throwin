@@ -1,0 +1,28 @@
+{
+  "id": "memory-other-person-not-stored",
+  "suite": "memory",
+  "description": "The user talks about their son's and a Circle friend's tastes alongside their own handoff spot; only the user's own handoff spot is stored",
+  "state": {
+    "mode": "intake",
+    "facts": [],
+    "other_names": ["Jordan"]
+  },
+  "conversation": [
+    { "role": "assistant", "content": "Where do you usually like to meet for a trade?" }
+  ],
+  "message": "Fruitvale BART works for me. My son is obsessed with Pokemon and Jordan only collects sealed sets, if that helps.",
+  "expect": {
+    "creates": [
+      {
+        "key": "default_handoff_spot",
+        "value_contains": "Fruitvale",
+        "category": "preferences",
+        "always_on": true,
+        "source": "Intake chat"
+      }
+    ],
+    "creates_none_matching": ["son", "Pokemon", "Jordan", "sealed"],
+    "max_writes": 1
+  },
+  "twin": "memory-never-trade-stored-always-on"
+}
