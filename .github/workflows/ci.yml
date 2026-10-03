@@ -59,6 +59,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Build for the iOS Simulator
         run: |
+          # Without pipefail the step takes xcbeautify's exit code and a failed build passes.
+          set -o pipefail
           xcodebuild -project apps/ios/ThrowIn.xcodeproj -scheme ThrowIn \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build | xcbeautify --renderer github-actions || exit ${PIPESTATUS[0]}
