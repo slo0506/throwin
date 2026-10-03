@@ -4,9 +4,17 @@ export interface Embedder {
   embed(text: string, jpeg: Buffer): Promise<number[]>;
 }
 
+/** Text-only search queries (an Ask's want) in the same space as Item embeddings. */
+export interface QueryEmbedder {
+  readonly model: string;
+  embedQuery(text: string): Promise<number[]>;
+}
+
+type Content = { type: "text"; text: string } | { type: "image_base64"; image_base64: string };
+
 class RetryableError extends Error {}
 
-export class VoyageEmbedder implements Embedder {
+export class VoyageEmbedder implements Embedder, QueryEmbedder {
   readonly model = "voyage-multimodal-3.5";
 
   constructor(
@@ -15,10 +23,21 @@ export class VoyageEmbedder implements Embedder {
     private readonly retryDelaysMs: number[] = [2_000, 8_000, 21_000],
   ) {}
 
-  async embed(text: string, jpeg: Buffer): Promise<number[]> {
+  embed(text: string, jpeg: Buffer): Promise<number[]> {
+    return this.#withRetries("document", [
+      { type: "text", text },
+      { type: "image_base64", image_base64: `data:image/jpeg;base64,${jpeg.toString("base64")}` },
+    ]);
+  }
+
+  embedQuery(text: string): Promise<number[]> {
+    return this.#withRetries("query", [{ type: "text", text }]);
+  }
+
+  async #withRetries(inputType: "document" | "query", content: Content[]): Promise<number[]> {
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.#embedOnce(text, jpeg);
+        return await this.#embedOnce(inputType, content);
       } catch (err) {
         const delay = this.retryDelaysMs[attempt];
         if (!(err instanceof RetryableError) || delay === undefined) throw err;
@@ -27,25 +46,11 @@ export class VoyageEmbedder implements Embedder {
     }
   }
 
-  async #embedOnce(text: string, jpeg: Buffer): Promise<number[]> {
+  async #embedOnce(inputType: "document" | "query", content: Content[]): Promise<number[]> {
     const res = await this.fetchImpl("https://api.voyageai.com/v1/multimodalembeddings", {
       method: "POST",
       headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: this.model,
-        input_type: "document",
-        inputs: [
-          {
-            content: [
-              { type: "text", text },
-              {
-                type: "image_base64",
-                image_base64: `data:image/jpeg;base64,${jpeg.toString("base64")}`,
-              },
-            ],
-          },
-        ],
-      }),
+      body: JSON.stringify({ model: this.model, input_type: inputType, inputs: [{ content }] }),
     });
     if (!res.ok) {
       const message = `voyage ${res.status}: ${(await res.text()).slice(0, 300)}`;

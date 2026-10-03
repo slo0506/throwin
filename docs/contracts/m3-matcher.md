@@ -92,3 +92,14 @@ The weights are starting points. The Prospector passes its own once evals give u
 ## Not the matcher's job
 
 Taste-fact review, the "why" for each participant, Liaison inquiries for inferred edges, the showcase check, reservation and expiry all happen in the Prospector and the API.
+
+## The Prospector's side (step 1: the want graph)
+
+`services/workers/src/prospector/` runs the `prospect_ask` job (`{ "ask_id", "user_id" }`).
+
+- **Queued by the database:** `enqueue_prospect_ask` runs, at most 1 waiting per Ask, when an Ask starts prospecting, or when a prospecting Ask's target, cash ceiling or offer set changes.
+- **Embeds Asks:** prospecting Asks in the asker's Circles are embedded as text-only Voyage queries, in the same space as Item embeddings, whenever their target text changed (`ask_embeddings.source_hash`). The asker's Ask goes first, and there are at most `PROSPECT_MAX_EMBEDS` per run.
+- **Candidates:** `circle_want_candidates(circle, model, per_ask)` returns, for each prospecting Ask, the nearest Items that other members offer for their own prospecting Asks.
+- **Scoring:** a matching model number scores 0.95. Otherwise the embedding similarity must reach `PROSPECT_MIN_SIMILARITY` (default 0.3, a guess until real Asks exist). A different top-level category drops the candidate, and so does a different brand on an `exact` Ask. The score is the edge's `utility` and `confidence`.
+- **Output:** the Asks' rows in `edges` are replaced, then the matcher runs in live mode anchored on the asker, once per Circle where someone offers the asker something. Deals are only logged for now; staging them is step 2.
+- **Without a matcher:** if `MATCHER_URL` is unset, the worker doesn't claim `prospect_ask`, so jobs wait in the queue.

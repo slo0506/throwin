@@ -59,6 +59,22 @@ const EnvSchema = z.object({
   REFINER_SHARPNESS_LOW: z.coerce.number().min(0).default(20),
   /** Laplacian variance at or above which a photo scores full marks for sharpness. */
   REFINER_SHARPNESS_HIGH: z.coerce.number().min(1).default(200),
+  /**
+   * The matcher service's base URL. Unset: prospect_ask jobs wait in the queue rather than
+   * fail, so nothing is lost before the matcher is deployed.
+   */
+  MATCHER_URL: z.url().optional(),
+  /**
+   * Want candidates below this embedding similarity are dropped unless the model number
+   * matches. A starting guess: tune it on real Asks once they exist.
+   */
+  PROSPECT_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.3),
+  /** Nearest offered Items considered per Ask. */
+  PROSPECT_CANDIDATES_PER_ASK: z.coerce.number().int().min(1).max(200).default(25),
+  /** Asks embedded per prospect run at most. */
+  PROSPECT_MAX_EMBEDS: z.coerce.number().int().min(1).max(500).default(50),
+  /** The matcher's selection time limit per call. */
+  MATCHER_TIME_LIMIT_SECONDS: z.coerce.number().min(1).max(60).default(5),
   /** SDK retries per Anthropic call (429 and 5xx, with backoff). */
   ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(4),
 });
