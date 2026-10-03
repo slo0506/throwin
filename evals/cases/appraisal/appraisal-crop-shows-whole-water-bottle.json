@@ -1,0 +1,22 @@
+{
+  "id": "appraisal-crop-shows-whole-water-bottle",
+  "suite": "appraisal",
+  "description": "A tall insulated water bottle whose detector box is a tight vertical sliver. The refined box covers the whole bottle, so the Item's photo shows it from cap to base. The negative twin of the lamp-base case: a box that was too tight, not shifted",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-photo",
+        "describe": "Lavender 40 oz insulated water bottle with a black flex cap standing at the back corner of a nightstand. Detector box covers only the middle third of the bottle's width and none of the cap."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "titles_include": ["water bottle"],
+    "crop_box_source": "refined",
+    "crop_shows": "the whole bottle including the cap and the base",
+    "crop_box_aspect": "taller than wide"
+  },
+  "twin": "appraisal-crop-shows-headphones-not-lamp-base"
+}

@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { expect } from "vitest";
-import type { PriceResult, Vision } from "../src/appraiser/claude.js";
+import type { GroupCandidate, PriceResult, Vision } from "../src/appraiser/claude.js";
 import type { Embedder } from "../src/appraiser/embeddings.js";
 import type { PreparedImage } from "../src/appraiser/images.js";
 import type {
@@ -199,13 +199,17 @@ export const priceResult = (mid = 165, confidence = 0.8): PriceResult => ({
 
 export type FakeVision = Vision & {
   identifyCalls: number;
-  sameCalls: number;
+  groupCalls: number;
+  /** What each group call saw, for assertions. */
+  groupInputs: GroupCandidate[][];
+  groupImpl: (candidates: GroupCandidate[]) => Promise<number[][]>;
   priceCalls: number;
   reidentifyCalls: number;
   priceImpl: (item: Identification) => Promise<PriceResult>;
   reidentifyImpl: (previous: Identification, photos: PreparedImage[]) => Promise<Identification>;
 };
 
+/** `same` groups every candidate into 1 Item; pass groupImpl for anything finer. */
 export function fakeVision(
   detection: Detection,
   idents: Identification[],
@@ -214,14 +218,17 @@ export function fakeVision(
   let i = 0;
   return {
     identifyCalls: 0,
-    sameCalls: 0,
+    groupCalls: 0,
+    groupInputs: [],
+    groupImpl: async (candidates) => (same ? [candidates.map((_, n) => n)] : []),
     priceCalls: 0,
     reidentifyCalls: 0,
     priceImpl: async () => priceResult(),
     reidentifyImpl: async (previous) => previous,
-    async sameItem() {
-      this.sameCalls++;
-      return same;
+    async group(candidates) {
+      this.groupCalls++;
+      this.groupInputs.push(candidates);
+      return this.groupImpl(candidates);
     },
     async detect() {
       return detection;

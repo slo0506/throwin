@@ -65,8 +65,27 @@ export const Identification = z.object({
   identity_confidence: z.number().min(0).max(1),
   condition_confidence: z.number().min(0).max(1),
   follow_up: optionalText(160),
+  /**
+   * Second localization pass: a tight box around the named item in each close-up where it
+   * is visible, normalized to that close-up. Optional in code (follow-up readings and
+   * stored Items have none); always requested from the model.
+   */
+  box_in_crop: z
+    .array(z.object({ crop: z.number(), box: z.array(z.number()) }))
+    // A malformed box is dropped (the detector's box is the fallback), never a lost Item.
+    .transform((entries) =>
+      entries
+        .flatMap((e) =>
+          Number.isInteger(e.crop) && e.box.length === 4
+            ? [{ crop: e.crop, box: Box.parse(e.box) }]
+            : [],
+        )
+        .slice(0, 5),
+    )
+    .optional(),
 });
 export type Identification = z.infer<typeof Identification>;
+export type CropBox = NonNullable<Identification["box_in_crop"]>[number];
 
 export const ValueEstimate = z
   .object({
@@ -190,6 +209,24 @@ export const identificationJsonSchema = strict({
       description:
         "If either confidence is below 0.7, the 1 photo that would settle it, under 60 characters, e.g. 'Photo of the size tag'",
     }),
+    box_in_crop: {
+      type: "array",
+      description:
+        "For each close-up (numbered from 1) where the item you named is visible: a tight box around all of that item and nothing else. Empty if it is not visible in any close-up.",
+      items: {
+        type: "object",
+        properties: {
+          crop: { type: "integer", description: "Which close-up, numbered from 1" },
+          box: {
+            type: "array",
+            items: { type: "number" },
+            description:
+              "Exactly 4 numbers: [x0, y0, x1, y1], normalized 0 to 1 within that close-up (0,0 is its top left)",
+          },
+        },
+        required: ["crop", "box"],
+      },
+    },
   },
   required: [
     "is_tradeable_item",
@@ -205,24 +242,41 @@ export const identificationJsonSchema = strict({
     "identity_confidence",
     "condition_confidence",
     "follow_up",
+    "box_in_crop",
   ],
 } as const);
 
-/** Whether 2 identified objects are really 1 thing to trade. */
-export const SameItem = z.object({ same: z.boolean(), reason: z.string() });
-export type SameItem = z.infer<typeof SameItem>;
+/**
+ * Capture-level consolidation: groups of candidate numbers that are 1 thing to trade.
+ * Candidates in no group stay separate.
+ */
+export const Groups = z.object({
+  groups: z.array(z.object({ members: z.array(z.number().int()), reason: z.string() })),
+});
+export type Groups = z.infer<typeof Groups>;
 
-export const sameItemJsonSchema = strict({
+export const groupsJsonSchema = strict({
   type: "object",
   properties: {
-    same: {
-      type: "boolean",
+    groups: {
+      type: "array",
       description:
-        "True if A and B are the same physical thing, or parts of 1 thing someone would trade together",
+        "Only groups of 2 or more candidates that are 1 thing to trade. Leave everything else out.",
+      items: {
+        type: "object",
+        properties: {
+          members: {
+            type: "array",
+            items: { type: "integer" },
+            description: "Candidate numbers, as labeled",
+          },
+          reason: { type: "string", description: "1 short sentence" },
+        },
+        required: ["members", "reason"],
+      },
     },
-    reason: { type: "string", description: "1 short sentence" },
   },
-  required: ["same", "reason"],
+  required: ["groups"],
 } as const);
 
 export const valueJsonSchema = strict({

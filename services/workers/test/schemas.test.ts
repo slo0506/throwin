@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   Box,
   detectionJsonSchema,
+  groupsJsonSchema,
   Identification,
   identificationJsonSchema,
-  sameItemJsonSchema,
   ValueEstimate,
   valueJsonSchema,
 } from "../src/appraiser/schemas.js";
@@ -49,7 +49,7 @@ describe("structured output schemas", () => {
     ["detection", detectionJsonSchema],
     ["identification", identificationJsonSchema],
     ["value", valueJsonSchema],
-    ["same_item", sameItemJsonSchema],
+    ["groups", groupsJsonSchema],
   ])("%s schema avoids unsupported keywords and free-form objects", (_, schema) => {
     const problems: string[] = [];
     walk(schema, "$", problems);
@@ -108,5 +108,53 @@ describe("Identification text", () => {
     });
     expect(parsed.follow_up).toBe("Photo of the size tag.");
     expect(parsed.model).toBeNull();
+  });
+});
+
+describe("box_in_crop", () => {
+  const base = {
+    is_tradeable_item: true,
+    title: "Hydro Flask 32 oz Wide Mouth",
+    category: "accessories",
+    brand: "Hydro Flask",
+    model: null,
+    variant: null,
+    attributes: [],
+    condition_grade: "B",
+    defects: [],
+    age_estimate_years: null,
+    identity_confidence: 0.8,
+    condition_confidence: 0.8,
+    follow_up: null,
+  };
+
+  it("is required from the model, with additionalProperties false on each entry", () => {
+    expect(identificationJsonSchema.required).toContain("box_in_crop");
+    const entry = identificationJsonSchema.properties.box_in_crop.items as {
+      additionalProperties?: boolean;
+      required: readonly string[];
+    };
+    expect(entry.additionalProperties).toBe(false);
+    expect(entry.required).toEqual(["crop", "box"]);
+  });
+
+  it("keeps good boxes in order and drops malformed ones instead of failing the Item", () => {
+    const parsed = Identification.parse({
+      ...base,
+      box_in_crop: [
+        { crop: 1, box: [0.7, 0.9, 0.4, 0.1] },
+        { crop: 2, box: [0.1, 0.2, 0.3] },
+        { crop: 1.5, box: [0, 0, 1, 1] },
+        { crop: 2, box: [-0.2, 0.1, 0.5, 1.4] },
+      ],
+    });
+    expect(parsed.box_in_crop).toEqual([
+      { crop: 1, box: [0.4, 0.1, 0.7, 0.9] },
+      { crop: 2, box: [0, 0.1, 0.5, 1] },
+    ]);
+  });
+
+  it("is optional for stored and follow-up readings", () => {
+    expect(Identification.parse(base).box_in_crop).toBeUndefined();
   });
 });

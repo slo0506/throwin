@@ -1,23 +1,24 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { fenceUntrusted } from "@throwin/shared";
 import type { z } from "zod";
-import type { PreparedImage } from "./images.js";
+import { type PreparedImage, prepare, withGrid } from "./images.js";
 import {
+  DETECT_GRID_NOTE,
   DETECT_SYSTEM,
+  GROUP_SYSTEM,
   IDENTIFY_SYSTEM,
   PRICE_SYSTEM,
   PROMPT_VERSION,
   REIDENTIFY_NOTE,
-  SAME_ITEM_SYSTEM,
   VALUE_EXTRACT_SYSTEM,
 } from "./prompts.js";
 import {
   Detection,
   detectionJsonSchema,
+  Groups,
+  groupsJsonSchema,
   Identification,
   identificationJsonSchema,
-  SameItem,
-  sameItemJsonSchema,
   ValueEstimate,
   valueJsonSchema,
 } from "./schemas.js";
@@ -92,6 +93,26 @@ export interface ModelRun {
   outcome: string;
 }
 
+/** 1 entry on the consolidation contact sheet. */
+export interface GroupCandidate {
+  crop: PreparedImage;
+  title: string;
+  /** 0-based frames the candidate was seen in. */
+  frames: number[];
+}
+
+/** Presentation options for the vision calls (env: DETECT_GRID). */
+export interface VisionOptions {
+  /** Draw a light labeled coordinate grid on detection images (never on crops). */
+  detectGrid: boolean;
+}
+
+export const DEFAULT_VISION: VisionOptions = { detectGrid: true };
+
+/** Contact sheet thumbnails: small enough that 30 candidates stay cheap on Haiku. */
+const SHEET_EDGE = 384;
+export const MAX_GROUP_CANDIDATES = 30;
+
 /** What the Appraiser needs from Claude. A fake implements it in tests. */
 export interface Vision {
   detect(frames: PreparedImage[]): Promise<Detection>;
@@ -102,12 +123,11 @@ export interface Vision {
     hero: PreparedImage,
     photos: PreparedImage[],
   ): Promise<Identification>;
-  /** True when 2 detections in 1 frame are really 1 thing to trade. */
-  sameItem(
-    context: PreparedImage,
-    a: { crop: PreparedImage; title: string },
-    b: { crop: PreparedImage; title: string },
-  ): Promise<boolean>;
+  /**
+   * 1 call per capture: which candidates are 1 thing to trade (the same physical object
+   * seen twice, or parts traded together). Returns groups of 0-based candidate indexes.
+   */
+  group(candidates: GroupCandidate[]): Promise<number[][]>;
   price(item: Identification): Promise<PriceResult>;
 }
 
@@ -124,11 +144,14 @@ export class ClaudeVision implements Vision {
     private readonly client: Anthropic,
     private readonly onRun: (run: ModelRun) => void = () => {},
     private readonly pricing: PricingConfig = DEFAULT_PRICING,
+    private readonly options: VisionOptions = DEFAULT_VISION,
   ) {}
 
   async detect(frames: PreparedImage[]): Promise<Detection> {
+    const grid = this.options.detectGrid;
+    const shown = grid ? await Promise.all(frames.map((f) => withGrid(f))) : frames;
     const content: (ImageBlock | TextBlock)[] = [];
-    frames.forEach((frame, i) => {
+    shown.forEach((frame, i) => {
       content.push({ type: "text", text: `Image ${i}:` });
       content.push(imageBlock(frame));
     });
@@ -136,7 +159,8 @@ export class ClaudeVision implements Vision {
       type: "text",
       text: `${frames.length} images. Report every distinct tradeable object.`,
     });
-    return this.#structured("appraiser.detect", MODELS.fast, DETECT_SYSTEM, content, {
+    const system = grid ? `${DETECT_SYSTEM}\n\n${DETECT_GRID_NOTE}` : DETECT_SYSTEM;
+    return this.#structured("appraiser.detect", MODELS.fast, system, content, {
       schema: detectionJsonSchema,
       parser: Detection,
       maxTokens: 4000,
@@ -149,8 +173,14 @@ export class ClaudeVision implements Vision {
     hint: string,
   ): Promise<Identification> {
     const content: (ImageBlock | TextBlock)[] = [
-      { type: "text", text: `Close-ups of the item (a detector labeled it "${hint}"):` },
-      ...crops.map(imageBlock),
+      {
+        type: "text",
+        text: `Close-ups around the item a detector labeled "${hint}". Each shows the item with plenty of its surroundings, and the detector's aim can be off, so find the item yourself.`,
+      },
+      ...crops.flatMap((crop, i): (ImageBlock | TextBlock)[] => [
+        { type: "text", text: `Close-up ${i + 1}:` },
+        imageBlock(crop),
+      ]),
       { type: "text", text: "The wider frame it came from:" },
       imageBlock(context),
     ];
@@ -181,6 +211,7 @@ export class ClaudeVision implements Vision {
       imageBlock(hero),
       { type: "text", text: "New photos from the owner:" },
       ...photos.map(imageBlock),
+      { type: "text", text: "Return box_in_crop empty for this reading." },
     ];
     return this.#structured("appraiser.reidentify", MODELS.smart, IDENTIFY_SYSTEM, content, {
       schema: identificationJsonSchema,
@@ -189,26 +220,34 @@ export class ClaudeVision implements Vision {
     });
   }
 
-  async sameItem(
-    context: PreparedImage,
-    a: { crop: PreparedImage; title: string },
-    b: { crop: PreparedImage; title: string },
-  ): Promise<boolean> {
-    const result = await this.#structured(
-      "appraiser.same_item",
-      MODELS.fast,
-      SAME_ITEM_SYSTEM,
-      [
-        { type: "text", text: "The photo:" },
-        imageBlock(context),
-        { type: "text", text: `A (read as "${a.title}"):` },
-        imageBlock(a.crop),
-        { type: "text", text: `B (read as "${b.title}"):` },
-        imageBlock(b.crop),
+  async group(candidates: GroupCandidate[]): Promise<number[][]> {
+    const shown = candidates.slice(0, MAX_GROUP_CANDIDATES);
+    if (shown.length < 2) return [];
+    const thumbs = await Promise.all(shown.map((c) => prepare(c.crop.jpeg, SHEET_EDGE)));
+    const content: (ImageBlock | TextBlock)[] = shown.flatMap(
+      (c, i): (ImageBlock | TextBlock)[] => [
+        {
+          type: "text",
+          text: `Candidate ${i + 1}: "${c.title}", seen in frames ${c.frames.join(", ")}`,
+        },
+        imageBlock(thumbs[i] as PreparedImage),
       ],
-      { schema: sameItemJsonSchema, parser: SameItem, maxTokens: 300 },
     );
-    return result.same;
+    content.push({
+      type: "text",
+      text: `${shown.length} candidates from 1 capture. Which are 1 thing to trade?`,
+    });
+    const result = await this.#structured("appraiser.group", MODELS.fast, GROUP_SYSTEM, content, {
+      schema: groupsJsonSchema,
+      parser: Groups,
+      maxTokens: 1000,
+    });
+    // Back to 0-based indexes, ignoring numbers that name no candidate.
+    return result.groups
+      .map((g) =>
+        [...new Set(g.members)].filter((m) => m >= 1 && m <= shown.length).map((m) => m - 1),
+      )
+      .filter((g) => g.length >= 2);
   }
 
   /**

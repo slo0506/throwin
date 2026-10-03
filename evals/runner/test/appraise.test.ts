@@ -101,8 +101,8 @@ class FakeVision implements Vision {
     return previous;
   }
 
-  async sameItem() {
-    return false;
+  async group() {
+    return [];
   }
 
   async price(item: Identification): Promise<PriceResult> {
@@ -204,6 +204,11 @@ describe("runCapture", () => {
         identification: inserted,
         cropPath: "x.jpg",
         crop: { jpeg: Buffer.alloc(0), width: 1, height: 1 },
+        cropBox: {
+          frame: 0,
+          box: [0, 0, 1, 1] as [number, number, number, number],
+          source: "detector" as const,
+        },
       },
       appraising: false,
       insertedAt: 0,

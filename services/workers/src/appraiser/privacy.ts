@@ -22,6 +22,10 @@ const PRIVATE_TERMS = [
   /\bsyringes?\b/,
   /\bglucose\b/,
   /\bhearing aids?\b/,
+  /\bcrutch(es)?\b/,
+  // Not bare "cane" or "walker": candy canes and Walker-branded things are tradeable.
+  /\b(walking|mobility|quad) (cane|stick|aid)s?\b/,
+  /\b(rollator|mobility walker|walking frame)s?\b/,
   /\bretainers?\b/,
   /\bmouth ?guards?\b/,
   /\bnight ?guards?\b/,

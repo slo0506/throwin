@@ -1,0 +1,22 @@
+{
+  "id": "appraisal-crop-shows-headphones-not-lamp-base",
+  "suite": "appraisal",
+  "description": "Over-ear headphones lie on a nightstand just below a table lamp's wire base, and the detector's box sits about 20% of the frame too high. The Item's photo must be cut from the refined box and show the headphones, not the lamp base",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-photo",
+        "describe": "Dim nightstand: a table lamp with a gold geometric wire base, and space gray AirPods Max lying on a black box directly below the base. Detector box for the headphones shifted up onto the lamp base."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "titles_include": ["AirPods Max"],
+    "crop_box_source": "refined",
+    "crop_shows": "the headphones, centered, with both ear cups",
+    "crop_not_shows": "mostly the lamp base"
+  },
+  "twin": "appraisal-crop-shows-whole-water-bottle"
+}

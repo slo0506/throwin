@@ -1,8 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "../log.js";
-import type { ModelRun, PriceResult, Vision } from "./claude.js";
+import { MAX_GROUP_CANDIDATES, type ModelRun, type PriceResult, type Vision } from "./claude.js";
 import type { Embedder } from "./embeddings.js";
-import { boxArea, crop, isBetterHero, type PreparedImage, prepare } from "./images.js";
+import {
+  type Box,
+  boxArea,
+  contextRegion,
+  crop,
+  cropRegion,
+  fromRegion,
+  isBetterHero,
+  isDegenerate,
+  type PreparedImage,
+  prepare,
+  SOURCE_EDGE,
+  sharpness,
+} from "./images.js";
 import { CachedPricer, type PriceCacheStore, productKey } from "./price-cache.js";
 import { looksPrivate } from "./privacy.js";
 import type { DetectedObject, Identification, ValueEstimate } from "./schemas.js";
@@ -37,6 +50,8 @@ export interface NewItem {
   identification: Identification;
   cropPath: string;
   crop: PreparedImage;
+  /** Where the crop was cut: frame (media position), box in that frame, and its source. */
+  cropBox: Located;
 }
 
 /** What pricing produced for an Item. A null value means pricing failed; the Item stays. */
@@ -175,8 +190,6 @@ export function bestAppearances(object: DetectedObject, media: CaptureMedia[], c
     .slice(0, count);
 }
 
-type Box = [number, number, number, number];
-
 /** Share of the smaller box covered by the larger one (1 means fully inside). */
 export function containment(a: Box, b: Box) {
   const inter = boxArea([
@@ -227,11 +240,61 @@ export function mergeNested(objects: DetectedObject[]): DetectedObject[] {
   return kept;
 }
 
+/** Where an Item sits in 1 frame. Refined boxes come from identification's second pass. */
+export interface Located {
+  frame: number;
+  box: Box;
+  source: "refined" | "detector";
+}
+
+/** A context close-up sent to identification, and the frame region it was cut from. */
+interface CloseUp {
+  frame: number;
+  region: Box;
+  detectorBox: Box;
+  image: PreparedImage;
+}
+
 interface Candidate {
   index: number;
   object: DetectedObject;
-  crops: PreparedImage[];
+  closeUps: CloseUp[];
   identification: Identification;
+  located: Located[];
+  /** Tight crop for the contact sheet and the hero image. */
+  hero: { located: Located; image: PreparedImage };
+}
+
+/** Smallest refined box, as a share of the frame, still worth trusting. */
+const MIN_FRAME_AREA = 0.0005;
+
+/**
+ * Maps identification's tight boxes (normalized to each close-up) back to the frame. A
+ * close-up with no box, or a degenerate one, falls back to the detector's box for it.
+ */
+export function localize(
+  closeUps: Pick<CloseUp, "frame" | "region" | "detectorBox">[],
+  identification: Identification,
+): Located[] {
+  return closeUps.map((c, i) => {
+    const found = identification.box_in_crop?.find((b) => b.crop === i + 1);
+    if (found && !isDegenerate(found.box)) {
+      const box = fromRegion(found.box, c.region);
+      if (boxArea(box) >= MIN_FRAME_AREA) return { frame: c.frame, box, source: "refined" };
+    }
+    return { frame: c.frame, box: c.detectorBox, source: "detector" };
+  });
+}
+
+/**
+ * The hero frame: the largest refined box times that frame's sharpness. Detector boxes are
+ * coarse and usually larger, so they only compete when nothing was refined.
+ */
+export function pickHero(located: Located[], sharpness: (frame: number) => number): Located {
+  const refined = located.filter((l) => l.source === "refined");
+  const pool = refined.length > 0 ? refined : located;
+  const score = (l: Located) => boxArea(l.box) * (1 + Math.max(0, sharpness(l.frame)));
+  return pool.reduce((best, l) => (score(l) > score(best) ? l : best));
 }
 
 const words = (title: string) =>
@@ -250,75 +313,95 @@ export function titleOverlap(a: string, b: string) {
   return union > 0 ? shared / union : 0;
 }
 
-/** Cheap filter before asking the model: same model number, or similar titles. */
-export function looksAlike(a: Identification, b: Identification) {
-  const norm = (v: string | null) => v?.trim().toLowerCase() || null;
-  const modelA = norm(a.model);
-  if (modelA && modelA === norm(b.model)) return true;
-  const brandA = norm(a.brand);
-  const sameBrand = brandA !== null && brandA === norm(b.brand);
-  return titleOverlap(a.title, b.title) >= (sameBrand ? 0.4 : 0.6);
-}
-
-const MAX_SAME_ITEM_CHECKS = 8;
-
 /**
- * Groups candidates the model says are 1 thing to trade and keeps the most confident
- * reading of each group. Only look-alikes seen in the same frame are checked, so 2 copies
- * on different shelves never cost a call. A failed check keeps both (never lose an Item).
+ * 1 Haiku call for the whole capture: a numbered contact sheet of every candidate's tight
+ * crop, title and frames, answered with groups that are 1 thing to trade (the same object
+ * seen twice under different titles, or the parts of 1 thing). Keeps the most confident
+ * reading per group with every member's appearances. On any error, keeps everything.
  */
-async function consolidate(
-  candidates: Candidate[],
-  frames: PreparedImage[],
-  vision: Vision,
-  logger: Logger,
-): Promise<Candidate[]> {
-  const parent = candidates.map((_, i) => i);
-  const root = (i: number): number => (parent[i] === i ? i : root(parent[i] as number));
-  let checks = 0;
-
-  for (let i = 0; i < candidates.length; i++) {
-    for (let j = i + 1; j < candidates.length; j++) {
-      const [a, b] = [candidates[i] as Candidate, candidates[j] as Candidate];
-      if (root(i) === root(j) || !looksAlike(a.identification, b.identification)) continue;
-      const shared = a.object.appearances.find((pa) =>
-        b.object.appearances.some((pb) => pb.frame === pa.frame),
-      );
-      if (!shared || checks >= MAX_SAME_ITEM_CHECKS) continue;
-      checks++;
-      try {
-        const same = await vision.sameItem(
-          frames[shared.frame] as PreparedImage,
-          { crop: a.crops[0] as PreparedImage, title: a.identification.title },
-          { crop: b.crops[0] as PreparedImage, title: b.identification.title },
-        );
-        if (same) parent[root(j)] = root(i);
-      } catch (err) {
-        logger.warn("appraiser_same_item_failed", { error: String(err) });
-      }
-    }
+export async function consolidate<
+  C extends {
+    index: number;
+    object: DetectedObject;
+    identification: Identification;
+    located: Located[];
+    hero: { image: PreparedImage };
+  },
+>(candidates: C[], vision: Vision, logger: Logger): Promise<C[]> {
+  if (candidates.length < 2) return candidates;
+  const considered = candidates.slice(0, MAX_GROUP_CANDIDATES);
+  let groups: number[][] = [];
+  try {
+    groups = await vision.group(
+      considered.map((c) => ({
+        crop: c.hero.image,
+        title: c.identification.title,
+        frames: [...new Set(c.object.appearances.map((a) => a.frame))].sort((a, b) => a - b),
+      })),
+    );
+  } catch (err) {
+    logger.warn("appraiser_group_failed", { error: String(err) });
+    return candidates;
   }
 
-  const best = new Map<number, Candidate>();
+  const parent = candidates.map((_, i) => i);
+  const root = (i: number): number => (parent[i] === i ? i : root(parent[i] as number));
+  for (const g of groups) {
+    const valid = g.filter((m) => m >= 0 && m < considered.length);
+    for (const m of valid.slice(1)) parent[root(m)] = root(valid[0] as number);
+  }
+
+  const members = new Map<number, C[]>();
   candidates.forEach((c, i) => {
     const r = root(i);
-    const current = best.get(r);
-    if (
-      !current ||
-      c.identification.identity_confidence > current.identification.identity_confidence
-    ) {
-      best.set(r, c);
-    }
+    members.set(r, [...(members.get(r) ?? []), c]);
   });
-  const kept = [...best.values()].sort((a, b) => a.index - b.index);
+  const confidence = (c: C) =>
+    c.identification.identity_confidence + c.identification.condition_confidence / 100;
+  const kept = [...members.values()].map((group) => {
+    const best = group.reduce((a, b) => (confidence(b) > confidence(a) ? b : a));
+    if (group.length === 1) return best;
+    const appearances = group.flatMap((c) => c.object.appearances);
+    return {
+      ...best,
+      object: { ...best.object, appearances },
+      located: group.flatMap((c) => c.located),
+    };
+  });
+  kept.sort((a, b) => a.index - b.index);
   if (kept.length < candidates.length) {
     logger.info("appraiser_consolidated", {
       before: candidates.length,
       after: kept.length,
-      checks,
+      groups: groups.length,
     });
   }
   return kept;
+}
+
+/**
+ * Each frame's sharpness: the device's score when every frame has one (the iOS app and the
+ * eval runner both send it), otherwise our own, so 1 capture never mixes 2 scales.
+ */
+async function sharpnessOf(media: CaptureMedia[], sources: PreparedImage[]) {
+  const scores = media.every((m) => m.sharpness !== null)
+    ? media.map((m) => m.sharpness as number)
+    : await Promise.all(sources.map((s) => sharpness(s)));
+  return (frame: number) => scores[frame] ?? 0;
+}
+
+/** Cuts the hero image from the full-resolution frame at the chosen box. */
+async function heroCrop(
+  located: Located[],
+  sources: PreparedImage[],
+  sharpnessAt: (frame: number) => number,
+  current?: { located: Located; image: PreparedImage },
+) {
+  const pick = pickHero(located, sharpnessAt);
+  if (current && current.located.frame === pick.frame && current.located.box === pick.box) {
+    return current;
+  }
+  return { located: pick, image: await crop(sources[pick.frame] as PreparedImage, pick.box) };
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -342,7 +425,12 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
   await store.clearCaptureItems(captureId);
 
   await store.setProgress(captureId, { stage: "detecting", detail: "Looking at your photos" });
-  const frames = await Promise.all(media.map(async (m) => prepare(await store.download(m.path))));
+  // Full resolution for cutting crops; Claude sees frames at MAX_EDGE.
+  const sources = await Promise.all(
+    media.map(async (m) => prepare(await store.download(m.path), SOURCE_EDGE)),
+  );
+  const frames = await Promise.all(sources.map((s) => prepare(s.jpeg)));
+  const frameSharpness = sharpnessOf(media, sources);
 
   const detection = await vision.detect(frames);
   const merged = mergeNested(detection.objects);
@@ -374,46 +462,63 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
     found: objects.length,
   });
 
-  // 1. Identify and grade every object.
+  // 1. Identify and grade every object from wide context close-ups, and localize it: the
+  //    model returns a tight box per close-up, which replaces the detector's coarse box.
   const identified = await mapLimit(
     objects,
     config.parallelIdentify,
     async ({ object, best }, index) => {
       try {
-        const crops = await Promise.all(
-          best.map((a) => crop(frames[a.frame] as PreparedImage, a.box)),
+        const closeUps: CloseUp[] = await Promise.all(
+          best.map(async (a) => {
+            const region = contextRegion(a.box);
+            const image = await cropRegion(sources[a.frame] as PreparedImage, region);
+            return { frame: a.frame, region, detectorBox: a.box, image };
+          }),
         );
         const identification = await vision.identify(
-          crops,
+          closeUps.map((c) => c.image),
           frames[best[0]?.frame ?? 0] as PreparedImage,
           object.label,
         );
         if (!identification.is_tradeable_item) return null;
         if (looksPrivate(identification.title, identification.category)) return null;
-        return { index, object, crops, identification } satisfies Candidate;
+        const located = localize(closeUps, identification);
+        const hero = await heroCrop(located, sources, await frameSharpness);
+        return { index, object, closeUps, identification, located, hero } satisfies Candidate;
       } catch (err) {
         logger.error("appraiser_item_failed", { capture_id: captureId, index, error: String(err) });
         return null;
       }
     },
   );
+  const candidates = identified.filter((c): c is Candidate => c !== null);
+  logger.info("appraiser_localized", {
+    capture_id: captureId,
+    close_ups: candidates.reduce((n, c) => n + c.located.length, 0),
+    refined: candidates.reduce(
+      (n, c) => n + c.located.filter((l) => l.source === "refined").length,
+      0,
+    ),
+  });
 
-  // 2. Fold double counts: look-alikes in the same frame that are really 1 thing to trade.
-  const kept = await consolidate(
-    identified.filter((c): c is Candidate => c !== null),
-    frames,
-    vision,
-    logger,
-  );
+  // 2. Fold double counts across the whole capture in 1 call: the same object seen in
+  //    several frames under different titles, or the parts of 1 thing.
+  const kept = await consolidate(candidates, vision, logger);
 
   // 3. Save every Item now, unpriced, so the user sees them while pricing runs.
   const saved = (
-    await mapLimit(kept, 4, async ({ index, crops, identification: raw }) => {
+    await mapLimit(kept, 4, async (candidate) => {
+      const { index, identification: raw } = candidate;
       try {
         const { status, identification } = settle(raw);
-        const mainCrop = crops[0] as PreparedImage;
+        // A merged group may have a better view of the item than its winner's own.
+        const hero =
+          candidate.located.length > 0
+            ? await heroCrop(candidate.located, sources, await frameSharpness, candidate.hero)
+            : candidate.hero;
         const cropPath = `${userId}/${captureId}/crops/${index}.jpg`;
-        await store.upload(cropPath, mainCrop.jpeg);
+        await store.upload(cropPath, hero.image.jpeg);
         const itemId = await store.insertItem({
           userId,
           captureId,
@@ -421,9 +526,14 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
           title: identification.title,
           identification,
           cropPath,
-          crop: mainCrop,
+          crop: hero.image,
+          cropBox: {
+            frame: media[hero.located.frame]?.position ?? hero.located.frame,
+            box: hero.located.box,
+            source: hero.located.source,
+          },
         });
-        return { itemId, identification, mainCrop };
+        return { itemId, identification, mainCrop: hero.image };
       } catch (err) {
         logger.error("appraiser_item_failed", { capture_id: captureId, index, error: String(err) });
         return null;
