@@ -6,8 +6,10 @@ import {
   type AppraiserStore,
   appraiseCapture,
   bestAppearances,
+  looksAlike,
   type NewItem,
   type Progress,
+  titleOverlap,
 } from "../src/appraiser/pipeline.js";
 import type { Detection, Identification } from "../src/appraiser/schemas.js";
 import { silentLogger } from "../src/log.js";
@@ -85,10 +87,16 @@ const identification = (overrides: Partial<Identification> = {}): Identification
 function fakeVision(
   detection: Detection,
   idents: Identification[],
-): Vision & { identifyCalls: number } {
+  same = false,
+): Vision & { identifyCalls: number; sameCalls: number } {
   let i = 0;
   return {
     identifyCalls: 0,
+    sameCalls: 0,
+    async sameItem() {
+      this.sameCalls++;
+      return same;
+    },
     async detect() {
       return detection;
     },
@@ -215,6 +223,85 @@ describe("appraiseCapture", () => {
     });
     expect(saved).toBe(0);
     expect(store.finished?.progress.detail).toContain("Try closer");
+  });
+});
+
+describe("consolidation", () => {
+  const twoInOneFrame: Detection = {
+    objects: [
+      {
+        label: "LEGO parts",
+        category: "toys/lego",
+        appearances: [{ frame: 0, box: [0, 0.2, 0.45, 0.8] }],
+      },
+      {
+        label: "LEGO sheet",
+        category: "toys/lego",
+        appearances: [{ frame: 0, box: [0.5, 0.2, 0.95, 0.8] }],
+      },
+    ],
+  };
+  const lookAlikes = [
+    identification({
+      title: "LEGO Classic Space Moon Rover Polybag (1980s)",
+      model: null,
+      identity_confidence: 0.5,
+    }),
+    identification({
+      title: "Vintage LEGO Classic Space Moon Rover Polybag",
+      model: null,
+      identity_confidence: 0.6,
+    }),
+  ];
+
+  it("folds look-alikes the model calls 1 thing and keeps the more confident reading", async () => {
+    const store = await setup();
+    const vision = fakeVision(twoInOneFrame, lookAlikes, true);
+    expect(await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger })).toBe(
+      1,
+    );
+    expect(vision.sameCalls).toBe(1);
+    expect(store.items[0]?.title).toBe("Vintage LEGO Classic Space Moon Rover Polybag");
+  });
+
+  it("keeps both when the model says they are separate", async () => {
+    const store = await setup();
+    const vision = fakeVision(twoInOneFrame, lookAlikes, false);
+    expect(await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger })).toBe(
+      2,
+    );
+  });
+
+  it("does not spend a check on things that look different", async () => {
+    const store = await setup();
+    const vision = fakeVision(
+      twoInOneFrame,
+      [
+        identification({ title: "Mario Kart 8", brand: "Nintendo", model: null }),
+        identification({ title: "Air Jordan 4", brand: "Nike", model: null }),
+      ],
+      true,
+    );
+    expect(await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger })).toBe(
+      2,
+    );
+    expect(vision.sameCalls).toBe(0);
+  });
+
+  it("matches on model number or similar titles", () => {
+    expect(
+      looksAlike(
+        identification({ title: "a", model: "6823" }),
+        identification({ title: "b", model: "6823 " }),
+      ),
+    ).toBe(true);
+    expect(titleOverlap("LEGO Moon Rover", "lego moon rover set")).toBeCloseTo(0.75);
+    expect(
+      looksAlike(
+        identification({ title: "Zelda", model: null }),
+        identification({ title: "Mario", model: null }),
+      ),
+    ).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
 // Appraiser prompts. Versioned with the code; every change ships with eval cases in
 // evals/cases/appraisal (see agents/appraiser/README.md).
 
-export const PROMPT_VERSION = "appraiser-2026-10-03c";
+export const PROMPT_VERSION = "appraiser-2026-10-03d";
 
 export const DETECT_SYSTEM = `You find tradeable possessions in photos or video frames for a trading app.
 
@@ -21,7 +21,7 @@ Rules:
 - condition_grade: A new or like new (tags, sealed, no wear); B lightly used (wear only up close); C used (clear wear, works); D heavily used or flawed (damage, missing parts, stains). List each visible defect.
 - identity_confidence: 0.9 or more when you can name the exact product and see what proves it (a set number, a colorway, a model label). 0.7 to 0.9 when you know the product but a detail you can't see would change its value little. Below 0.7 when a detail you can't see would change its value a lot (which of several sets, which size, which edition).
 - condition_confidence: 0.8 or more when the photos show the sides that matter for this kind of item clearly. 0.7 to 0.8 when a less important side is hidden. Below 0.7 only when a side that drives value is hidden or blurry (sneaker soles, a screen, a card's surface).
-- Below 0.7 on either means the user will be asked for 1 more photo, so set follow_up to the single photo that would settle it, phrased as a request: "Photo of the size tag", "Photo of the soles", "Photo inside the box".
+- Below 0.7 on either means the user will be asked for 1 more photo, so set follow_up to the single photo that would settle it, under 60 characters, phrased as a request: "Photo of the size tag", "Photo of the soles", "Photo inside the box".
 - Set is_tradeable_item false for anything that is not a possession people trade.`;
 
 export const PRICE_SYSTEM = `You estimate what a used item trades for between individuals in the US today.
@@ -31,3 +31,9 @@ Search for recent sold prices first (eBay sold listings, Mercari, StockX for sne
 Finish with a short summary: the comparables you used (source, price, condition, date) and the range you'd give: low, typical, high in USD. A range, never a single number. If you can't find comparables, say so and give a wide range from what similar items go for.`;
 
 export const VALUE_EXTRACT_SYSTEM = `Extract the value range from the research notes. Use the notes' numbers; do not invent new ones. If the notes found no real comparables, set confidence below 0.4.`;
+
+export const SAME_ITEM_SYSTEM = `You check a trading app's photo reading for double counting.
+
+You get 1 photo and 2 close-ups, A and B, that a detector found in it. Decide whether A and B are 1 thing someone would trade: the same physical object seen twice, or parts of 1 thing traded together (a LEGO set and its instructions, minifigures or loose pieces; the 2 shoes of a pair; a console and its attached controllers; a game and its case).
+
+Say false when they are separate things, including 2 copies of the same product. When unsure, say false.`;

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { Box, ValueEstimate } from "../src/appraiser/schemas.js";
+import {
+  Box,
+  detectionJsonSchema,
+  Identification,
+  identificationJsonSchema,
+  sameItemJsonSchema,
+  ValueEstimate,
+  valueJsonSchema,
+} from "../src/appraiser/schemas.js";
 
 describe("schemas", () => {
   it("normalizes and clamps boxes", () => {
@@ -17,13 +25,6 @@ describe("schemas", () => {
     expect([v.low_usd, v.mid_usd, v.high_usd]).toEqual([70, 90, 100]);
   });
 });
-
-import {
-  detectionJsonSchema,
-  Identification,
-  identificationJsonSchema,
-  valueJsonSchema,
-} from "../src/appraiser/schemas.js";
 
 /** Structured outputs reject or ignore these, and force additionalProperties: false. */
 function walk(node: unknown, path: string, problems: string[]) {
@@ -48,6 +49,7 @@ describe("structured output schemas", () => {
     ["detection", detectionJsonSchema],
     ["identification", identificationJsonSchema],
     ["value", valueJsonSchema],
+    ["same_item", sameItemJsonSchema],
   ])("%s schema avoids unsupported keywords and free-form objects", (_, schema) => {
     const problems: string[] = [];
     walk(schema, "$", problems);
@@ -72,5 +74,39 @@ describe("structured output schemas", () => {
     });
     expect(parsed.attributes).toEqual({ size: "10" });
     expect(parsed.age_estimate_years).toBeNull();
+  });
+});
+
+describe("Identification text", () => {
+  const base = {
+    is_tradeable_item: true,
+    title: "Air Jordan 4",
+    category: "sneakers",
+    brand: "Nike",
+    model: null,
+    variant: null,
+    attributes: [],
+    condition_grade: "B",
+    defects: [],
+    age_estimate_years: null,
+    identity_confidence: 0.6,
+    condition_confidence: 0.6,
+    follow_up: null,
+  };
+
+  it("trims overlong text instead of rejecting the Item", () => {
+    const parsed = Identification.parse({ ...base, variant: "x".repeat(81) });
+    expect(parsed.variant).toHaveLength(80);
+    expect(parsed.variant?.endsWith("\u2026")).toBe(true);
+  });
+
+  it("drops a leaked JSON tail and empty strings", () => {
+    const parsed = Identification.parse({
+      ...base,
+      follow_up: 'Photo of the size tag."}',
+      model: "  ",
+    });
+    expect(parsed.follow_up).toBe("Photo of the size tag.");
+    expect(parsed.model).toBeNull();
   });
 });

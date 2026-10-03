@@ -6,6 +6,7 @@ import {
   IDENTIFY_SYSTEM,
   PRICE_SYSTEM,
   PROMPT_VERSION,
+  SAME_ITEM_SYSTEM,
   VALUE_EXTRACT_SYSTEM,
 } from "./prompts.js";
 import {
@@ -13,6 +14,8 @@ import {
   detectionJsonSchema,
   Identification,
   identificationJsonSchema,
+  SameItem,
+  sameItemJsonSchema,
   ValueEstimate,
   valueJsonSchema,
 } from "./schemas.js";
@@ -47,6 +50,12 @@ export interface ModelRun {
 export interface Vision {
   detect(frames: PreparedImage[]): Promise<Detection>;
   identify(crops: PreparedImage[], context: PreparedImage, hint: string): Promise<Identification>;
+  /** True when 2 detections in 1 frame are really 1 thing to trade. */
+  sameItem(
+    context: PreparedImage,
+    a: { crop: PreparedImage; title: string },
+    b: { crop: PreparedImage; title: string },
+  ): Promise<boolean>;
   price(item: Identification): Promise<{ value: ValueEstimate | null; research: string }>;
 }
 
@@ -97,6 +106,28 @@ export class ClaudeVision implements Vision {
       parser: Identification,
       maxTokens: 2000,
     });
+  }
+
+  async sameItem(
+    context: PreparedImage,
+    a: { crop: PreparedImage; title: string },
+    b: { crop: PreparedImage; title: string },
+  ): Promise<boolean> {
+    const result = await this.#structured(
+      "appraiser.same_item",
+      MODELS.fast,
+      SAME_ITEM_SYSTEM,
+      [
+        { type: "text", text: "The photo:" },
+        imageBlock(context),
+        { type: "text", text: `A (read as "${a.title}"):` },
+        imageBlock(a.crop),
+        { type: "text", text: `B (read as "${b.title}"):` },
+        imageBlock(b.crop),
+      ],
+      { schema: sameItemJsonSchema, parser: SameItem, maxTokens: 300 },
+    );
+    return result.same;
   }
 
   async price(item: Identification): Promise<{ value: ValueEstimate | null; research: string }> {
