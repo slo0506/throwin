@@ -9,7 +9,8 @@
     "test": "vitest run",
     "eval:appraisal": "tsx --conditions=@throwin/source src/cli.ts appraisal",
     "eval:label": "tsx --conditions=@throwin/source src/cli.ts label",
-    "eval:gm": "tsx --conditions=@throwin/source src/cli.ts gm"
+    "eval:gm": "tsx --conditions=@throwin/source src/cli.ts gm",
+    "eval:review": "tsx --conditions=@throwin/source src/cli.ts review"
   },
   "dependencies": {
     "@throwin/harness": "workspace:*",

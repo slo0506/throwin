@@ -164,14 +164,23 @@ begin
   if public.expire_deals() <> 0 then raise exception 'expired twice'; end if;
 end $$;
 
--- 6. A Deal whose Items are all showcase skips straight to approval.
+-- 6. A Deal whose Items are all showcase skips straight to approval, and each person's why
+--    from the review is stored on their own participant row.
 do $$
 declare
-  r jsonb := public.stage_deal(pg_temp.deal());
+  r jsonb := public.stage_deal(pg_temp.deal() || jsonb_build_object('whys', jsonb_build_object(
+    '00000000-0000-4000-8000-000000000001', '  You said you wanted a space set.  ',
+    '00000000-0000-4000-8000-000000000002', '')));
+  deal uuid := (r->>'deal_id')::uuid;
 begin
   if r->>'result' <> 'ok' then raise exception 'restage failed: %', r; end if;
-  if (select status from public.deals where id = (r->>'deal_id')::uuid) <> 'pending_approvals' then
+  if (select status from public.deals where id = deal) <> 'pending_approvals' then
     raise exception 'showcase Items should skip staging';
+  end if;
+  if (select why from public.deal_participants where deal_id = deal and user_id = '00000000-0000-4000-8000-000000000001')
+       <> 'You said you wanted a space set.'
+     or (select why from public.deal_participants where deal_id = deal and user_id = '00000000-0000-4000-8000-000000000002') is not null then
+    raise exception 'whys not stored per participant';
   end if;
 end $$;
 

@@ -25,6 +25,24 @@ The Refiner cases in `refiner/` (suite `refinement`) use this shape too: `state.
 
 The memory extractor cases in `memory/` (suite `memory`) use this shape too. `state.facts` are the user's taste facts in any status (a `deleted` fact must never be written again), `state.mode` is `intake` or `chat`, `state.other_names` are first names of people in the user's Circles, and `conversation` plus `message` make up the turn. When a case needs tool calls in the turn, `state.turn_messages` holds the stored messages with API-native content blocks instead, and `message` is empty. `expect` names what may be written (`creates`, `allowed_creates`, `max_writes`), what must never be (`creates_none_matching`, `creates_none_matching_fact`), the validator rejections, and text the model input or user-visible events must not contain. Unit tests in `services/workers/test/memory.test.ts` run the same scenarios with a fake model in CI.
 
+## Deal explanation cases (`deal_explanation/`)
+
+The Prospector's review of 1 matched Deal, graded by `evals/runner/src/review.ts` through the same `reviewDeal` the worker runs, so the code guards apply. `state.participants` lists each person in Loop order, and they become refs p1, p2, and so on. Each has `first_name`, `gives` and `gets` (`title`, `category`, `condition_grade`, `value_low_cents`, `value_high_cents`), optional `pays_cents` and `receives_cents`, and `facts` (`key`, `value`, `category`).
+
+| `expect` check | Passes when |
+| --- | --- |
+| `verdict` | `keep` or `drop` matches |
+| `dropped_by` | The drop came from `never_trade` (code) or `model` |
+| `every_why` | Every participant got a why that survived the code checks |
+| `why_includes_any` | That ref's why mentions at least 1 phrase (case-insensitive) |
+| `why_excludes` | That ref's why mentions none of the phrases |
+
+Unit tests in `evals/runner/test/review.test.ts` and `services/workers/test/review.test.ts` check the grading and the guards with a fake model in CI. Run the cases with the real model (never in CI):
+
+```sh
+pnpm --filter @throwin/evals-runner eval:review --trials 3
+```
+
 ## GM cases (grounding, intake, ask_resolution, safety)
 
 GM cases are snapshot cases graded by `evals/runner/src/gm.ts`. The runner seeds an in-memory database from `state`, stores `conversation` as earlier turns, sends `message` through the real harness (`@throwin/harness`) and grades the final state, the tool calls and the rendered cards.

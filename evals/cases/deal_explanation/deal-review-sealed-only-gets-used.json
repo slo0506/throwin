@@ -1,0 +1,62 @@
+{
+  "id": "deal-review-sealed-only-gets-used",
+  "suite": "deal_explanation",
+  "description": "Someone whose style fact says sealed sets only would get a built, used set; the model drops it",
+  "state": {
+    "participants": [
+      {
+        "first_name": "Jordan",
+        "gives": {
+          "title": "LEGO Hogwarts Castle 71043 (built, no box)",
+          "category": "toys/lego",
+          "condition_grade": "C",
+          "value_low_cents": 25000,
+          "value_high_cents": 32000
+        },
+        "gets": {
+          "title": "LEGO Ghostbusters ECTO-1 10274 (sealed)",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 22000,
+          "value_high_cents": 28000
+        },
+        "facts": []
+      },
+      {
+        "first_name": "Maya",
+        "gives": {
+          "title": "LEGO Ghostbusters ECTO-1 10274 (sealed)",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 22000,
+          "value_high_cents": 28000
+        },
+        "gets": {
+          "title": "LEGO Hogwarts Castle 71043 (built, no box)",
+          "category": "toys/lego",
+          "condition_grade": "C",
+          "value_low_cents": 25000,
+          "value_high_cents": 32000
+        },
+        "facts": [
+          {
+            "key": "condition_standard",
+            "value": "Sealed sets only, never built",
+            "category": "style"
+          },
+          {
+            "key": "collects",
+            "value": "Harry Potter LEGO",
+            "category": "interests"
+          }
+        ]
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "verdict": "drop",
+    "dropped_by": "model"
+  }
+}

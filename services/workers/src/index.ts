@@ -11,6 +11,7 @@ import { ClaudeMemoryModel } from "./memory/model.js";
 import { SupabaseMemoryStore } from "./memory/store.js";
 import { HttpMatcher } from "./prospector/matcher.js";
 import { type ProspectorDeps, prospectAsk } from "./prospector/prospect.js";
+import { ClaudeReviewModel } from "./prospector/review.js";
 import { SupabaseProspectorStore } from "./prospector/store.js";
 import { ClaudeRefinerModels } from "./refiner/models.js";
 import {
@@ -53,7 +54,7 @@ const refiner: RefinerConfig = {
 };
 
 const prospectorStore = new SupabaseProspectorStore(db);
-const prospector: ProspectorDeps | null = env.MATCHER_URL
+const prospector: Omit<ProspectorDeps, "review"> | null = env.MATCHER_URL
   ? {
       store: prospectorStore,
       embedder,
@@ -128,7 +129,12 @@ async function runJob(job: Job) {
   const started = Date.now();
   try {
     if (job.kind === "prospect_ask" && prospector) {
-      const outcome = await prospectAsk(String(job.payload.ask_id ?? ""), userId, prospector);
+      // The review's model runs are attributed to the asker whose job this is.
+      const review = new ClaudeReviewModel(anthropic, recorder(userId, "prospect", runs));
+      const outcome = await prospectAsk(String(job.payload.ask_id ?? ""), userId, {
+        ...prospector,
+        review,
+      });
       await queue.finish(job.id);
       logger.info("job_done", {
         job_id: job.id,
@@ -143,7 +149,10 @@ async function runJob(job: Job) {
                 d.staged.result === "ok" ? [d.staged.dealId] : [],
               ),
               refused: outcome.deals.flatMap((d) =>
-                d.staged.result === "ok" ? [] : [d.staged.result],
+                d.staged.result === "ok" || d.staged.result === "dropped" ? [] : [d.staged.result],
+              ),
+              dropped: outcome.deals.flatMap((d) =>
+                d.staged.result === "dropped" ? [d.staged.reason] : [],
               ),
             }
           : { reason: outcome.reason }),
