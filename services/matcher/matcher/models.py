@@ -16,6 +16,9 @@ class Edge(BaseModel):
     kind: Literal["explicit", "inferred"] = "explicit"
     # The wanter's Ask this edge would fill. A selection fills each Ask at most once.
     ask_id: str | None = None
+    # The giver's Ask whose offer set holds the Item. In a cycle the giver must receive
+    # through this same Ask, so they only give what they offered for it.
+    giver_ask_id: str | None = None
     # The Item's value (the middle of its range). Throw-Ins balance on these.
     value_cents: int = Field(default=0, ge=0)
     # The most cash `from_user` would add for this Ask.
@@ -82,6 +85,7 @@ class ItemLeg(BaseModel):
     item_id: str
     value_cents: int
     ask_id: str | None
+    giver_ask_id: str | None
     kind: Literal["explicit", "inferred"]
 
 

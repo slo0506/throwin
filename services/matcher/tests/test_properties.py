@@ -35,6 +35,8 @@ def random_circle(seed: int, users: int, wants_per_user: int) -> list[Edge]:
                     confidence=round(rng.uniform(0.5, 1.0), 2),
                     kind=rng.choice(["explicit", "explicit", "inferred"]),
                     ask_id=ask,
+                    # Each person has 1 Ask, and its offer set holds all their Items.
+                    giver_ask_id=f"{v}-ask",
                 )
             )
     return edges
@@ -64,6 +66,10 @@ def check_rules(req: MatchRequest, res: MatchResponse) -> None:
             if leg.ask_id is not None:
                 asks_used[(leg.receiver, leg.ask_id)] += 1
         assert set(gets) == set(gives) == set(deal.users)
+        # What each person gives comes from the offer set of the Ask the Deal fills for them.
+        filled = {leg.receiver: leg.ask_id for leg in deal.item_legs}
+        for leg in deal.item_legs:
+            assert leg.giver_ask_id == filled[leg.giver]
 
         # Cash legs add up to each person's cash in and out, and nothing else moves.
         cash_in: dict[str, int] = defaultdict(int)

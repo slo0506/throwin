@@ -37,6 +37,7 @@ def _deal(c: Candidate) -> Deal:
                 item_id=e.item_id,
                 value_cents=e.value_cents,
                 ask_id=e.ask_id,
+                giver_ask_id=e.giver_ask_id,
                 kind=e.kind,
             )
             for e in c.edges
