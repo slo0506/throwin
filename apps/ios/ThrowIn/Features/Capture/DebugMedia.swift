@@ -27,21 +27,19 @@ struct DebugMediaButton: View {
     private static let videoTypes: Set<String> = ["mp4", "mov", "m4v"]
 
     var body: some View {
-        Group {
-            if !sets.isEmpty {
-                Menu {
-                    ForEach(sets, id: \.self) { set in
-                        Button(set.lastPathComponent) {
-                            Task { await load(set) }
-                        }
-                    }
-                } label: {
-                    Label("Test media", systemImage: "hammer")
-                        .font(Typo.footnote)
-                        .foregroundStyle(Palette.inkTertiary)
+        // Always render something: SwiftUI never runs .task on a view with no content.
+        Menu {
+            ForEach(sets, id: \.self) { set in
+                Button(set.lastPathComponent) {
+                    Task { await load(set) }
                 }
             }
+        } label: {
+            Label(sets.isEmpty ? "No test media" : "Test media", systemImage: "hammer")
+                .font(Typo.footnote)
+                .foregroundStyle(Palette.inkTertiary)
         }
+        .disabled(sets.isEmpty)
         .task { sets = Self.findSets() }
     }
 
