@@ -99,32 +99,14 @@
     "verdict": "keep",
     "every_why": true,
     "why_includes_any": {
-      "p1": [
-        "space"
-      ],
-      "p2": [
-        "mario"
-      ],
-      "p3": [
-        "zelda"
-      ]
+      "p1": ["space"],
+      "p2": ["mario"],
+      "p3": ["zelda"]
     },
     "why_excludes": {
-      "p1": [
-        "hogwarts",
-        "game boy",
-        "pokemon"
-      ],
-      "p2": [
-        "pokemon",
-        "game boy",
-        "hogwarts"
-      ],
-      "p3": [
-        "pokemon",
-        "hogwarts",
-        "game boy"
-      ]
+      "p1": ["hogwarts", "game boy", "pokemon"],
+      "p2": ["pokemon", "game boy", "hogwarts"],
+      "p3": ["pokemon", "hogwarts", "game boy"]
     }
   }
 }

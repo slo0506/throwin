@@ -48,12 +48,8 @@
     "verdict": "keep",
     "every_why": true,
     "why_includes_any": {
-      "p1": [
-        "mario"
-      ],
-      "p2": [
-        "zelda"
-      ]
+      "p1": ["mario"],
+      "p2": ["zelda"]
     }
   }
 }

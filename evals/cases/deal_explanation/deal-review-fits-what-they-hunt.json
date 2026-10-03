@@ -66,21 +66,12 @@
     "verdict": "keep",
     "every_why": true,
     "why_includes_any": {
-      "p1": [
-        "mario",
-        "kids"
-      ],
-      "p2": [
-        "space"
-      ]
+      "p1": ["mario", "kids"],
+      "p2": ["space"]
     },
     "why_excludes": {
-      "p1": [
-        "classic space"
-      ],
-      "p2": [
-        "kids"
-      ]
+      "p1": ["classic space"],
+      "p2": ["kids"]
     }
   }
 }
