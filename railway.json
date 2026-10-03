@@ -3,11 +3,7 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "services/api/Dockerfile",
-    "watchPatterns": [
-      "services/api/**",
-      "packages/shared/**",
-      "pnpm-lock.yaml"
-    ]
+    "watchPatterns": ["services/api/**", "packages/shared/**", "pnpm-lock.yaml"]
   },
   "deploy": {
     "healthcheckPath": "/healthz",

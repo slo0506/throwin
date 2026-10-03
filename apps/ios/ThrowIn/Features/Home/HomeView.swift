@@ -12,6 +12,10 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: Space.xl) {
                     header
 
+                    if model.isLive {
+                        Pill(text: "Preview: Asks and deals are samples until the GM ships", symbol: "sparkles", tint: Palette.iris)
+                    }
+
                     if let deal = model.dealsWaiting.first {
                         VStack(alignment: .leading, spacing: Space.sm) {
                             SectionHeader(

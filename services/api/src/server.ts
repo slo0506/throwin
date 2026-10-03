@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createClient } from "@supabase/supabase-js";
 import { createApp } from "./app.js";
+import { SupabaseSessionIssuer } from "./auth/sessions.js";
 import { createSupabaseVerifier } from "./auth/verifier.js";
 import { loadEnv } from "./env.js";
 import { createJsonLogger } from "./lib/logger.js";
@@ -15,7 +16,14 @@ const db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
+const anonClient = () =>
+  createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
 const app = createApp({
+  sessions: new SupabaseSessionIssuer(db, anonClient),
+  devAuthCode: env.DEV_AUTH_CODE,
   repo: new SupabaseRepository(db),
   idempotency: new SupabaseIdempotencyStore(db),
   tokens: createSupabaseVerifier({

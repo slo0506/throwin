@@ -58,15 +58,47 @@ final class AppModel {
     var approvedDealIDs: Set<String> = []
 
     init() {
-        auth = DevAuthService()
-        let stored = KeychainStore.load(AuthSession.self, account: Self.sessionAccount)
+        let backend = AppConfig.backend
+        auth = Self.makeAuthService(for: backend)
+        var stored = KeychainStore.load(AuthSession.self, account: Self.sessionAccount)
+        // A demo session can't talk to the live API, and the reverse. Start over on a switch.
+        if let current = stored, (current.accessToken == nil) != (backend == .demo) {
+            KeychainStore.delete(account: Self.sessionAccount)
+            stored = nil
+        }
         session = stored
         phase = stored?.aiConsentAt == nil ? .onboarding : .main
         if case let .live(url) = backend {
-            api = APIClient(baseURL: url) { [weak self] in self?.session?.accessToken }
+            api = APIClient(baseURL: url) { [weak self] force in
+                try await self?.validAccessToken(force: force)
+            }
         }
         if phase == .main {
             loadContent()
+        }
+    }
+
+    private static func makeAuthService(for backend: BackendMode) -> any AuthService {
+        switch backend {
+        case .demo: DemoAuthService()
+        case let .live(url): DevEmailAuthService(baseURL: url, code: AppConfig.devAuthCode)
+        }
+    }
+
+    var isLive: Bool { backend != .demo }
+
+    /// Returns an access token, refreshing it first when it is about to expire.
+    func validAccessToken(force: Bool) async throws -> String? {
+        guard let current = session, current.accessToken != nil else { return nil }
+        guard force || current.needsRefresh else { return current.accessToken }
+        do {
+            let refreshed = try await auth.refresh(current)
+            session = refreshed
+            KeychainStore.save(refreshed, account: Self.sessionAccount)
+            return refreshed.accessToken
+        } catch let error as APIError where error.status == 401 {
+            signOutLocally()
+            throw error
         }
     }
 
@@ -74,9 +106,10 @@ final class AppModel {
 
     // MARK: Session
 
-    func signIn(firstName: String) async throws {
+    func signIn(firstName: String, email: String?) async throws {
         let trimmed = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let newSession = try await auth.signIn(firstName: trimmed)
+        let cleanEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let newSession = try await auth.signIn(firstName: trimmed, email: cleanEmail)
         session = newSession
         KeychainStore.save(newSession, account: Self.sessionAccount)
     }
@@ -102,6 +135,11 @@ final class AppModel {
             try await api.deleteMe()
         }
         await auth.signOut()
+        signOutLocally()
+    }
+
+    /// Clears the session and content and returns to onboarding.
+    func signOutLocally() {
         KeychainStore.delete(account: Self.sessionAccount)
         session = nil
         shelf = []

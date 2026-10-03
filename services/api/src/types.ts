@@ -1,3 +1,4 @@
+import type { SessionIssuer } from "./auth/sessions.js";
 import type { TokenVerifier } from "./auth/verifier.js";
 import type { Logger } from "./lib/logger.js";
 import type { AppAttestMode, AppAttestVerifier } from "./middleware/app-attest.js";
@@ -8,6 +9,9 @@ export interface AppDeps {
   repo: Repository;
   idempotency: IdempotencyStore;
   tokens: TokenVerifier;
+  sessions: SessionIssuer;
+  /** Enables /auth/dev-session when set. Development only. */
+  devAuthCode?: string | undefined;
   appAttest: { mode: AppAttestMode; verifier: AppAttestVerifier };
   logger: Logger;
   now?: () => Date;

@@ -4,6 +4,7 @@ import { appAttest } from "./middleware/app-attest.js";
 import { requireAuth } from "./middleware/auth.js";
 import { createErrorHandler, notFound } from "./middleware/error-handler.js";
 import { idempotency } from "./middleware/idempotency.js";
+import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { itemRoutes } from "./routes/items.js";
 import { meRoutes } from "./routes/me.js";
@@ -19,6 +20,7 @@ export function createApp(deps: AppDeps) {
   app.notFound(notFound);
 
   app.route("/", healthRoutes());
+  app.route("/auth", authRoutes(deps.sessions, deps.devAuthCode));
 
   const v1 = new Hono<AppEnv>();
   v1.use(requireAuth(deps.tokens));

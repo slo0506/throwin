@@ -10,6 +10,7 @@ import {
 } from "../src/middleware/app-attest.js";
 import { MemoryIdempotencyStore } from "../src/repo/idempotency.js";
 import { MemoryRepository } from "../src/repo/memory.js";
+import { FakeSessionIssuer } from "./fakes.js";
 
 export const JWT_SECRET = "test-secret-at-least-32-characters-long!!";
 export const ALICE = "11111111-1111-4111-8111-111111111111";
@@ -33,6 +34,7 @@ export interface Harness {
   app: ReturnType<typeof createApp>;
   repo: MemoryRepository;
   idempotency: MemoryIdempotencyStore;
+  sessions: FakeSessionIssuer;
   request: (path: string, init?: RequestInit & { as?: string }) => Promise<Response>;
 }
 
@@ -41,6 +43,7 @@ export function makeHarness(
     tokens?: TokenVerifier;
     appAttestMode?: AppAttestMode;
     appAttestVerifier?: AppAttestVerifier;
+    devAuthCode?: string;
   } = {},
 ): Harness {
   const repo = new MemoryRepository();
@@ -48,7 +51,10 @@ export function makeHarness(
   repo.addUser(ALICE, { displayName: "Alice" });
   repo.addUser(BOB, { displayName: "Bob" });
 
+  const sessions = new FakeSessionIssuer();
   const app = createApp({
+    sessions,
+    devAuthCode: options.devAuthCode,
     repo,
     idempotency,
     tokens: options.tokens ?? createSupabaseVerifier({ jwtSecret: JWT_SECRET }),
@@ -68,7 +74,7 @@ export function makeHarness(
     return app.request(path, { ...rest, headers });
   };
 
-  return { app, repo, idempotency, request };
+  return { app, repo, idempotency, sessions, request };
 }
 
 /** Reads an error response's code, failing loudly if the body is not the error shape. */
