@@ -198,6 +198,7 @@ nonisolated enum EventStreamReader {
     }
 
     private static func makeDecoder() -> JSONDecoder {
+        var annotationProbe = 1
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder
