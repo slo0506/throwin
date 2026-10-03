@@ -299,7 +299,7 @@ struct ShelfEmptyState: View {
 
             Button(action: onCapture) {
                 ZStack {
-                    PrimaryLabel(AppConfig.backend == .demo ? "Try a sample capture" : "Open camera", symbol: "camera.fill")
+                    PrimaryLabel(AppConfig.backend == .demo ? "Try a sample capture" : "Add to your Shelf", symbol: "camera.fill")
                         .opacity(isCapturing ? 0 : 1)
                     HStack(spacing: Space.xs) {
                         LoopIndicator(people: 3, size: 20)
