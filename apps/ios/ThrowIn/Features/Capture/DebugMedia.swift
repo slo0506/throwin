@@ -10,9 +10,17 @@ struct DebugMediaButton: View {
 
     @State private var sets: [URL] = []
 
+    /// The Mac's home folder. Simulator apps live under ~/Library/Developer/CoreSimulator on the
+    /// host, so the prefix of the app's own home is the Mac's home when the variable is unset.
+    private static var hostHome: String? {
+        if let home = ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"] { return home }
+        let appHome = NSHomeDirectory()
+        guard let range = appHome.range(of: "/Library/Developer/CoreSimulator") else { return nil }
+        return String(appHome[..<range.lowerBound])
+    }
+
     private static var root: URL? {
-        ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"]
-            .map { URL(filePath: $0).appending(path: "Claude/throwin-debug-media") }
+        hostHome.map { URL(filePath: $0).appending(path: "Claude/throwin-debug-media") }
     }
 
     private static let imageTypes: Set<String> = ["jpg", "jpeg", "png", "heic"]
@@ -38,10 +46,17 @@ struct DebugMediaButton: View {
     }
 
     private static func findSets() -> [URL] {
-        guard let root else { return [] }
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: [.isDirectoryKey]
-        )) ?? []
+        guard let root else {
+            print("[DebugMedia] no host home found")
+            return []
+        }
+        let entries: [URL]
+        do {
+            entries = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
+        } catch {
+            print("[DebugMedia] can't read \(root.path()): \(error)")
+            return []
+        }
         return entries
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
