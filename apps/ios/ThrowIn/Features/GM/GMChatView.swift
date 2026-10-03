@@ -284,7 +284,7 @@ struct ChatItemCard: View {
                     Text(value.label)
                         .font(Typo.value)
                         .foregroundStyle(Palette.inkSecondary)
-                    ValueRangeBar(range: value, tint: Palette.get, showsLabels: false)
+                    ValueRangeBar(range: value, tint: Palette.receive, showsLabels: false)
                 }
             }
         }

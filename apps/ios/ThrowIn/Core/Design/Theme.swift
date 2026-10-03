@@ -41,7 +41,7 @@ nonisolated enum Palette {
     static let mint = dynamicColor(light: 0x22C997, dark: 0x3EDDAA)
     static let gold = dynamicColor(light: 0xFFB020, dark: 0xFFC24D)
     static let give = tangerine
-    static let get = pool
+    static let receive = pool
     static let danger = dynamicColor(light: 0xE5484D, dark: 0xFF6369)
 
     static let loop: [Color] = [tangerine, bubblegum, iris, pool]

@@ -18,7 +18,7 @@ struct DealSheetView: View {
     @State private var errorText: String?
 
     private var scaleMax: Int {
-        let highs = (deal.give + deal.get).compactMap(\.value?.highCents)
+        let highs = (deal.give + deal.receive).compactMap(\.value?.highCents)
         return Int(Double(highs.max() ?? 10000) * 1.15)
     }
 
@@ -32,7 +32,7 @@ struct DealSheetView: View {
                     title
                     side(title: "You give", items: deal.give, tint: Palette.give)
                     fairness
-                    side(title: "You get", items: deal.get, tint: Palette.get)
+                    side(title: "You get", items: deal.receive, tint: Palette.receive)
                     loopParticipants
                     why
                 }
@@ -86,7 +86,7 @@ struct DealSheetView: View {
     private var title: some View {
         VStack(alignment: .leading, spacing: Space.xs) {
             Text("Deal Sheet").sectionLabel()
-            Text(deal.get.first?.title ?? "Trade")
+            Text(deal.receive.first?.title ?? "Trade")
                 .font(Typo.title)
                 .tracking(-0.4)
                 .foregroundStyle(Palette.ink)
@@ -137,7 +137,7 @@ struct DealSheetView: View {
 
     private var fairness: some View {
         HStack(spacing: Space.sm) {
-            Image(systemName: "scale.3d")
+            Image(systemName: "equal")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Palette.mint)
                 .frame(width: 40, height: 40)

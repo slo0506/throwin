@@ -83,9 +83,9 @@ static float fbm(float2 p) {
     float2 q = float2(fbm(p * 1.5 + float2(0.0, t)), fbm(p * 1.5 + float2(5.2, -t * 0.8)));
     float2 w = float2(fbm(p * 1.8 + 2.2 * q + float2(1.7, 9.2) + t * 0.6),
                       fbm(p * 1.8 + 2.2 * q + float2(8.3, 2.8) - t * 0.5));
-    float n = fbm(p * 2.0 + 2.6 * w);
+    float n = fbm(p * 1.6 + 2.2 * w);
 
-    float hue = n * 1.35 + atan2(p.y, p.x) / 6.2831853 * 0.35 + time * 0.03;
+    float hue = n * 1.35 + (p.x * 0.6 - p.y * 0.4) * 0.22 + time * 0.03;
     half3 liquid = loopColor(hue);
     // Brighter, creamier pockets where the flow folds.
     liquid = mix(liquid, half3(1.0h, 0.97h, 0.94h), half(smoothstep(0.62, 0.95, n) * 0.55));
@@ -224,8 +224,8 @@ static float fbm(float2 p) {
         return half4(0.0h);
     }
 
-    float angle = atan2(delta.y, delta.x) / 6.2831853;
-    half3 tint = loopColor(angle + time * 0.3);
+    float2 dir = distance > 0.001 ? delta / distance : float2(0.0);
+    half3 tint = loopColor(0.5 + dir.x * 0.22 - dir.y * 0.18 + time * 0.3);
     // A thin bright crest on the leading edge, like light on a wave.
     float crest = exp(-pow((distance - radius) / (width * 0.18), 2.0)) * fade;
     half3 rgb = tint * half(ring) + half3(half(crest * 0.5 * strength));

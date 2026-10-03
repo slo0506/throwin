@@ -71,7 +71,7 @@ enum DemoData {
     static let deal = DealSheet(
         id: "d1",
         give: [shelf[0], shelf[1]],
-        get: [batmobile],
+        receive: [batmobile],
         throwInCents: 1000,
         participants: [you, maya, dev],
         why: "You said you'd give up Zelda for any Batman set, and this one's complete with the minifigs.",

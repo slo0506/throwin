@@ -86,7 +86,8 @@ struct StreamedText: Equatable {
     var text: Text {
         var result = Text(verbatim: "")
         for chunk in chunks {
-            result = result + Text(verbatim: chunk.text).customAttribute(ArrivalAttribute(time: chunk.arrival))
+            let piece = Text(verbatim: chunk.text).customAttribute(ArrivalAttribute(time: chunk.arrival))
+            result = Text("\(result)\(piece)")
         }
         return result
     }

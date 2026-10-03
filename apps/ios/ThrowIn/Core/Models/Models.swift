@@ -162,14 +162,14 @@ nonisolated struct Person: Identifiable, Hashable, Sendable {
 nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
     var id: String
     var give: [ShelfItem]
-    var get: [ShelfItem]
+    var receive: [ShelfItem]
     var throwInCents: Int          // positive: you pay; negative: you receive
     var participants: [Person]
     var why: String
     var expiresInHours: Int
 
     var giveValue: Int { give.compactMap(\.value?.midCents).reduce(0, +) }
-    var getValue: Int { get.compactMap(\.value?.midCents).reduce(0, +) }
+    var getValue: Int { receive.compactMap(\.value?.midCents).reduce(0, +) }
     var isLoop: Bool { participants.count > 2 }
 }
 

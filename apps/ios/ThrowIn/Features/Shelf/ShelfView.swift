@@ -224,7 +224,7 @@ struct ShelfEmptyState: View {
         VStack(spacing: Space.xl) {
             Spacer()
             ZStack {
-                ForEach(Array(DemoData.shelf.prefix(3).enumerated()), id: \.element.id) { index, item in
+                ForEach(Array([DemoData.shelf[2], DemoData.shelf[0], DemoData.shelf[3]].enumerated()), id: \.element.id) { index, item in
                     let angle = Double(index - 1) * 11
                     ItemArtwork(item: item, cornerRadius: 26)
                         .frame(width: 118, height: 118)

@@ -133,12 +133,12 @@ struct DealTeaserCard: View {
                 Image(systemName: "arrow.right")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Palette.inkTertiary)
-                tileStack(deal.get, tint: Palette.get)
+                tileStack(deal.receive, tint: Palette.receive)
                 Spacer(minLength: 0)
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(deal.get.first?.title ?? "A trade")
+                Text(deal.receive.first?.title ?? "A trade")
                     .font(Typo.headline)
                     .foregroundStyle(Palette.ink)
                 Text(fairnessLine(deal))
