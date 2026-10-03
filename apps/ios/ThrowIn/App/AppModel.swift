@@ -148,6 +148,7 @@ final class AppModel {
         KeychainStore.delete(account: Self.sessionAccount)
         session = nil
         shelf = []
+        questions = []
         asks = []
         dealsWaiting = []
         circles = []
@@ -177,10 +178,12 @@ final class AppModel {
         }
     }
 
-    /// Demo only: fills the Shelf as if a capture had just been appraised.
+    /// Demo only: fills the Shelf as if a capture had just been appraised, with a few Tune up
+    /// questions waiting.
     func loadDemoShelf() {
         withAnimation(Motion.bouncy) {
             shelf = DemoData.shelf
+            questions = DemoData.questions
         }
     }
 
@@ -199,17 +202,6 @@ final class AppModel {
                 if let i = shelf.firstIndex(where: { $0.id == itemID }) { shelf[i].willingness = previous }
                 shelfError = "Couldn't save that. Try again."
             }
-        }
-    }
-
-    /// The user says the GM's read is right, so a needs_photos Item goes up on the Shelf.
-    func confirmItem(_ itemID: String) async {
-        guard let api else { return }
-        do {
-            let updated = try await api.updateItem(itemID, ItemPatch(confirm: true))
-            withAnimation(Motion.bouncy) { replace(updated) }
-        } catch {
-            shelfError = "Couldn't save that. Try again."
         }
     }
 
@@ -253,10 +245,10 @@ final class AppModel {
     /// Items whose re-read is being followed right now, so 2 screens don't poll the same 1.
     private var followingAppraisal: Set<String> = []
 
-    /// Answers the GM's photo request: uploads 1 to 5 photos, attaches them to the Item, and
-    /// follows the re-read. Returns false (and shows the quiet banner) if sending failed.
-    @discardableResult
-    func addPhotos(_ frames: [PreparedFrame], to itemID: String) async -> Bool {
+    /// Uploads 1 to 5 photos and attaches them to the Item, so the Appraiser takes another
+    /// look. The Item comes back with `isAppraising` true; call `followAppraisal` to follow it.
+    /// Returns false (and shows the quiet banner) if sending failed.
+    func sendPhotos(_ frames: [PreparedFrame], to itemID: String) async -> Bool {
         let frames = Array(frames.prefix(Self.maxItemPhotos))
         guard let api, !frames.isEmpty else { return false }
         do {
@@ -278,11 +270,146 @@ final class AppModel {
                 : "Couldn't send that photo. Try again."
             return false
         }
-        await followAppraisal(itemID)
         return true
     }
 
     static let maxItemPhotos = 5
+
+    /// Sends the Showcase shoot. In demo mode the GM "looks" for a moment and the Item
+    /// becomes Ready to show.
+    func sendShowcase(_ frames: [PreparedFrame], to itemID: String) async -> Bool {
+        guard api != nil else {
+            demoShowcase(itemID)
+            return true
+        }
+        let sent = await sendPhotos(frames, to: itemID)
+        if sent {
+            // The shoot answers any open photo question for this Item.
+            withAnimation(Motion.snappy) {
+                let photoQuestions = questions.filter { $0.itemId == itemID && $0.kind == .photo }
+                questions.removeAll { $0.itemId == itemID && $0.kind == .photo }
+                adjustOpenQuestions(itemID, by: -photoQuestions.count)
+            }
+        }
+        return sent
+    }
+
+    // MARK: Tune up
+
+    /// Open Refiner questions across the Shelf, best first.
+    var questions: [Question] = []
+
+    /// Every open question on the Shelf, for the Tune up badge.
+    var tuneUpCount: Int { shelf.reduce(0) { $0 + max(0, $1.openQuestions) } }
+
+    /// Fetches open questions, for the whole Shelf or 1 Item. Keeps what we have on failure.
+    func loadQuestions(for itemID: String? = nil) async {
+        guard let api, let fetched = try? await api.questions(itemID: itemID) else { return }
+        withAnimation(Motion.snappy) {
+            guard let itemID else {
+                questions = fetched
+                return
+            }
+            let position = questions.firstIndex { $0.itemId == itemID } ?? questions.count
+            questions.removeAll { $0.itemId == itemID }
+            questions.insert(contentsOf: fetched, at: min(position, questions.count))
+        }
+    }
+
+    func topQuestion(for itemID: String) -> Question? {
+        questions.first { $0.itemId == itemID }
+    }
+
+    /// Answers (or, with nil, skips) a question. It leaves the list right away; if the save
+    /// fails it comes back, the quiet banner shows, and this returns false.
+    @discardableResult
+    func answer(_ question: Question, with answer: String?) async -> Bool {
+        let index = questions.firstIndex { $0.id == question.id }
+        withAnimation(Motion.snappy) {
+            if let index { questions.remove(at: index) }
+            adjustOpenQuestions(question.itemId, by: -1)
+        }
+        guard let api else {
+            if answer != nil { demoRefine(question.itemId) }
+            return true
+        }
+        do {
+            let item: ShelfItem
+            if let answer {
+                item = try await api.answerQuestion(question.id, answer: answer)
+            } else {
+                item = try await api.skipQuestion(question.id)
+            }
+            withAnimation(Motion.bouncy) { replace(item) }
+            if item.isAppraising {
+                Task { await followAppraisal(item.id) }
+            }
+            return true
+        } catch {
+            withAnimation(Motion.snappy) {
+                if !questions.contains(where: { $0.id == question.id }) {
+                    questions.insert(question, at: min(index ?? 0, questions.count))
+                }
+                adjustOpenQuestions(question.itemId, by: 1)
+            }
+            shelfError = "Couldn't save that answer. Try again."
+            return false
+        }
+    }
+
+    private func adjustOpenQuestions(_ itemID: String, by delta: Int) {
+        guard let index = shelf.firstIndex(where: { $0.id == itemID }) else { return }
+        shelf[index].openQuestions = max(0, shelf[index].openQuestions + delta)
+    }
+
+    /// Demo only: the Refiner takes a moment, then, once an Item has no questions left,
+    /// confirms it and narrows its range.
+    private func demoRefine(_ itemID: String) {
+        guard let index = shelf.firstIndex(where: { $0.id == itemID }) else { return }
+        shelf[index].isAppraising = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            guard let i = shelf.firstIndex(where: { $0.id == itemID }) else { return }
+            withAnimation(Motion.bouncy) {
+                shelf[i].isAppraising = false
+                guard topQuestion(for: itemID) == nil, shelf[i].readiness == .logged else { return }
+                shelf[i].readiness = .identified
+                if let value = shelf[i].value {
+                    let mid = value.midCents
+                    shelf[i].value = ValueRange(
+                        lowCents: mid - (mid - value.lowCents) / 2,
+                        midCents: mid,
+                        highCents: mid + (value.highCents - mid) / 2
+                    )
+                }
+            }
+        }
+    }
+
+    /// Demo only: the showcase photos land and the Item is Ready to show.
+    private func demoShowcase(_ itemID: String) {
+        guard let index = shelf.firstIndex(where: { $0.id == itemID }) else { return }
+        withAnimation(Motion.snappy) {
+            shelf[index].isAppraising = true
+            let photoQuestions = questions.filter { $0.itemId == itemID && $0.kind == .photo }
+            questions.removeAll { $0.itemId == itemID && $0.kind == .photo }
+            adjustOpenQuestions(itemID, by: -photoQuestions.count)
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            guard let i = shelf.firstIndex(where: { $0.id == itemID }) else { return }
+            withAnimation(Motion.bouncy) {
+                shelf[i].isAppraising = false
+                shelf[i].photoScore = 84
+                shelf[i].photoIssues = []
+                shelf[i].missingAngles = []
+                shelf[i].studioAllowed = true
+                if topQuestion(for: itemID) == nil {
+                    shelf[i].readiness = .showcase
+                }
+            }
+        }
+    }
 
     /// Polls the Item every 2 seconds while the Appraiser re-reads it, for up to 3 minutes,
     /// keeping the Shelf in step. Rides out a few dropped requests.
@@ -303,7 +430,11 @@ final class AppModel {
                 let item = try await api.item(itemID)
                 misses = 0
                 withAnimation(Motion.bouncy) { replace(item) }
-                if !item.isAppraising { return }
+                if !item.isAppraising {
+                    // The Refiner may have new questions, or none, now.
+                    await loadQuestions(for: itemID)
+                    return
+                }
             } catch let error as APIError where error.status == 404 {
                 withAnimation(Motion.snappy) { shelf.removeAll { $0.id == itemID } }
                 return
@@ -323,6 +454,7 @@ final class AppModel {
         let removed = shelf[index]
         withAnimation(Motion.snappy) {
             _ = shelf.remove(at: index)
+            questions.removeAll { $0.itemId == itemID }
         }
         guard let api else { return }
         Task {

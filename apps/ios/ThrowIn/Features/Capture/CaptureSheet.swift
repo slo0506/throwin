@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 /// Add to Shelf: film a shelf or pick photos, then watch the GM read and price them.
 struct CaptureSheet: View {
     var onFinish: () -> Void
+    /// Set by the Shelf: closes this sheet and opens Tune up on the new Items.
+    var onTuneUp: (() -> Void)?
 
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -82,7 +84,13 @@ struct CaptureSheet: View {
             working(detail: workingDetail)
                 .transition(.blurReplace)
         case let .finished(items, summary):
-            CaptureResults(items: items, summary: summary, onDone: close, onAgain: startOver)
+            CaptureResults(
+                items: items,
+                summary: summary,
+                onDone: close,
+                onAgain: startOver,
+                onTuneUp: onTuneUp == nil ? nil : tuneUp
+            )
                 .transition(.blurReplace)
         case let .failed(message):
             failed(message)
@@ -305,6 +313,11 @@ struct CaptureSheet: View {
         onFinish()
         dismiss()
     }
+
+    private func tuneUp() {
+        onTuneUp?()
+        close()
+    }
 }
 
 // MARK: - Source tile
@@ -482,6 +495,7 @@ private struct CaptureResults: View {
     var summary: String
     var onDone: () -> Void
     var onAgain: () -> Void
+    var onTuneUp: (() -> Void)?
 
     @State private var shown = 0
 
@@ -499,8 +513,8 @@ private struct CaptureResults: View {
                 Text(items.isEmpty ? "Nothing to trade here" : summary)
                     .font(Typo.title2)
                     .multilineTextAlignment(.center)
-                if items.contains(where: { $0.status == .needsPhotos }) {
-                    Text("A few need 1 more photo before they go up. You'll find them on your Shelf.")
+                if !items.isEmpty, onTuneUp != nil {
+                    Text("A few quick answers help your GM pin each one down.")
                         .font(Typo.callout)
                         .foregroundStyle(Palette.inkSecondary)
                         .multilineTextAlignment(.center)
@@ -531,12 +545,29 @@ private struct CaptureResults: View {
             .frame(maxHeight: items.isEmpty ? 0 : .infinity)
 
             VStack(spacing: Space.sm) {
-                Button(action: onDone) {
-                    PrimaryLabel(items.isEmpty ? "Close" : "See your Shelf", symbol: items.isEmpty ? nil : "square.grid.2x2")
-                        .frame(height: 48)
+                if let onTuneUp, !items.isEmpty {
+                    Button(action: onTuneUp) {
+                        PrimaryLabel("Tune up now, about 1 minute", symbol: "wand.and.stars")
+                            .frame(height: 48)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(Palette.ink)
+                    Button(action: onDone) {
+                        Text("See your Shelf")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(Palette.ink)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 40)
+                    }
+                    .buttonStyle(.glass)
+                } else {
+                    Button(action: onDone) {
+                        PrimaryLabel(items.isEmpty ? "Close" : "See your Shelf", symbol: items.isEmpty ? nil : "square.grid.2x2")
+                            .frame(height: 48)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(Palette.ink)
                 }
-                .buttonStyle(.glassProminent)
-                .tint(Palette.ink)
                 Button(items.isEmpty ? "Try other photos" : "Add more", action: onAgain)
                     .font(Typo.callout)
                     .foregroundStyle(Palette.inkSecondary)
@@ -574,12 +605,7 @@ private struct ResultRow: View {
                         .foregroundStyle(Palette.inkSecondary)
                         .loopShimmer()
                 }
-                if item.status == .needsPhotos, let followUp = item.followUp {
-                    Label(followUp, systemImage: "camera.viewfinder")
-                        .font(Typo.footnote)
-                        .foregroundStyle(Palette.tangerine)
-                        .lineLimit(2)
-                }
+                ReadinessMark(readiness: item.readiness, isWorking: item.isAppraising)
             }
             Spacer(minLength: 0)
         }

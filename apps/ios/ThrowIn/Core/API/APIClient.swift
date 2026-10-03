@@ -118,6 +118,27 @@ final class APIClient {
         try await send("POST", "v1/items/\(id)/media", body: ItemMediaRequest(media: media))
     }
 
+    // MARK: Refinement
+
+    /// Open Tune up questions, best first. Pass an Item to get only its questions.
+    func questions(itemID: String? = nil) async throws -> [Question] {
+        let query = itemID.map { [URLQueryItem(name: "item_id", value: $0)] } ?? []
+        let response: QuestionsResponse = try await send("GET", "v1/questions", query: query)
+        return response.questions
+    }
+
+    /// Answers a question. Returns the Item, usually with `isAppraising` true while the
+    /// Refiner updates it.
+    func answerQuestion(_ id: String, answer: String) async throws -> ShelfItem {
+        let response: AnswerResponse = try await send("POST", "v1/questions/\(id)/answer", body: AnswerRequest(answer: answer))
+        return response.item
+    }
+
+    func skipQuestion(_ id: String) async throws -> ShelfItem {
+        let response: AnswerResponse = try await send("POST", "v1/questions/\(id)/answer", body: AnswerRequest(skip: true))
+        return response.item
+    }
+
     // MARK: Capture
 
     /// Reserves a capture and returns 1 signed upload URL per photo.
@@ -199,21 +220,22 @@ final class APIClient {
     private nonisolated struct EmptyResponse: Decodable {}
     private nonisolated struct NoBody: Encodable {}
 
-    private func send<Response: Decodable>(_ method: String, _ path: String) async throws -> Response {
-        try await send(method, path, body: Optional<NoBody>.none)
+    private func send<Response: Decodable>(_ method: String, _ path: String, query: [URLQueryItem] = []) async throws -> Response {
+        try await send(method, path, body: Optional<NoBody>.none, query: query)
     }
 
     func send<Body: Encodable, Response: Decodable>(
         _ method: String,
         _ path: String,
-        body: Body?
+        body: Body?,
+        query: [URLQueryItem] = []
     ) async throws -> Response {
         let idempotencyKey = method == "GET" ? nil : UUID().uuidString
         let bodyData = try body.map { try Self.encoder.encode($0) }
 
-        var (data, status) = try await perform(method, path, bodyData, idempotencyKey, forceRefresh: false)
+        var (data, status) = try await perform(method, path, query, bodyData, idempotencyKey, forceRefresh: false)
         if status == 401 {
-            (data, status) = try await perform(method, path, bodyData, idempotencyKey, forceRefresh: true)
+            (data, status) = try await perform(method, path, query, bodyData, idempotencyKey, forceRefresh: true)
         }
         guard (200..<300).contains(status) else {
             if let envelope = try? Self.decoder.decode(ErrorEnvelope.self, from: data) {
@@ -230,11 +252,16 @@ final class APIClient {
     private func perform(
         _ method: String,
         _ path: String,
+        _ query: [URLQueryItem],
         _ body: Data?,
         _ idempotencyKey: String?,
         forceRefresh: Bool
     ) async throws -> (Data, Int) {
-        var request = URLRequest(url: baseURL.appending(path: path))
+        var url = baseURL.appending(path: path)
+        if !query.isEmpty {
+            url.append(queryItems: query)
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token = try await tokenProvider(forceRefresh) {
