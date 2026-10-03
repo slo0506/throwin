@@ -168,7 +168,7 @@ final class AppModel {
     func refreshShelf() async {
         guard let api else { return }
         if let items = try? await api.shelf() {
-            shelf = items
+            withAnimation(Motion.bouncy) { shelf = items }
         }
     }
 
@@ -179,15 +179,56 @@ final class AppModel {
         }
     }
 
+    /// Last write error, shown as a quiet banner. Optimistic changes roll back on failure.
+    var shelfError: String?
+
     func setWillingness(_ willingness: Willingness, for itemID: String) {
         guard let index = shelf.firstIndex(where: { $0.id == itemID }) else { return }
+        let previous = shelf[index].willingness
         shelf[index].willingness = willingness
+        guard let api else { return }
+        Task {
+            do {
+                replace(try await api.updateItem(itemID, ItemPatch(willingness: willingness)))
+            } catch {
+                if let i = shelf.firstIndex(where: { $0.id == itemID }) { shelf[i].willingness = previous }
+                shelfError = "Couldn't save that. Try again."
+            }
+        }
+    }
+
+    /// The user says the GM's read is right, so a needs_photos Item goes up on the Shelf.
+    func confirmItem(_ itemID: String) async {
+        guard let api else { return }
+        do {
+            let updated = try await api.updateItem(itemID, ItemPatch(confirm: true))
+            withAnimation(Motion.bouncy) { replace(updated) }
+        } catch {
+            shelfError = "Couldn't save that. Try again."
+        }
     }
 
     func removeItem(_ itemID: String) {
+        guard let index = shelf.firstIndex(where: { $0.id == itemID }) else { return }
+        let removed = shelf[index]
         withAnimation(Motion.snappy) {
-            shelf.removeAll { $0.id == itemID }
+            _ = shelf.remove(at: index)
         }
+        guard let api else { return }
+        Task {
+            do {
+                try await api.deleteItem(itemID)
+            } catch {
+                withAnimation(Motion.snappy) { shelf.insert(removed, at: min(index, shelf.count)) }
+                shelfError = (error as? APIError)?.status == 409
+                    ? "That's part of a deal right now, so it has to stay."
+                    : "Couldn't remove that. Try again."
+            }
+        }
+    }
+
+    private func replace(_ item: ShelfItem) {
+        if let index = shelf.firstIndex(where: { $0.id == item.id }) { shelf[index] = item }
     }
 
     func deleteTasteFact(_ id: String) {

@@ -78,6 +78,8 @@ nonisolated struct ShelfItem: Codable, Identifiable, Hashable, Sendable {
     var conditionConfidence: Double?
     var isReserved: Bool
     var thumbnailUrl: String?
+    /// A specific photo the Appraiser needs, e.g. "Photo of the size tag".
+    var followUp: String?
 
     /// Plain-language confidence. We never show raw scores.
     var confidenceLabel: String {
@@ -91,6 +93,63 @@ nonisolated struct ShelfItem: Codable, Identifiable, Hashable, Sendable {
 }
 
 nonisolated struct ShelfResponse: Codable, Sendable {
+    var items: [ShelfItem]
+}
+
+nonisolated struct ItemPatch: Encodable, Sendable {
+    var title: String?
+    var willingness: Willingness?
+    var conditionGrade: ConditionGrade?
+    /// The user confirmed the GM's read. Moves needs_photos to on_shelf.
+    var confirm: Bool?
+}
+
+// MARK: - Capture
+
+nonisolated enum CaptureStatus: String, Codable, Sendable {
+    case uploading, processing, done, failed
+}
+
+nonisolated struct UploadRequest: Encodable, Sendable {
+    var count: Int
+    var kind: String = "photo"
+}
+
+nonisolated struct UploadSlot: Decodable, Sendable {
+    var path: String
+    var uploadUrl: URL
+}
+
+nonisolated struct UploadResponse: Decodable, Sendable {
+    var captureId: String
+    var uploads: [UploadSlot]
+}
+
+nonisolated struct CaptureMediaInput: Encodable, Sendable {
+    var path: String
+    var width: Int?
+    var height: Int?
+    var sharpness: Double?
+}
+
+nonisolated struct CaptureRequest: Encodable, Sendable {
+    var captureId: String
+    var media: [CaptureMediaInput]
+}
+
+nonisolated struct CaptureProgress: Codable, Hashable, Sendable {
+    var stage: String?
+    var detail: String?
+    var found: Int?
+}
+
+nonisolated struct Capture: Decodable, Sendable {
+    var id: String
+    var status: CaptureStatus
+    var mediaCount: Int
+    var itemCount: Int
+    var progress: CaptureProgress
+    var error: String?
     var items: [ShelfItem]
 }
 
