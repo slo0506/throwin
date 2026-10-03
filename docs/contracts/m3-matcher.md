@@ -98,6 +98,8 @@ Taste-fact review, the "why" for each participant, Liaison inquiries for inferre
 `services/workers/src/prospector/` runs the `prospect_ask` job (`{ "ask_id", "user_id" }`).
 
 - **Queued by the database:** `enqueue_prospect_ask` runs, at most 1 waiting per Ask, when an Ask starts prospecting, or when a prospecting Ask's target, cash ceiling or offer set changes.
+- **6-hour sweep:** every 10 minutes the worker calls `enqueue_stale_prospects()`, which queues every prospecting Ask not prospected as the asker for 6 hours (`ask_prospect_runs`). That's how Asks pick up new members and new offers around them.
+- **Weekly drop:** the same timer calls `enqueue_due_drops()`, which queues a `drop_circle` job (`{ "circle_id" }`) once per active Circle on Sunday from 9am Pacific (`circles.last_drop_at`). A drop matches the whole Circle without an anchor, then reviews and stages every Deal in `drop` mode.
 - **Embeds Asks:** prospecting Asks in the asker's Circles are embedded as text-only Voyage queries, in the same space as Item embeddings, whenever their target text changed (`ask_embeddings.source_hash`). The asker's Ask goes first, and there are at most `PROSPECT_MAX_EMBEDS` per run.
 - **Candidates:** `circle_want_candidates(circle, model, per_ask)` returns, for each prospecting Ask, the nearest Items that other members offer for their own prospecting Asks.
 - **Scoring:** a matching model number scores 0.95. Otherwise the embedding similarity must reach `PROSPECT_MIN_SIMILARITY` (default 0.3, a guess until real Asks exist). A different top-level category drops the candidate, and so does a different brand on an `exact` Ask. The score is the edge's `utility` and `confidence`.

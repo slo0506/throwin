@@ -78,7 +78,13 @@ export interface ProspectorStore {
    * public.stage_deal: re-checks the Deal against the database, holds its Items and stores
    * each participant's why (keyed by user ID).
    */
-  stageDeal(deal: MatchDeal, whys: Record<string, string>): Promise<StageResult>;
+  stageDeal(
+    deal: MatchDeal,
+    whys: Record<string, string>,
+    mode: "live" | "drop",
+  ): Promise<StageResult>;
+  /** Records that these Asks were just prospected, for the 6-hour sweep. */
+  markProspected(askIds: string[]): Promise<void>;
   /** What the review reads: participants' names and taste facts, and the Items' details. */
   reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext>;
 }
@@ -115,7 +121,7 @@ export interface ProspectorDeps {
 }
 
 export type ProspectOutcome =
-  | { status: "skipped"; reason: "not_prospecting" | "no_circle" }
+  | { status: "skipped"; reason: "not_prospecting" | "no_circle" | "no_asks" }
   | { status: "matched"; edges: number; embedded: number; deals: CircleDeal[] };
 
 export interface CircleDeal {
@@ -203,11 +209,42 @@ export async function prospectAsk(
   userId: string,
   deps: ProspectorDeps,
 ): Promise<ProspectOutcome> {
-  const { store, embedder, matcher, config } = deps;
-  const ask = await store.getAsk(userId, askId);
+  const ask = await deps.store.getAsk(userId, askId);
   if (ask?.status !== "prospecting") return { status: "skipped", reason: "not_prospecting" };
-  const circleIds = await store.circlesOf(userId);
+  const circleIds = await deps.store.circlesOf(userId);
   if (circleIds.length === 0) return { status: "skipped", reason: "no_circle" };
+  const run = await runMatching(circleIds, { userId, askId }, deps);
+  await deps.store.markProspected([askId]);
+  deps.logger.info("prospect_matched", { ask_id: askId, ...run.log });
+  return run.outcome;
+}
+
+/**
+ * The weekly drop (PRD "2 modes"): matches the whole Circle at once instead of around 1
+ * asker, so the matcher picks the set of Loops that helps the most people. Every Deal is
+ * reviewed and staged like a live one, in drop mode.
+ */
+export async function prospectCircle(
+  circleId: string,
+  deps: ProspectorDeps,
+): Promise<ProspectOutcome> {
+  const run = await runMatching([circleId], null, deps);
+  if (run.askIds.length === 0) return { status: "skipped", reason: "no_asks" };
+  await deps.store.markProspected(run.askIds);
+  deps.logger.info("drop_matched", { circle_id: circleId, ...run.log });
+  return run.outcome;
+}
+
+/**
+ * Steps 1 to 6 for these Circles. With an anchor it's live mode (only Loops that include the
+ * asker, and the asker's Ask embedded first); without one it's a drop.
+ */
+async function runMatching(
+  circleIds: string[],
+  anchor: { userId: string; askId: string } | null,
+  deps: ProspectorDeps,
+) {
+  const { store, embedder, matcher, config } = deps;
 
   // 1. Embed Asks whose target changed, the asker's first.
   const asks = await store.prospectingAsks(circleIds, embedder.model);
@@ -217,7 +254,7 @@ export async function prospectAsk(
       return { ask: a, text, hash: embeddingHash(embedder.model, text) };
     })
     .filter((s) => s.ask.embeddingHash !== s.hash)
-    .sort((a, b) => Number(b.ask.id === askId) - Number(a.ask.id === askId))
+    .sort((a, b) => Number(b.ask.id === anchor?.askId) - Number(a.ask.id === anchor?.askId))
     .slice(0, config.maxEmbedsPerRun);
   for (const s of stale) {
     const vector = await embedder.embedQuery(s.text);
@@ -258,17 +295,17 @@ export async function prospectAsk(
     edgesByCircle.set(circleId, edges);
   }
 
-  // 4. Store the graph, then match in live mode.
+  // 4. Store the graph, then match: around the asker (live) or the whole Circle (drop).
   await store.replaceEdges(
     asks.map((a) => a.id),
     [...stored.values()],
   );
   const matched: Omit<CircleDeal, "staged">[] = [];
   for (const [circleId, edges] of edgesByCircle) {
-    if (!edges.some((e) => e.from_user === userId)) continue;
+    if (anchor ? !edges.some((e) => e.from_user === anchor.userId) : edges.length === 0) continue;
     const result = await matcher.match({
       edges,
-      anchor_user: userId,
+      ...(anchor && { anchor_user: anchor.userId }),
       time_limit_seconds: config.matcherTimeLimitSeconds,
     });
     matched.push(...result.deals.map((deal) => ({ circleId, deal })));
@@ -277,6 +314,7 @@ export async function prospectAsk(
 
   // 5 and 6. Review, then stage, best first. A later Deal that shares an Ask or Item with an
   //    earlier one is refused by the database, which is what we want.
+  const mode = anchor ? "live" : "drop";
   const deals: CircleDeal[] = [];
   for (const m of matched) {
     const participants = await reviewParticipants(store, m.deal);
@@ -285,17 +323,20 @@ export async function prospectAsk(
       deals.push({ ...m, staged: { result: "dropped", by: verdict.by, reason: verdict.reason } });
       continue;
     }
-    deals.push({ ...m, staged: await store.stageDeal(m.deal, Object.fromEntries(verdict.whys)) });
+    const whys = Object.fromEntries(verdict.whys);
+    deals.push({ ...m, staged: await store.stageDeal(m.deal, whys, mode) });
   }
-  deps.logger.info("prospect_matched", {
-    ask_id: askId,
-    circles: circleIds.length,
-    asks: asks.length,
-    embedded: stale.length,
-    edges: stored.size,
-    deals: deals.length,
-    staged: deals.filter((d) => d.staged.result === "ok").length,
-    dropped: deals.filter((d) => d.staged.result === "dropped").length,
-  });
-  return { status: "matched", edges: stored.size, embedded: stale.length, deals };
+  return {
+    askIds: asks.map((a) => a.id),
+    outcome: { status: "matched", edges: stored.size, embedded: stale.length, deals } as const,
+    log: {
+      circles: circleIds.length,
+      asks: asks.length,
+      embedded: stale.length,
+      edges: stored.size,
+      deals: deals.length,
+      staged: deals.filter((d) => d.staged.result === "ok").length,
+      dropped: deals.filter((d) => d.staged.result === "dropped").length,
+    },
+  };
 }
