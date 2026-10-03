@@ -59,7 +59,7 @@ struct MainShell: View {
                 rippleTrigger += 1
                 Task {
                     try? await Task.sleep(for: .milliseconds(140))
-                    model.isGMPresented = true
+                    model.openGM()
                 }
             }
             .padding(.bottom, 2)
