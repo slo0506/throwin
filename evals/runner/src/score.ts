@@ -13,8 +13,10 @@ export interface TrialResult {
   caseId: string;
   trial: number;
   predicted: PredictedItem[];
-  /** From loading the capture to the last Item saved, as the worker would run it. */
+  /** From loading the capture to the last Item finished with its value. */
   latencyMs: number;
+  /** From loading the capture to the first Item on the Shelf, still unpriced. */
+  firstItemMs?: number | null;
   /** Sum of every recorded model run. Fractional cents, as `agent_runs.cost_cents`. */
   costCents: number;
   modelRuns: number;
@@ -46,6 +48,7 @@ export interface TrialScore {
   extra: string[];
   forbiddenHits: { predicted: string; phrase: string }[];
   latencyMs: number;
+  firstItemMs: number | null;
   costCents: number;
   error: string | null;
   /** Correct share at or above 80% and under 60 seconds, without an error. */
@@ -92,6 +95,7 @@ export function scoreTrial(c: CaptureCase, r: TrialResult): TrialScore {
     extra,
     forbiddenHits,
     latencyMs: r.latencyMs,
+    firstItemMs: r.firstItemMs ?? null,
     costCents: r.costCents,
     error: r.error,
     pass: r.error === null && share >= M1_CORRECT_SHARE && r.latencyMs < M1_LATENCY_MS,
@@ -134,6 +138,8 @@ export interface Summary {
   errors: number;
   latencyMedianMs: number;
   latencyP90Ms: number;
+  /** Median time to the first Item on the Shelf, over trials that saved any. */
+  firstItemMedianMs: number | null;
   costCents: number;
   costPerItemCents: number | null;
   costPerCaptureCents: number | null;
@@ -158,6 +164,7 @@ export function summarize(scores: TrialScore[]): Summary {
   const forbiddenHits = total((s) => s.forbiddenHits.length);
   const costCents = total((s) => s.costCents);
   const latencies = scores.map((s) => s.latencyMs);
+  const firstItems = scores.flatMap((s) => (s.firstItemMs === null ? [] : [s.firstItemMs]));
   const passedCases = cases.filter((c) => c.pass).length;
 
   const gates = [
@@ -192,6 +199,7 @@ export function summarize(scores: TrialScore[]): Summary {
     errors: scores.filter((s) => s.error !== null).length,
     latencyMedianMs: percentile(latencies, 0.5),
     latencyP90Ms: percentile(latencies, 0.9),
+    firstItemMedianMs: firstItems.length > 0 ? percentile(firstItems, 0.5) : null,
     costCents,
     costPerItemCents: ratio(costCents, predicted),
     costPerCaptureCents: ratio(costCents, scores.length),

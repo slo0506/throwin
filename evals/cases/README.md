@@ -86,10 +86,11 @@ Both commands need `ANTHROPIC_API_KEY`. With `VOYAGE_API_KEY` set they also embe
 ## How the runner measures
 
 - **Frames:** Mirrors the iOS client. Photos and video frames are downsized to 1600 px. Videos are sampled at 1 frame a second from 0.5 s, frames under 0.4x the video's median Laplacian variance are dropped, and a capture keeps at most 30 frames.
-- **Pipeline:** `appraiseCapture` from `@throwin/workers` runs in-process with an in-memory store and the production `ClaudeVision`, so prompts and models are exactly what ships.
-- **Latency:** From loading the capture to the last Item saved. Upload time is not included.
+- **Pipeline:** `appraiseCapture` from `@throwin/workers` runs in-process with an in-memory store and the production `ClaudeVision`, with the worker's default pricing and concurrency settings, so prompts and models are exactly what ships. Items are inserted unpriced and then finished in place; the runner scores each Item as its finish step left it.
+- **Price cache:** Each trial starts with an empty price cache, like a capture of things nobody priced this week. Copies within 1 capture still share a price, as in production.
+- **Latency:** From loading the capture to the last Item finished with its value. Upload time is not included. The report also shows the median time to the first Item on the Shelf.
 - **Matching:** Each prediction pairs with at most 1 label, greedily by score. Score is the Dice overlap of normalized words in title, brand and model, best over the label's title and aliases. Pairs under 0.5 never match, different model numbers never match, and the same model number scores at least 0.75. Category only breaks ties.
-- **Correct:** Matched, and the predicted value range overlaps the labeled range.
+- **Correct:** Matched, and the value range from the Item's finish step overlaps the labeled range. An Item that was never finished has no value, so it is not correct.
 - **Cost:** The sum of the recorded model runs, priced as `agent_runs.cost_cents`.
 
 ## Gates

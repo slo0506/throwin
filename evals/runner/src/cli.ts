@@ -89,6 +89,7 @@ async function appraisal(argv: string[]) {
         trial,
         predicted: result.predicted,
         latencyMs: result.latencyMs,
+        firstItemMs: result.firstItemMs,
         costCents: result.runs.reduce((a, r) => a + r.costCents, 0),
         modelRuns: result.runs.length,
         error: result.error,

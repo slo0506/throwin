@@ -105,8 +105,14 @@ describe("summarize", () => {
 
   it("passes a capture when more than half its trials pass, and computes the totals", () => {
     const scores = [
-      scoreTrial(shelf, result(good, { trial: 1, latencyMs: 20_000, costCents: 9 })),
-      scoreTrial(shelf, result(good, { trial: 2, latencyMs: 40_000, costCents: 9 })),
+      scoreTrial(
+        shelf,
+        result(good, { trial: 1, latencyMs: 20_000, firstItemMs: 4_000, costCents: 9 }),
+      ),
+      scoreTrial(
+        shelf,
+        result(good, { trial: 2, latencyMs: 40_000, firstItemMs: 9_000, costCents: 9 }),
+      ),
       scoreTrial(shelf, result(bad, { trial: 3, latencyMs: 70_000, costCents: 5 })),
     ];
     const s = summarize(scores);
@@ -117,6 +123,7 @@ describe("summarize", () => {
     expect(s.rangeOverlapRate).toBe(1);
     expect(s.latencyMedianMs).toBe(40_000);
     expect(s.latencyP90Ms).toBe(70_000);
+    expect(s.firstItemMedianMs).toBe(4_000);
     expect(s.costPerItemCents).toBeCloseTo(23 / 23);
     expect(s.costPerCaptureCents).toBeCloseTo(23 / 3);
     expect(s.pass).toBe(true);
@@ -141,7 +148,7 @@ describe("summarize", () => {
   });
 
   it("fails with no captures at all", () => {
-    expect(summarize([]).pass).toBe(false);
+    expect(summarize([])).toMatchObject({ pass: false, firstItemMedianMs: null });
   });
 
   it("renders a markdown report with the gates and every capture", () => {
