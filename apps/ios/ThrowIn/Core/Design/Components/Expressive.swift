@@ -4,10 +4,12 @@ import SwiftUI
 
 /// An Item's photo: the Appraiser's crop when there is one, over a soft tinted tile with a
 /// dimensional symbol (category picks both) that also shows while the photo loads.
+/// `studio` swaps in the lifted-subject version of the same photo (see StudioPhoto.swift).
 struct ItemArtwork: View {
     var item: ShelfItem
     var cornerRadius: CGFloat = Radius.tile
     var symbolScale: CGFloat = 0.38
+    var studio: StudioMode = .off
 
     var body: some View {
         let style = ArtworkStyle(category: item.category)
@@ -32,6 +34,17 @@ struct ItemArtwork: View {
                 if let url = item.thumbnailUrl.flatMap(URL.init(string:)) {
                     RemoteImage(url: url)
                         .frame(width: proxy.size.width, height: proxy.size.height)
+                    switch studio {
+                    case .off:
+                        EmptyView()
+                    case .ifReady:
+                        LazyStudioImage(url: url)
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                    case let .show(image):
+                        StudioImageView(image: image)
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .transition(.opacity)
+                    }
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -51,6 +64,18 @@ enum ThumbnailCache {
     }()
 
     static func key(_ url: URL) -> NSString { url.path() as NSString }
+
+    /// The decoded photo, from the cache or the network. nil when it can't be fetched.
+    static func image(for url: URL) async -> UIImage? {
+        let cacheKey = Self.key(url)
+        if let cached = images.object(forKey: cacheKey) { return cached }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let decoded = await UIImage(data: data)?.byPreparingForDisplay()
+        else { return nil }
+        images.setObject(decoded, forKey: cacheKey)
+        return decoded
+    }
 }
 
 /// A remote photo that shows instantly when cached and fades in otherwise.
@@ -78,11 +103,7 @@ struct RemoteImage: View {
                 image = cached
                 return
             }
-            guard let (data, response) = try? await URLSession.shared.data(from: url),
-                  (response as? HTTPURLResponse)?.statusCode == 200,
-                  let decoded = await UIImage(data: data)?.byPreparingForDisplay()
-            else { return }
-            ThumbnailCache.images.setObject(decoded, forKey: key)
+            guard let decoded = await ThumbnailCache.image(for: url) else { return }
             withAnimation(Motion.soft) { image = decoded }
         }
     }

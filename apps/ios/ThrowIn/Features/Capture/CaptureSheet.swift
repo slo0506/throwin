@@ -226,10 +226,16 @@ struct CaptureSheet: View {
     }
 
     private func working(detail: String) -> some View {
-        VStack(spacing: Space.xxl) {
+        let hasItems = !capture.arrivedItems.isEmpty
+        return VStack(spacing: hasItems ? Space.lg : Space.xxl) {
             Spacer()
             FrameDeck(images: capture.frames.prefix(5).compactMap { capture.thumbnails[$0.id] }, scanTick: scanTick)
-                .frame(height: 260)
+                .frame(height: hasItems ? 200 : 260)
+                .scaleEffect(hasItems ? 0.82 : 1)
+            if hasItems {
+                ArrivedItemsStrip(items: capture.arrivedItems)
+                    .transition(.opacity.combined(with: .offset(y: -24)))
+            }
             VStack(spacing: Space.sm) {
                 LoopIndicator(people: 3, size: 28)
                 Text(detail)
@@ -246,6 +252,7 @@ struct CaptureSheet: View {
             Spacer()
             Spacer()
         }
+        .animation(Motion.bouncy, value: hasItems)
     }
 
     // MARK: Failed
@@ -376,6 +383,94 @@ private struct FrameDeck: View {
     }
 }
 
+// MARK: - Arrived items
+
+/// Items as the Appraiser names them, dealt in under the deck 1 at a time while it keeps
+/// working. Each shows Pricing until its range lands.
+private struct ArrivedItemsStrip: View {
+    var items: [ShelfItem]
+
+    @State private var dealt: Set<String> = []
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(alignment: .top, spacing: Space.sm) {
+                ForEach(items.filter { dealt.contains($0.id) }) { item in
+                    ArrivedItemCard(item: item)
+                        .transition(
+                            .asymmetric(
+                                insertion: .scale(scale: 0.7, anchor: .top)
+                                    .combined(with: .opacity)
+                                    .combined(with: .offset(y: -48)),
+                                removal: .opacity
+                            )
+                        )
+                }
+            }
+            .padding(.horizontal, Space.gutter)
+            .padding(.vertical, Space.xs)
+        }
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+        .padding(.horizontal, -Space.gutter)
+        .frame(height: 188)
+        .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.5), trigger: dealt.count)
+        .task(id: items.map(\.id)) {
+            for item in items where !dealt.contains(item.id) {
+                withAnimation(Motion.bouncy) { _ = dealt.insert(item.id) }
+                do {
+                    try await Task.sleep(for: .milliseconds(140))
+                } catch {
+                    break
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Found so far")
+    }
+}
+
+private struct ArrivedItemCard: View {
+    var item: ShelfItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ItemArtwork(item: item, cornerRadius: Radius.small)
+                .frame(width: 112, height: 104)
+            Text(item.title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(Palette.ink)
+                .lineLimit(2, reservesSpace: true)
+            ZStack(alignment: .leading) {
+                if let value = item.value {
+                    Text(value.label)
+                        .font(Typo.caption.monospacedDigit())
+                        .foregroundStyle(Palette.inkSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .transition(.blurReplace)
+                } else if item.isPricing {
+                    Text("Pricing")
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.inkSecondary)
+                        .loopShimmer()
+                        .transition(.blurReplace)
+                }
+            }
+            .animation(Motion.soft, value: item.value)
+        }
+        .frame(width: 112)
+        .padding(Space.xs)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
+                .strokeBorder(Palette.hairline, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.06), radius: 12, y: 6)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 // MARK: - Results
 
 private struct CaptureResults: View {
@@ -469,6 +564,11 @@ private struct ResultRow: View {
                     Text(value.label)
                         .font(Typo.value)
                         .foregroundStyle(Palette.inkSecondary)
+                } else if item.isPricing {
+                    Text("Pricing")
+                        .font(Typo.value)
+                        .foregroundStyle(Palette.inkSecondary)
+                        .loopShimmer()
                 }
                 if item.status == .needsPhotos, let followUp = item.followUp {
                     Label(followUp, systemImage: "camera.viewfinder")
@@ -506,23 +606,30 @@ nonisolated struct PickedMovie: Transferable {
     }
 }
 
-/// The system camera, for 1 photo or a video up to 60 seconds.
+/// The system camera, for 1 photo or a video up to 60 seconds. `allowsVideo: false` is
+/// photos only, for answering the GM's photo request.
 struct CameraPicker: UIViewControllerRepresentable {
     enum Result {
         case photo(Data)
         case video(URL)
     }
 
+    var allowsVideo = true
     var onCapture: (Result) -> Void
     @Environment(\.dismiss) private var dismiss
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = .camera
-        picker.mediaTypes = [UTType.movie.identifier, UTType.image.identifier]
-        picker.cameraCaptureMode = .video
-        picker.videoMaximumDuration = 60
-        picker.videoQuality = .typeHigh
+        if allowsVideo {
+            picker.mediaTypes = [UTType.movie.identifier, UTType.image.identifier]
+            picker.cameraCaptureMode = .video
+            picker.videoMaximumDuration = 60
+            picker.videoQuality = .typeHigh
+        } else {
+            picker.mediaTypes = [UTType.image.identifier]
+            picker.cameraCaptureMode = .photo
+        }
         picker.delegate = context.coordinator
         return picker
     }

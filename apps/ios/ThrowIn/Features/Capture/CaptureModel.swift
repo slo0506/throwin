@@ -25,6 +25,8 @@ final class CaptureModel {
     private(set) var isPreparing = false
     /// Decoded tray thumbnails, keyed by frame.
     private(set) var thumbnails: [UUID: UIImage] = [:]
+    /// Items the Appraiser has found so far, shown while it keeps working.
+    private(set) var arrivedItems: [ShelfItem] = []
 
     var isFull: Bool { frames.count >= FrameTools.maxFrames }
     var canSubmit: Bool { !frames.isEmpty && !isPreparing && phase == .collecting }
@@ -77,20 +79,17 @@ final class CaptureModel {
     func submit(using api: APIClient) async {
         let frames = Array(frames.prefix(FrameTools.maxFrames))
         guard !frames.isEmpty, phase == .collecting else { return }
+        arrivedItems = []
         setPhase(.uploading(done: 0, total: frames.count))
         do {
             let slots = try await api.requestUploads(count: frames.count)
             guard slots.uploads.count == frames.count else { throw Self.genericError }
 
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                for (frame, slot) in zip(frames, slots.uploads) {
-                    group.addTask { try await api.upload(frame.jpeg, to: slot.uploadUrl) }
-                }
-                var done = 0
-                for try await _ in group {
-                    done += 1
-                    setPhase(.uploading(done: done, total: frames.count))
-                }
+            // Retries and the 4-at-a-time cap live in the client. If a photo still fails, the
+            // frames stay in the tray so Try again sends them all on a fresh capture.
+            let jobs = zip(frames, slots.uploads).map { (jpeg: $0.jpeg, url: $1.uploadUrl) }
+            try await api.uploadAll(jobs) { done in
+                setPhase(.uploading(done: done, total: frames.count))
             }
 
             let media = zip(frames, slots.uploads).map { frame, slot in
@@ -98,6 +97,7 @@ final class CaptureModel {
             }
             var capture = try await api.submitCapture(CaptureRequest(captureId: slots.captureId, media: media))
             setPhase(.working(capture.progress.detail ?? "Looking at your photos"))
+            receive(capture.items)
             capture = try await follow(capture, using: api)
 
             if capture.status == .failed {
@@ -126,8 +126,11 @@ final class CaptureModel {
             do {
                 capture = try await api.capture(capture.id)
                 misses = 0
-                if let detail = capture.progress.detail, capture.status == .processing {
-                    setPhase(.working(detail))
+                if capture.status == .processing {
+                    if let detail = capture.progress.detail {
+                        setPhase(.working(detail))
+                    }
+                    receive(capture.items)
                 }
             } catch let error as APIError where error.status >= 400 && error.status < 500 {
                 throw error
@@ -137,6 +140,15 @@ final class CaptureModel {
             }
         }
         return capture
+    }
+
+    /// Items arrive named before they're priced. Keeps the first-seen order so cards already
+    /// dealt in don't shuffle, and refreshes each 1 in place as its price lands.
+    private func receive(_ items: [ShelfItem]) {
+        guard !items.isEmpty, items != arrivedItems else { return }
+        var merged = arrivedItems.map { old in items.first { $0.id == old.id } ?? old }
+        merged += items.filter { item in !arrivedItems.contains { $0.id == item.id } }
+        withAnimation(Motion.bouncy) { arrivedItems = merged }
     }
 
     private func setPhase(_ next: Phase) {
