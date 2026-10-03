@@ -3,6 +3,7 @@ import {
   AskStatus,
   AskTarget,
   AutonomyLevel,
+  CircleRole,
   ConditionGrade,
   compareQuestions,
   DEFAULT_NOTIFICATION_PREFS,
@@ -17,6 +18,7 @@ import {
 import { z } from "zod";
 import {
   ACTIVE_ASK_STATUSES,
+  type AcceptInviteResult,
   type AnswerInput,
   type AnswerResult,
   type AskInsert,
@@ -26,6 +28,10 @@ import {
   type CaptureMediaInput,
   type CaptureRecord,
   type CaptureStatus,
+  type CircleMemberRecord,
+  type CircleRecord,
+  type InvitePreviewRecord,
+  type InviteRecord,
   type ItemRecord,
   type ItemUpdate,
   type MePatch,
@@ -285,6 +291,55 @@ const ASK_SELECT =
 const TASTE_FACT_SELECT =
   "id, user_id, key, value, category, source, always_on, status, created_at";
 
+const CircleRow = z.object({
+  id: z.string(),
+  name: z.string(),
+  category_focus: z.array(z.string()),
+  status: z.enum(["active", "paused"]),
+  created_at: ts,
+});
+const CIRCLE_SELECT = "id, name, category_focus, status, created_at";
+
+// Many-to-one embeds come back as objects.
+const MembershipRow = z.object({ role: CircleRole, circles: CircleRow });
+
+const MemberRow = z.object({
+  user_id: z.string(),
+  role: CircleRole,
+  joined_at: ts,
+  users: z.object({
+    display_name: z.string().nullable(),
+    photo_url: z.string().nullable(),
+    deleted_at: z.string().nullable(),
+  }),
+});
+
+const InviteRow = z.object({
+  code: z.string(),
+  circle_id: z.string(),
+  max_uses: z.number().int(),
+  uses: z.number().int(),
+  expires_at: ts,
+});
+
+const InvitePreviewRow = InviteRow.extend({
+  circles: z.object({ name: z.string(), status: z.enum(["active", "paused"]) }),
+  users: z.object({ display_name: z.string().nullable() }).nullable(),
+});
+
+const AcceptInviteRow = z.object({
+  result: z.enum(["ok", "already_member", "not_found", "expired", "full"]),
+  circle_id: z.string().optional(),
+});
+
+const toInvite = (r: z.infer<typeof InviteRow>): InviteRecord => ({
+  code: r.code,
+  circleId: r.circle_id,
+  maxUses: r.max_uses,
+  uses: r.uses,
+  expiresAt: r.expires_at,
+});
+
 const USER_SELECT =
   "id, display_name, photo_url, created_at, deleted_at, profiles(autonomy_level, notification_prefs, home_area, default_handoff_place_id)";
 const ITEM_SELECT =
@@ -296,6 +351,21 @@ export class RepositoryError extends Error {
     super(`${operation} failed: ${cause.message}${cause.code ? ` (${cause.code})` : ""}`);
     this.name = "RepositoryError";
   }
+}
+
+function toCircle(
+  r: z.infer<typeof CircleRow>,
+  role: CircleRole,
+  memberCount: number,
+): CircleRecord {
+  return {
+    id: r.id,
+    name: r.name,
+    categoryFocus: r.category_focus,
+    role,
+    memberCount,
+    createdAt: r.created_at,
+  };
 }
 
 function mergePrefs(raw: Record<string, unknown> | null | undefined): NotificationPrefs {
@@ -653,6 +723,150 @@ export class SupabaseRepository implements Repository {
       throw new RepositoryError("updateAsk", { message: "invalid_status" });
     }
     return (await this.getAsk(userId, askId)) ?? "not_found";
+  }
+
+  async listCircles(userId: string): Promise<CircleRecord[]> {
+    const { data, error } = await this.db
+      .from("circle_members")
+      .select(`role, circles(${CIRCLE_SELECT})`)
+      .eq("user_id", userId)
+      .order("joined_at", { ascending: true });
+    if (error) throw new RepositoryError("listCircles", error);
+    const rows = z.array(MembershipRow).parse(data ?? []);
+    const counts = await this.#memberCounts(rows.map((r) => r.circles.id));
+    return rows.map((r) => toCircle(r.circles, r.role, counts.get(r.circles.id) ?? 1));
+  }
+
+  async getCircle(userId: string, circleId: string) {
+    const { data, error } = await this.db
+      .from("circle_members")
+      .select(`role, circles(${CIRCLE_SELECT})`)
+      .eq("user_id", userId)
+      .eq("circle_id", circleId)
+      .maybeSingle();
+    if (error) throw new RepositoryError("getCircle", error);
+    if (!data) return null;
+    const mine = MembershipRow.parse(data);
+
+    const members = await this.db
+      .from("circle_members")
+      .select("user_id, role, joined_at, users(display_name, photo_url, deleted_at)")
+      .eq("circle_id", circleId)
+      .order("joined_at", { ascending: true });
+    if (members.error) throw new RepositoryError("getCircle.members", members.error);
+    const rows = z.array(MemberRow).parse(members.data ?? []);
+    const visible: CircleMemberRecord[] = rows
+      .filter((r) => r.users.deleted_at === null)
+      .map((r) => ({
+        userId: r.user_id,
+        displayName: r.users.display_name,
+        photoUrl: r.users.photo_url,
+        role: r.role,
+        joinedAt: r.joined_at,
+      }));
+    return { ...toCircle(mine.circles, mine.role, rows.length), members: visible };
+  }
+
+  async createCircle(userId: string, input: { name: string; categoryFocus: string[] }) {
+    const { data, error } = await this.db
+      .from("circles")
+      .insert({ name: input.name, owner_id: userId, category_focus: input.categoryFocus })
+      .select(CIRCLE_SELECT)
+      .single();
+    if (error) throw new RepositoryError("createCircle", error);
+    // on_circle_created made the owner its first member.
+    return toCircle(CircleRow.parse(data), "owner", 1);
+  }
+
+  async createInvite(
+    userId: string,
+    circleId: string,
+    input: { code: string; maxUses: number; expiresAt: Date },
+  ): Promise<InviteRecord | null> {
+    if (!(await this.getCircle(userId, circleId))) return null;
+    const { data, error } = await this.db
+      .from("invites")
+      .insert({
+        code: input.code,
+        circle_id: circleId,
+        created_by: userId,
+        max_uses: input.maxUses,
+        expires_at: input.expiresAt.toISOString(),
+      })
+      .select("code, circle_id, max_uses, uses, expires_at")
+      .single();
+    if (error) throw new RepositoryError("createInvite", error);
+    return toInvite(InviteRow.parse(data));
+  }
+
+  async previewInvite(
+    userId: string,
+    code: string,
+    now: Date,
+  ): Promise<InvitePreviewRecord | null> {
+    const { data, error } = await this.db
+      .from("invites")
+      .select(
+        "code, circle_id, max_uses, uses, expires_at, circles(name, status), users(display_name)",
+      )
+      .eq("code", code)
+      .maybeSingle();
+    if (error) throw new RepositoryError("previewInvite", error);
+    if (!data) return null;
+    const row = InvitePreviewRow.parse(data);
+    if (row.circles.status !== "active") return null;
+    const [counts, member] = await Promise.all([
+      this.#memberCounts([row.circle_id]),
+      this.db
+        .from("circle_members")
+        .select("user_id", { count: "exact", head: true })
+        .eq("circle_id", row.circle_id)
+        .eq("user_id", userId),
+    ]);
+    if (member.error) throw new RepositoryError("previewInvite.member", member.error);
+    const status: InvitePreviewRecord["status"] =
+      (member.count ?? 0) > 0
+        ? "already_member"
+        : row.expires_at.getTime() <= now.getTime()
+          ? "expired"
+          : row.uses >= row.max_uses
+            ? "full"
+            : "open";
+    return {
+      code: row.code,
+      circleName: row.circles.name,
+      inviterName: row.users?.display_name ?? null,
+      memberCount: counts.get(row.circle_id) ?? 1,
+      status,
+    };
+  }
+
+  async acceptInvite(userId: string, code: string): Promise<AcceptInviteResult> {
+    const { data, error } = await this.db.rpc("accept_invite", {
+      p_user_id: userId,
+      p_code: code,
+    });
+    if (error) throw new RepositoryError("acceptInvite", error);
+    const row = AcceptInviteRow.parse(data);
+    if (row.result === "ok" || row.result === "already_member") {
+      if (!row.circle_id) throw new RepositoryError("acceptInvite", { message: "no circle_id" });
+      return { joined: row.result === "ok", circleId: row.circle_id };
+    }
+    return row.result;
+  }
+
+  async #memberCounts(circleIds: string[]): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (circleIds.length === 0) return counts;
+    const { data, error } = await this.db
+      .from("circle_members")
+      .select("circle_id")
+      .in("circle_id", circleIds);
+    if (error) throw new RepositoryError("memberCounts", error);
+    for (const r of z.array(z.object({ circle_id: z.string() })).parse(data ?? [])) {
+      counts.set(r.circle_id, (counts.get(r.circle_id) ?? 0) + 1);
+    }
+    return counts;
   }
 
   async listTasteFacts(userId: string): Promise<TasteFactRecord[]> {

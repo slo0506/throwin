@@ -2,6 +2,7 @@ import type {
   AskStatus,
   AskTarget,
   AutonomyLevel,
+  CircleRole,
   ConditionGrade,
   ItemReadiness,
   ItemStatus,
@@ -179,6 +180,47 @@ export interface TasteFactRecord {
   createdAt: Date;
 }
 
+export interface CircleRecord {
+  id: string;
+  name: string;
+  categoryFocus: string[];
+  /** The caller's role. */
+  role: CircleRole;
+  memberCount: number;
+  createdAt: Date;
+}
+
+export interface CircleMemberRecord {
+  userId: string;
+  displayName: string | null;
+  photoUrl: string | null;
+  role: CircleRole;
+  joinedAt: Date;
+}
+
+export interface InviteRecord {
+  code: string;
+  circleId: string;
+  maxUses: number;
+  uses: number;
+  expiresAt: Date;
+}
+
+export interface InvitePreviewRecord {
+  code: string;
+  circleName: string;
+  inviterName: string | null;
+  memberCount: number;
+  status: "open" | "expired" | "full" | "already_member";
+}
+
+/** public.accept_invite's results. Joining or already being in it both return the Circle. */
+export type AcceptInviteResult =
+  | { joined: boolean; circleId: string }
+  | "not_found"
+  | "expired"
+  | "full";
+
 /** Statuses shown on the Shelf. Removed and traded Items are history, not inventory. */
 export const SHELF_STATUSES: readonly ItemStatus[] = [
   "draft",
@@ -252,4 +294,27 @@ export interface Repository {
   listTasteFacts(userId: string): Promise<TasteFactRecord[]>;
   /** Marks the user's fact deleted. False when missing or someone else's. */
   deleteTasteFact(userId: string, factId: string): Promise<boolean>;
+
+  /** Circles the user belongs to, oldest membership first. */
+  listCircles(userId: string): Promise<CircleRecord[]>;
+  /** Null unless the user is a member, so Circle IDs cannot be probed. */
+  getCircle(
+    userId: string,
+    circleId: string,
+  ): Promise<(CircleRecord & { members: CircleMemberRecord[] }) | null>;
+  /** The creator becomes its owner and first member. */
+  createCircle(
+    userId: string,
+    input: { name: string; categoryFocus: string[] },
+  ): Promise<CircleRecord>;
+  /** Null unless the user is a member of the Circle. */
+  createInvite(
+    userId: string,
+    circleId: string,
+    input: { code: string; maxUses: number; expiresAt: Date },
+  ): Promise<InviteRecord | null>;
+  /** Null when the code doesn't exist or its Circle is paused. */
+  previewInvite(userId: string, code: string, now: Date): Promise<InvitePreviewRecord | null>;
+  /** Atomic (public.accept_invite): a use is counted only when the user actually joins. */
+  acceptInvite(userId: string, code: string, now: Date): Promise<AcceptInviteResult>;
 }

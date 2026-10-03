@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  type CircleRole,
   CLOSED_ASK_STATUSES,
   compareQuestions,
   computeReadiness,
@@ -9,6 +10,7 @@ import {
 } from "@throwin/shared";
 import {
   ACTIVE_ASK_STATUSES,
+  type AcceptInviteResult,
   type AnswerInput,
   type AnswerResult,
   type AskInsert,
@@ -17,6 +19,10 @@ import {
   type AskUpdateResult,
   type CaptureMediaInput,
   type CaptureRecord,
+  type CircleMemberRecord,
+  type CircleRecord,
+  type InvitePreviewRecord,
+  type InviteRecord,
   type ItemRecord,
   type ItemUpdate,
   type MePatch,
@@ -56,7 +62,20 @@ export class MemoryRepository implements Repository {
   readonly confirmed = new Set<string>();
   readonly asks: StoredAsk[] = [];
   readonly tasteFacts: TasteFactRecord[] = [];
-  readonly memberships: { userId: string; circleId: string }[] = [];
+  readonly circles: {
+    id: string;
+    name: string;
+    categoryFocus: string[];
+    status: "active" | "paused";
+    createdAt: Date;
+  }[] = [];
+  readonly memberships: {
+    userId: string;
+    circleId: string;
+    role?: CircleRole;
+    joinedAt?: Date;
+  }[] = [];
+  readonly invites: (InviteRecord & { createdBy: string })[] = [];
   readonly captures: CaptureRecord[] = [];
   readonly captureMedia: (CaptureMediaInput & { captureId: string })[] = [];
   readonly itemMedia: (CaptureMediaInput & { itemId: string })[] = [];
@@ -444,6 +463,117 @@ export class MemoryRepository implements Repository {
     if (!fact) return false;
     fact.status = "deleted";
     return true;
+  }
+
+  async listCircles(userId: string): Promise<CircleRecord[]> {
+    return this.memberships
+      .filter((m) => m.userId === userId)
+      .flatMap((m) => {
+        const circle = this.#circleRecord(userId, m.circleId);
+        return circle ? [circle] : [];
+      });
+  }
+
+  async getCircle(userId: string, circleId: string) {
+    const circle = this.#circleRecord(userId, circleId);
+    if (!circle) return null;
+    const members: CircleMemberRecord[] = this.memberships
+      .filter((m) => m.circleId === circleId)
+      .flatMap((m) => {
+        const user = this.users.get(m.userId);
+        if (!user || user.deletedAt) return [];
+        return [
+          {
+            userId: m.userId,
+            displayName: user.displayName,
+            photoUrl: user.photoUrl,
+            role: m.role ?? "member",
+            joinedAt: m.joinedAt ?? new Date(0),
+          },
+        ];
+      });
+    // memberships is in join order already.
+    return { ...circle, members };
+  }
+
+  async createCircle(userId: string, input: { name: string; categoryFocus: string[] }) {
+    const id = randomUUID();
+    const createdAt = new Date();
+    this.circles.push({ id, ...input, status: "active", createdAt });
+    this.memberships.push({ userId, circleId: id, role: "owner", joinedAt: createdAt });
+    const circle = this.#circleRecord(userId, id);
+    if (!circle) throw new Error("created Circle not found");
+    return circle;
+  }
+
+  async createInvite(
+    userId: string,
+    circleId: string,
+    input: { code: string; maxUses: number; expiresAt: Date },
+  ): Promise<InviteRecord | null> {
+    if (!this.#isMember(userId, circleId)) return null;
+    const invite = { ...input, circleId, uses: 0, createdBy: userId };
+    this.invites.push(invite);
+    const { createdBy: _by, ...record } = invite;
+    return record;
+  }
+
+  async previewInvite(userId: string, code: string, now: Date) {
+    const invite = this.#openInvite(code);
+    if (!invite) return null;
+    const circle = this.circles.find((c) => c.id === invite.circleId);
+    if (!circle) return null;
+    const preview: InvitePreviewRecord = {
+      code,
+      circleName: circle.name,
+      inviterName: this.users.get(invite.createdBy)?.displayName ?? null,
+      memberCount: this.memberships.filter((m) => m.circleId === circle.id).length,
+      status: this.#inviteStatus(userId, invite, now),
+    };
+    return preview;
+  }
+
+  /** Mirrors public.accept_invite. */
+  async acceptInvite(userId: string, code: string, now: Date): Promise<AcceptInviteResult> {
+    const invite = this.#openInvite(code);
+    if (!invite) return "not_found";
+    const status = this.#inviteStatus(userId, invite, now);
+    if (status === "already_member") return { joined: false, circleId: invite.circleId };
+    if (status !== "open") return status;
+    this.memberships.push({ userId, circleId: invite.circleId, role: "member", joinedAt: now });
+    invite.uses += 1;
+    return { joined: true, circleId: invite.circleId };
+  }
+
+  #isMember(userId: string, circleId: string) {
+    return this.memberships.some((m) => m.userId === userId && m.circleId === circleId);
+  }
+
+  #circleRecord(userId: string, circleId: string): CircleRecord | null {
+    const circle = this.circles.find((c) => c.id === circleId);
+    const mine = this.memberships.find((m) => m.userId === userId && m.circleId === circleId);
+    if (!circle || !mine) return null;
+    return {
+      id: circle.id,
+      name: circle.name,
+      categoryFocus: [...circle.categoryFocus],
+      role: mine.role ?? "member",
+      memberCount: this.memberships.filter((m) => m.circleId === circleId).length,
+      createdAt: circle.createdAt,
+    };
+  }
+
+  #openInvite(code: string) {
+    const invite = this.invites.find((i) => i.code === code);
+    const circle = invite && this.circles.find((c) => c.id === invite.circleId);
+    return invite && circle?.status === "active" ? invite : null;
+  }
+
+  #inviteStatus(userId: string, invite: InviteRecord, now: Date): InvitePreviewRecord["status"] {
+    if (this.#isMember(userId, invite.circleId)) return "already_member";
+    if (invite.expiresAt.getTime() <= now.getTime()) return "expired";
+    if (invite.uses >= invite.maxUses) return "full";
+    return "open";
   }
 
   #askRecord(ask: StoredAsk): AskRecord {
