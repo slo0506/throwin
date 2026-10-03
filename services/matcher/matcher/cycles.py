@@ -58,24 +58,28 @@ def iter_cycles(graph: WantGraph) -> Iterator[list[str]]:
                 stack.append((nxt, [*path, nxt]))
 
 
-def find_cycles(graph: WantGraph) -> tuple[list[Cycle], bool]:
+def find_cycle_edges(graph: WantGraph) -> tuple[list[list[Edge]], bool]:
+    """Each cycle as its edges in user order: edge i is what users[i] receives."""
     adj = _best_edges(graph.edges)
-    cycles: list[Cycle] = []
-    truncated = False
+    found: list[list[Edge]] = []
     for users in iter_cycles(graph):
-        if len(cycles) >= graph.max_cycles:
-            truncated = True
-            break
+        if len(found) >= graph.max_cycles:
+            return found, True
         n = len(users)
-        legs: list[Leg] = []
-        utility = 0.0
-        min_conf = 1.0
-        for i, receiver in enumerate(users):
-            giver = users[(i + 1) % n]
-            edge = adj[receiver][giver]
-            legs.append(Leg(giver=giver, receiver=receiver, item_id=edge.item_id))
-            utility += edge.utility
-            min_conf = min(min_conf, edge.confidence)
-        cycles.append(Cycle(users=users, legs=legs, utility=utility, min_confidence=min_conf))
+        found.append([adj[users[i]][users[(i + 1) % n]] for i in range(n)])
+    return found, False
+
+
+def find_cycles(graph: WantGraph) -> tuple[list[Cycle], bool]:
+    found, truncated = find_cycle_edges(graph)
+    cycles = [
+        Cycle(
+            users=[e.from_user for e in edges],
+            legs=[Leg(giver=e.to_user, receiver=e.from_user, item_id=e.item_id) for e in edges],
+            utility=sum(e.utility for e in edges),
+            min_confidence=min(e.confidence for e in edges),
+        )
+        for edges in found
+    ]
     cycles.sort(key=lambda c: (-c.utility, len(c.users)))
     return cycles, truncated
