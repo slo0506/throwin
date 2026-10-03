@@ -6,6 +6,7 @@ import { createSupabaseVerifier } from "./auth/verifier.js";
 import { loadEnv } from "./env.js";
 import { createJsonLogger } from "./lib/logger.js";
 import { UnimplementedAppAttestVerifier } from "./middleware/app-attest.js";
+import { SupabaseMediaStore } from "./repo/media.js";
 import { SupabaseRepository } from "./repo/supabase.js";
 import { SupabaseIdempotencyStore } from "./repo/supabase-idempotency.js";
 
@@ -25,6 +26,7 @@ const app = createApp({
   sessions: new SupabaseSessionIssuer(db, anonClient),
   devAuthCode: env.DEV_AUTH_CODE,
   repo: new SupabaseRepository(db),
+  media: new SupabaseMediaStore(db),
   idempotency: new SupabaseIdempotencyStore(db),
   tokens: createSupabaseVerifier({
     ...(env.SUPABASE_JWT_SECRET && { jwtSecret: env.SUPABASE_JWT_SECRET }),

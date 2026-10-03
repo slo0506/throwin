@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AutonomyLevel, ConditionGrade, ItemStatus, ItemWillingness } from "./enums.js";
+import { AutonomyLevel, ConditionGrade, ItemStatus, ItemWillingness, MediaKind } from "./enums.js";
 
 // Wire format for the public /v1 API. Keys are snake_case. Money is integer cents.
 
@@ -110,6 +110,8 @@ export const ShelfItem = z.object({
   is_reserved: z.boolean(),
   /** Signed URL, filled in Milestone 1. */
   thumbnail_url: z.string().nullable(),
+  /** A specific photo the Appraiser needs, e.g. "Photo of the size tag". Set when status is needs_photos. */
+  follow_up: z.string().nullable(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });
@@ -119,3 +121,67 @@ export const ShelfResponse = z.object({
   items: z.array(ShelfItem),
 });
 export type ShelfResponse = z.infer<typeof ShelfResponse>;
+
+// ---------------------------------------------------------------------------
+// Capture (Milestone 1): signed uploads, then a capture the Appraiser turns into Items.
+// ---------------------------------------------------------------------------
+
+export const CaptureStatus = z.enum(["uploading", "processing", "done", "failed"]);
+export type CaptureStatus = z.infer<typeof CaptureStatus>;
+
+export const UploadRequest = z.strictObject({
+  count: z.number().int().min(1).max(30),
+  kind: MediaKind.default("photo"),
+});
+export type UploadRequest = z.infer<typeof UploadRequest>;
+
+export const UploadResponse = z.object({
+  capture_id: z.uuid(),
+  uploads: z.array(z.object({ path: z.string(), upload_url: z.url() })),
+});
+export type UploadResponse = z.infer<typeof UploadResponse>;
+
+export const CaptureMediaInput = z.strictObject({
+  path: z.string().min(1).max(300),
+  width: z.number().int().positive().max(10000).optional(),
+  height: z.number().int().positive().max(10000).optional(),
+  /** On-device sharpness score (variance of the Laplacian). Higher is sharper. */
+  sharpness: z.number().nonnegative().optional(),
+});
+
+export const CaptureRequest = z.strictObject({
+  capture_id: z.uuid(),
+  media: z.array(CaptureMediaInput).min(1).max(30),
+});
+export type CaptureRequest = z.infer<typeof CaptureRequest>;
+
+export const CaptureProgress = z.object({
+  stage: z.enum(["uploading", "detecting", "identifying", "pricing", "done", "failed"]).optional(),
+  /** Plain-language status for the UI, e.g. "Pricing your LEGO Typewriter". */
+  detail: z.string().optional(),
+  found: z.number().int().nonnegative().optional(),
+});
+
+export const Capture = z.object({
+  id: z.uuid(),
+  status: CaptureStatus,
+  media_count: z.number().int(),
+  item_count: z.number().int(),
+  progress: CaptureProgress,
+  error: z.string().nullable(),
+  items: z.array(ShelfItem),
+  created_at: z.iso.datetime({ offset: true }),
+});
+export type Capture = z.infer<typeof Capture>;
+
+export const ItemPatch = z
+  .strictObject({
+    title: z.string().trim().min(1).max(120),
+    willingness: ItemWillingness,
+    condition_grade: ConditionGrade,
+    /** The user confirmed the GM's read of this Item. Moves needs_photos and draft to on_shelf. */
+    confirm: z.literal(true),
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, { message: "At least 1 field is required" });
+export type ItemPatch = z.infer<typeof ItemPatch>;
