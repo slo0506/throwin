@@ -23,6 +23,8 @@ The first 5 appraisal cases use this shape, with `state.photos` as Wikimedia Com
 
 The Refiner cases in `refiner/` (suite `refinement`) use this shape too: `state.item` is the Item as the Refiner loads it (reading, `value_cents`, open and closed `questions`, photos), `state.reason` is `created`, `answer` or `photos`, and `expect` names the readiness, questions, photo score and `agent_runs` the pass should leave. Unit tests in `services/workers/test/refiner.test.ts` run the same scenarios with a fake model in CI.
 
+The memory extractor cases in `memory/` (suite `memory`) use this shape too. `state.facts` are the user's taste facts in any status (a `deleted` fact must never be written again), `state.mode` is `intake` or `chat`, `state.other_names` are first names of people in the user's Circles, and `conversation` plus `message` make up the turn. When a case needs tool calls in the turn, `state.turn_messages` holds the stored messages with API-native content blocks instead, and `message` is empty. `expect` names what may be written (`creates`, `allowed_creates`, `max_writes`), what must never be (`creates_none_matching`, `creates_none_matching_fact`), the validator rejections, and text the model input or user-visible events must not contain. Unit tests in `services/workers/test/memory.test.ts` run the same scenarios with a fake model in CI.
+
 ## Capture cases (version 2, appraisal)
 
 A capture is what a user films: photos or a video of a shelf. The case lists that media and the Items a careful person would list from it. This is the shape that measures the Milestone 1 bar.

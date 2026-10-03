@@ -1,0 +1,33 @@
+{
+  "id": "memory-deleted-fact-not-recreated",
+  "suite": "memory",
+  "description": "The user deleted their never-trade Millennium Falcon fact in Settings, then mentions the Falcon again in chat; the same key and value is never written again",
+  "state": {
+    "mode": "chat",
+    "facts": [
+      {
+        "key": "never_trade",
+        "value": "Millennium Falcon",
+        "category": "limits",
+        "always_on": true,
+        "status": "deleted"
+      },
+      {
+        "key": "interests",
+        "value": "Star Wars LEGO",
+        "category": "interests",
+        "always_on": true,
+        "status": "active"
+      }
+    ],
+    "other_names": []
+  },
+  "conversation": [{ "role": "assistant", "content": "Want me to look for more Star Wars sets?" }],
+  "message": "Sure. And just so you know, my Millennium Falcon is the one I'd never let go of.",
+  "expect": {
+    "creates_none_matching_fact": [{ "key": "never_trade", "value": "Millennium Falcon" }],
+    "rejections_include": ["deleted_by_user"],
+    "deleted_fact_shown_to_model": false
+  },
+  "twin": "memory-never-trade-stored-always-on"
+}

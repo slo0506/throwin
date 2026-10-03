@@ -64,7 +64,7 @@ describe("askStatusLine", () => {
       for (const count of [0, 2]) {
         const line = askStatusLine(status, count);
         expect(line.length).toBeGreaterThan(0);
-        expect(line).not.toMatch(/—/);
+        expect(line).not.toContain(String.fromCharCode(0x2014));
       }
     }
     expect(askStatusLine("offering", 0)).toBe("Waiting for what you'd offer");
