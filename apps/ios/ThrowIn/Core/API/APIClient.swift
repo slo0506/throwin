@@ -215,6 +215,79 @@ final class APIClient {
         try await send("GET", "v1/captures/\(id)")
     }
 
+    // MARK: Asks
+
+    /// Newest first, without cancelled Asks.
+    func asks() async throws -> [Ask] {
+        let response: AsksResponse = try await send("GET", "v1/asks")
+        return response.asks
+    }
+
+    func ask(_ id: String) async throws -> Ask {
+        try await send("GET", "v1/asks/\(id)")
+    }
+
+    func createAsk(_ request: NewAskRequest) async throws -> Ask {
+        try await send("POST", "v1/asks", body: request)
+    }
+
+    /// Sends only the fields set on the patch. A non-empty offer set starts prospecting.
+    func updateAsk(_ id: String, _ patch: AskPatch) async throws -> Ask {
+        try await send("PATCH", "v1/asks/\(id)", body: patch)
+    }
+
+    // MARK: Taste facts
+
+    func tasteFacts() async throws -> [TasteFact] {
+        let response: TasteFactsResponse = try await send("GET", "v1/me/taste-facts")
+        return response.facts
+    }
+
+    /// The GM never uses a deleted fact again.
+    func deleteTasteFact(_ id: String) async throws {
+        let _: EmptyResponse = try await send("DELETE", "v1/me/taste-facts/\(id)")
+    }
+
+    // MARK: GM
+
+    /// The current conversation, created on the first call.
+    func gmConversation() async throws -> GMConversation {
+        try await send("GET", "v1/gm/conversation")
+    }
+
+    /// Starts a GM turn. Stream the reply with `gmStream(_:)`.
+    func sendGM(_ request: GMSendRequest) async throws -> GMSendResponse {
+        try await send("POST", "v1/gm/messages", body: request)
+    }
+
+    /// Streams 1 GM turn as typed events. Ends after `done` or `error`. Cancelling the
+    /// consuming task closes the connection.
+    func gmStream(_ streamID: String) -> AsyncThrowingStream<GMEvent, any Error> {
+        let url = baseURL.appending(path: "v1/gm/stream/\(streamID)")
+        let urlSession = self.session
+        let token: @Sendable (Bool) async throws -> String? = { [weak self] force in
+            guard let self else { return nil }
+            return try await self.accessToken(force: force)
+        }
+        return AsyncThrowingStream { continuation in
+            let task = Task.detached {
+                do {
+                    try await EventStreamReader.pump(url: url, session: urlSession, token: token) { event in
+                        _ = continuation.yield(event)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func accessToken(force: Bool) async throws -> String? {
+        try await tokenProvider(force)
+    }
+
     // MARK: Transport
 
     private nonisolated struct EmptyResponse: Decodable {}

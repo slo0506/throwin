@@ -1,11 +1,11 @@
 import SwiftUI
 
 /// First-time experience (PRD target: under 4 minutes to a first Ask).
-/// Invite landing, sign in, third-party AI consent, then the GM says hello.
-/// The full intake chat and first Ask arrive with the GM harness in Milestone 2.
+/// Invite landing, sign in, third-party AI consent, then "Meet your GM": the intake chat,
+/// full screen, which ends with a first Ask and a recap.
 struct OnboardingFlow: View {
     enum Step: Int, CaseIterable {
-        case invite, name, consent, hello
+        case invite, name, consent, intake
     }
 
     @Environment(AppModel.self) private var model
@@ -20,7 +20,21 @@ struct OnboardingFlow: View {
 
     var body: some View {
         ZStack {
-            MeshBackdrop(intensity: step == .hello ? 1.15 : 0.9)
+            if step == .intake {
+                IntakeScreen()
+                    .transition(.opacity.combined(with: .scale(scale: 1.02)))
+            } else {
+                welcome
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.soft, value: step == .intake)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: step)
+    }
+
+    private var welcome: some View {
+        ZStack {
+            MeshBackdrop(intensity: 0.9)
                 .paperGrain(strength: 0.03)
 
             VStack(spacing: 0) {
@@ -38,7 +52,7 @@ struct OnboardingFlow: View {
                     case .invite: inviteStep
                     case .name: nameStep
                     case .consent: consentStep
-                    case .hello: HelloStep(firstName: model.firstName) { model.finishOnboarding() }
+                    case .intake: EmptyView()
                     }
                 }
                 .transition(
@@ -52,7 +66,6 @@ struct OnboardingFlow: View {
             }
             .padding(.horizontal, Space.xl)
         }
-        .sensoryFeedback(.impact(flexibility: .soft), trigger: step)
     }
 
     private var orbMood: OrbMood {
@@ -60,7 +73,7 @@ struct OnboardingFlow: View {
         case .invite: .idle
         case .name: nameFocused ? .thinking : .idle
         case .consent: .idle
-        case .hello: .speaking
+        case .intake: .speaking
         }
     }
 
@@ -69,7 +82,7 @@ struct OnboardingFlow: View {
         case .invite: 150
         case .name: 104
         case .consent: 84
-        case .hello: 176
+        case .intake: 176
         }
     }
 
@@ -277,7 +290,7 @@ struct OnboardingFlow: View {
 
             Button {
                 model.recordAIConsent()
-                go(.hello)
+                go(.intake)
             } label: {
                 PrimaryLabel("Continue")
             }
@@ -302,43 +315,63 @@ struct OnboardingFlow: View {
     }
 }
 
-/// The GM's first words, streamed with the bloom.
-private struct HelloStep: View {
-    var firstName: String
-    var onDone: () -> Void
-
-    @State private var streamed = StreamedText()
-    @State private var epoch = Date()
-    @State private var finished = false
+/// "Meet your GM": the intake chat, full screen. When the GM reports the intake is done,
+/// the celebration plays and the app lands on Home. The skip link goes straight there.
+private struct IntakeScreen: View {
+    @Environment(AppModel.self) private var model
+    @State private var isFinishing = false
+    @State private var celebrating = false
+    @State private var burst = 0
 
     var body: some View {
-        VStack(spacing: Space.xl) {
-            BloomingText(
-                streamed: streamed,
-                epoch: epoch,
-                font: .system(size: 26, weight: .bold, design: .rounded)
-            )
-            .multilineTextAlignment(.center)
-            .frame(minHeight: 140, alignment: .top)
+        ZStack {
+            GMChatView(presentation: .intake, onSkip: skip, onIntakeComplete: celebrate)
+                .blur(radius: celebrating ? 14 : 0)
+                .allowsHitTesting(!celebrating)
 
-            Button(action: onDone) {
-                PrimaryLabel("Let's go")
+            if celebrating {
+                ZStack {
+                    MeshBackdrop(intensity: 1.15)
+                        .paperGrain(strength: 0.03)
+                        .opacity(0.9)
+                    VStack(spacing: Space.lg) {
+                        GMOrbView(mood: .speaking, size: 150)
+                        Text("You're all set, \(model.firstName)")
+                            .font(Typo.display)
+                            .tracking(-0.8)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Palette.ink)
+                        Text("Your GM is on it.")
+                            .font(Typo.body)
+                            .foregroundStyle(Palette.inkSecondary)
+                    }
+                    .padding(.horizontal, Space.xl)
+                }
+                .ignoresSafeArea()
+                .transition(.opacity.combined(with: .scale(scale: 0.94)))
             }
-            .buttonStyle(.glassProminent)
-            .tint(Palette.ink)
-            .opacity(finished ? 1 : 0)
-            .scaleEffect(finished ? 1 : 0.9)
-            .animation(Motion.bouncy, value: finished)
+
+            CelebrationBurst(trigger: burst, origin: UnitPoint(x: 0.5, y: 0.38))
         }
-        .task {
-            epoch = Date()
-            let line = "Hi \(firstName). I'm your GM. Tell me 1 thing you want, and I'll find someone in your Circles who'd trade for it."
-            try? await Task.sleep(for: .milliseconds(350))
-            await streamDemoText(line, epoch: epoch) { token, arrival in
-                streamed.append(token, at: arrival)
-            }
-            try? await Task.sleep(for: .milliseconds(400))
-            finished = true
+        .sensoryFeedback(.success, trigger: burst)
+    }
+
+    private func skip() {
+        guard !isFinishing else { return }
+        isFinishing = true
+        model.finishOnboarding()
+    }
+
+    private func celebrate() {
+        guard !isFinishing else { return }
+        isFinishing = true
+        Task {
+            // Let the GM's last words settle first.
+            try? await Task.sleep(for: .seconds(1.4))
+            withAnimation(Motion.bouncy) { celebrating = true }
+            burst += 1
+            try? await Task.sleep(for: .seconds(2.2))
+            model.finishOnboarding()
         }
     }
 }

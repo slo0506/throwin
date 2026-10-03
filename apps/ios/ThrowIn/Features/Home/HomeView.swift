@@ -12,8 +12,13 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: Space.xl) {
                     header
 
+                    if model.showsPushPrompt {
+                        PushPromptCard()
+                            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    }
+
                     if model.isLive {
-                        Pill(text: "Preview: Asks and deals are samples until the GM ships", symbol: "sparkles", tint: Palette.iris)
+                        Pill(text: "Preview: Deal Sheets are samples until matching ships", symbol: "sparkles", tint: Palette.iris)
                     }
 
                     if let deal = model.dealsWaiting.first {
@@ -35,10 +40,21 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: Space.sm) {
                         SectionHeader(title: "Your Asks", trailing: "\(model.asks.count) live")
                         ForEach(model.asks) { ask in
-                            AskCard(ask: ask)
+                            NavigationLink(value: AskRoute(ask: ask)) {
+                                AskCard(ask: ask)
+                            }
+                            .buttonStyle(.pressable)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                        }
+                        if model.asks.isEmpty {
+                            Text("No Asks yet. Tell your GM 1 thing you want.")
+                                .font(Typo.callout)
+                                .foregroundStyle(Palette.inkSecondary)
+                                .padding(.horizontal, 4)
                         }
                         newAskButton
                     }
+                    .animation(Motion.bouncy, value: model.asks.map(\.id))
 
                     VStack(alignment: .leading, spacing: Space.sm) {
                         SectionHeader(title: "From your GM")
@@ -51,6 +67,13 @@ struct HomeView: View {
             }
             .scrollIndicators(.hidden)
             .background(Palette.canvas)
+            .animation(Motion.bouncy, value: model.showsPushPrompt)
+            .task { await model.refreshAsks() }
+            .refreshable { await model.refreshAsks() }
+            .navigationDestination(for: AskRoute.self) { route in
+                AskDetailView(askID: route.id, fallback: route.ask)
+            }
+            .quietBanner()
             .fullScreenCover(item: $model.presentedDeal) { deal in
                 DealSheetView(deal: deal)
                     .navigationTransition(.zoom(sourceID: deal.id, in: dealNamespace))
@@ -89,7 +112,7 @@ struct HomeView: View {
 
     private var newAskButton: some View {
         Button {
-            model.isGMPresented = true
+            model.openGM(screen: "new_ask")
         } label: {
             HStack(spacing: Space.xs) {
                 Image(systemName: "plus")
@@ -222,10 +245,11 @@ struct AskCard: View {
             VStack(alignment: .leading, spacing: Space.md) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(ask.title)
+                        Text(ask.displayTitle)
                             .font(Typo.headline)
                             .foregroundStyle(Palette.ink)
-                        Text("Worth about \(ask.anchor.label) used")
+                            .multilineTextAlignment(.leading)
+                        Text(ask.usedRange.map { "Worth about \($0.label) used" } ?? "Your GM is pricing this")
                             .font(Typo.footnote)
                             .foregroundStyle(Palette.inkSecondary)
                     }
@@ -235,55 +259,78 @@ struct AskCard: View {
                     }
                 }
 
-                HStack(spacing: Space.sm) {
-                    LoopIndicator(people: 3, size: 24, isActive: ask.status == .prospecting)
-                    ZStack(alignment: .leading) {
-                        Text(statusLine)
-                            .id(statusLine)
-                            .transition(.push(from: .bottom))
-                    }
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Palette.ink)
-                    .clipped()
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Space.sm)
-                .frame(height: 44)
-                .background(Palette.canvas, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
+                AskStatusRow(ask: ask, line: statusLine)
 
                 HStack(spacing: Space.xs) {
                     Text("Offering").sectionLabel()
+                    if offerItems.isEmpty {
+                        Text("Nothing yet")
+                            .font(Typo.footnote)
+                            .foregroundStyle(Palette.inkTertiary)
+                    }
                     ForEach(offerItems) { item in
                         ItemArtwork(item: item, cornerRadius: 9)
                             .frame(width: 30, height: 30)
                     }
                     Spacer()
-                    Pill(text: "Up to \(Money.dollars(ask.cashCeilingCents))", symbol: "dollarsign", tint: Palette.gold)
+                    Pill(text: AskDetailView.ceilingLabel(ask.cashCeilingCents), symbol: "dollarsign", tint: Palette.gold)
                 }
             }
         }
         .task(id: ask.status) {
-            guard ask.status == .prospecting else { return }
+            // Demo only: the sample Ask cycles through what a live search sounds like.
+            guard !model.isLive, ask.status == .prospecting else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2.8))
-                withAnimation(Motion.bouncy) {
-                    lineIndex = (lineIndex + 1) % DemoData.prospectingLines.count
-                }
+                lineIndex = (lineIndex + 1) % DemoData.prospectingLines.count
             }
         }
     }
 
     private var statusLine: String {
-        switch ask.status {
-        case .accepted: "Waiting on 2 more approvals"
-        case .prospecting: DemoData.prospectingLines[lineIndex]
-        default: "Getting ready"
+        if !model.isLive {
+            switch ask.status {
+            case .accepted: return "Waiting on 2 more approvals"
+            case .prospecting: return DemoData.prospectingLines[lineIndex]
+            default: break
+            }
         }
+        return ask.displayStatusLine
     }
 
     private var offerItems: [ShelfItem] {
         let byID = Dictionary((model.shelf + DemoData.shelf).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return ask.offerItemIDs.compactMap { byID[$0] }
+        return ask.offerItemIds.compactMap { byID[$0] }
+    }
+}
+
+// MARK: - Push prompt
+
+/// PRD first-time experience, step 7: asked only once the first Ask exists.
+struct PushPromptCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        PaperCard {
+            VStack(alignment: .leading, spacing: Space.md) {
+                HStack(alignment: .top, spacing: Space.sm) {
+                    GMOrbView(mood: .idle, size: 34, showsGlow: false)
+                    Text("I'll ping you when I find a deal. At most 3 a day, never promotional.")
+                        .font(Typo.body)
+                        .foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: Space.xs) {
+                    Button("Turn on") { model.answerPushPrompt(allow: true) }
+                        .buttonStyle(.glassProminent)
+                        .tint(Palette.iris)
+                    Button("Not now") { model.answerPushPrompt(allow: false) }
+                        .buttonStyle(.glass)
+                    Spacer()
+                }
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import UserNotifications
 
 enum AppTab: String, CaseIterable, Identifiable {
     case home, shelf, circles, you
@@ -47,7 +48,11 @@ final class AppModel {
     var isGMPresented = false
     var presentedDeal: DealSheet?
 
-    // Content (demo mode until the API grows these endpoints)
+    /// The GM conversation. Lives here so a turn keeps streaming when the sheet closes, and
+    /// so intake and the GM sheet share 1 thread.
+    let gm = GMChatModel()
+
+    // Content. Deals and Circles are demo data until Milestone 3.
     var shelf: [ShelfItem] = []
     var asks: [Ask] = []
     var dealsWaiting: [DealSheet] = []
@@ -73,6 +78,7 @@ final class AppModel {
                 try await self?.validAccessToken(force: force)
             }
         }
+        gm.attach(self)
         if phase == .main {
             loadContent()
         }
@@ -154,6 +160,9 @@ final class AppModel {
         circles = []
         tasteFacts = []
         approvedDealIDs = []
+        askRevisions = [:]
+        showsPushPrompt = false
+        gm.reset()
         isGMPresented = false
         presentedDeal = nil
         withAnimation(Motion.soft) {
@@ -164,11 +173,172 @@ final class AppModel {
     // MARK: Content
 
     func loadContent() {
-        asks = [DemoData.ask]
         dealsWaiting = [DemoData.deal]
         circles = DemoData.circles
-        tasteFacts = DemoData.tasteFacts
+        if isLive {
+            Task {
+                await refreshAsks()
+                await loadTasteFacts()
+            }
+        } else {
+            // Keep the Ask the demo intake made, if there is 1.
+            if asks.isEmpty { asks = [DemoData.ask] }
+            if tasteFacts.isEmpty { tasteFacts = DemoData.tasteFacts }
+            considerPushPrompt()
+        }
         Task { await refreshShelf() }
+    }
+
+    // MARK: GM
+
+    /// Opens the GM sheet. `screen` tells the GM where it was opened from, like `new_ask`,
+    /// and focuses the composer.
+    func openGM(screen: String? = nil) {
+        gm.prepare(screen: screen)
+        isGMPresented = true
+    }
+
+    /// A GM turn may have made or changed an Ask or an Item.
+    func refreshAfterGMTurn() async {
+        guard isLive else { return }
+        await refreshAsks()
+        await refreshShelf()
+    }
+
+    // MARK: Asks
+
+    /// Bumped on every local edit, so a slow response never overwrites a newer change.
+    private var askRevisions: [String: Int] = [:]
+
+    func refreshAsks() async {
+        guard let api else { return }
+        guard let fetched = try? await api.asks() else { return }
+        withAnimation(Motion.bouncy) {
+            asks = fetched.filter { $0.status != .cancelled }
+        }
+        considerPushPrompt()
+    }
+
+    /// Adds or replaces an Ask, newest first. A cancelled Ask leaves the list.
+    func upsertAsk(_ ask: Ask) {
+        withAnimation(Motion.bouncy) {
+            if ask.status == .cancelled {
+                asks.removeAll { $0.id == ask.id }
+            } else if let index = asks.firstIndex(where: { $0.id == ask.id }) {
+                asks[index] = ask
+            } else {
+                asks.insert(ask, at: 0)
+            }
+        }
+        considerPushPrompt()
+    }
+
+    /// Changes an Ask right away and saves it. Rolls the change back if the save fails.
+    func updateAsk(_ id: String, _ patch: AskPatch) {
+        guard let index = asks.firstIndex(where: { $0.id == id }) else { return }
+        let previous = asks[index]
+        let revision = (askRevisions[id] ?? 0) + 1
+        askRevisions[id] = revision
+        withAnimation(Motion.snappy) { patch.apply(to: &asks[index]) }
+        guard let api else {
+            demoSettle(id)
+            return
+        }
+        Task {
+            do {
+                let updated = try await api.updateAsk(id, patch)
+                guard askRevisions[id] == revision else { return }
+                upsertAsk(updated)
+            } catch {
+                shelfError = "Couldn't save that. Try again."
+                guard askRevisions[id] == revision else {
+                    await refreshAsks()
+                    return
+                }
+                if let i = asks.firstIndex(where: { $0.id == id }) {
+                    withAnimation(Motion.snappy) { patch.revert(&asks[i], to: previous) }
+                }
+            }
+        }
+    }
+
+    /// Cancels an Ask. It leaves the list right away and comes back if the save fails.
+    func cancelAsk(_ id: String) {
+        guard let index = asks.firstIndex(where: { $0.id == id }) else { return }
+        let removed = asks[index]
+        withAnimation(Motion.snappy) { _ = asks.remove(at: index) }
+        guard let api else { return }
+        Task {
+            do {
+                _ = try await api.updateAsk(id, AskPatch(status: .cancelled))
+            } catch {
+                withAnimation(Motion.snappy) {
+                    if !asks.contains(where: { $0.id == id }) {
+                        asks.insert(removed, at: min(index, asks.count))
+                    }
+                }
+                shelfError = "Couldn't cancel that. Try again."
+            }
+        }
+    }
+
+    /// Demo only: what the server does after an edit. A non-empty offer set starts the search.
+    private func demoSettle(_ id: String) {
+        guard let index = asks.firstIndex(where: { $0.id == id }) else { return }
+        var ask = asks[index]
+        let offered = (shelf + DemoData.shelf).filter { ask.offerItemIds.contains($0.id) }
+        let unique = Dictionary(offered.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values
+        let values = unique.compactMap(\.value)
+        ask.offerValue = values.isEmpty ? nil : CentsRange(
+            lowCents: values.reduce(0) { $0 + $1.lowCents },
+            highCents: values.reduce(0) { $0 + $1.highCents }
+        )
+        if ask.offerItemIds.isEmpty {
+            if ask.status == .prospecting {
+                ask.status = .offering
+                ask.statusLine = AskStatus.offering.fallbackLine
+            }
+        } else if ask.status == .drafting || ask.status == .offering {
+            ask.status = .prospecting
+            ask.statusLine = DemoData.prospectingLines[0]
+        }
+        withAnimation(Motion.snappy) { asks[index] = ask }
+    }
+
+    // MARK: Push permission (PRD first-time experience, step 7)
+
+    /// Shown once the first Ask exists: "I'll ping you when I find a deal."
+    var showsPushPrompt = false
+    private static let pushAskedKey = "throwin.pushPermissionAsked"
+
+    func considerPushPrompt() {
+        guard !asks.isEmpty, !showsPushPrompt, !UserDefaults.standard.bool(forKey: Self.pushAskedKey) else { return }
+        Task {
+            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            guard status == .notDetermined else {
+                UserDefaults.standard.set(true, forKey: Self.pushAskedKey)
+                return
+            }
+            guard !asks.isEmpty, session != nil else { return }
+            withAnimation(Motion.bouncy) { showsPushPrompt = true }
+        }
+    }
+
+    /// Asks iOS for permission only when the user says yes here. Either way, never asks again.
+    func answerPushPrompt(allow: Bool) {
+        UserDefaults.standard.set(true, forKey: Self.pushAskedKey)
+        withAnimation(Motion.snappy) { showsPushPrompt = false }
+        guard allow else { return }
+        Task {
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+        }
+    }
+
+    // MARK: Taste facts
+
+    func loadTasteFacts() async {
+        guard let api, let facts = try? await api.tasteFacts() else { return }
+        withAnimation(Motion.snappy) { tasteFacts = facts }
     }
 
     func refreshShelf() async {
@@ -473,9 +643,25 @@ final class AppModel {
         if let index = shelf.firstIndex(where: { $0.id == item.id }) { shelf[index] = item }
     }
 
+    /// Forgets a fact right away. It comes back, with the quiet banner, if the delete fails.
     func deleteTasteFact(_ id: String) {
-        withAnimation(Motion.snappy) {
-            tasteFacts.removeAll { $0.id == id }
+        guard let index = tasteFacts.firstIndex(where: { $0.id == id }) else { return }
+        let removed = tasteFacts[index]
+        withAnimation(Motion.snappy) { _ = tasteFacts.remove(at: index) }
+        guard let api else { return }
+        Task {
+            do {
+                try await api.deleteTasteFact(id)
+            } catch let error as APIError where error.status == 404 {
+                // Already gone.
+            } catch {
+                withAnimation(Motion.snappy) {
+                    if !tasteFacts.contains(where: { $0.id == id }) {
+                        tasteFacts.insert(removed, at: min(index, tasteFacts.count))
+                    }
+                }
+                shelfError = "Couldn't forget that. Try again."
+            }
         }
     }
 

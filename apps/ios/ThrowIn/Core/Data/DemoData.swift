@@ -132,15 +132,23 @@ enum DemoData {
 
     static let ask = Ask(
         id: "a1",
+        rawText: "the LEGO Batmobile, the classic TV one",
         title: "LEGO Batmobile, the classic TV one",
-        detail: "Set 76188. Box not required.",
         status: .prospecting,
+        statusLine: "Checking 46 Shelves in 2 Circles",
+        target: AskTarget(
+            kind: "exact",
+            name: "LEGO Batman Classic TV Series Batmobile",
+            brand: "LEGO",
+            model: "76188",
+            category: "toys/lego",
+            constraints: ["Box not required"],
+            anchor: AskAnchor(retailCents: nil, usedLowCents: 7000, usedHighCents: 10000)
+        ),
+        offerItemIds: ["i1", "i2"],
+        offerValue: CentsRange(lowCents: 5900, highCents: 8300),
         cashCeilingCents: 2000,
-        anchor: ValueRange(lowCents: 7000, midCents: 8500, highCents: 10000),
-        offerItemIDs: ["i1", "i2"],
-        shelvesChecked: 46,
-        circlesChecked: 2,
-        candidates: 3
+        autonomy: .everyDeal
     )
 
     static let deal = DealSheet(
@@ -173,11 +181,12 @@ enum DemoData {
     ]
 
     static let tasteFacts: [TasteFact] = [
-        TasteFact(id: "t1", text: "Into LEGO DC sets and Switch games", source: "Intake chat"),
-        TasteFact(id: "t2", text: "Would never trade the Millennium Falcon", source: "Intake chat"),
-        TasteFact(id: "t3", text: "Fine adding up to $20 for the right set", source: "Batmobile Ask"),
-        TasteFact(id: "t4", text: "Doesn't care about boxes for games", source: "Shelf edits"),
-        TasteFact(id: "t5", text: "Prefers handoffs at the office lobby", source: "Intake chat"),
+        TasteFact(id: "t1", key: "into", value: "LEGO DC sets and Switch games", category: "interests", source: "Intake chat"),
+        TasteFact(id: "t2", key: "hunting", value: "Classic Batman LEGO", category: "hunting", source: "Batmobile Ask"),
+        TasteFact(id: "t3", key: "never_trade", value: "The Millennium Falcon", category: "limits", source: "Intake chat", alwaysOn: true),
+        TasteFact(id: "t4", key: "cash_throw_in", value: "Fine adding up to $20 for the right set", category: "preferences", source: "Batmobile Ask"),
+        TasteFact(id: "t5", key: "handoff_spot", value: "Handoffs at the office lobby", category: "preferences", source: "Intake chat"),
+        TasteFact(id: "t6", key: "boxes", value: "Doesn't care about boxes for games", category: "style", source: "Shelf edits"),
     ]
 
     static let prospectingLines = [

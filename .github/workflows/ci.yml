@@ -60,7 +60,8 @@ jobs:
       - name: Build for the iOS Simulator
         run: |
           # Without pipefail the step takes xcbeautify's exit code and a failed build passes.
+          # The github-actions renderer turns compiler warnings into annotations on the run.
           set -o pipefail
           xcodebuild -project apps/ios/ThrowIn.xcodeproj -scheme ThrowIn \
             -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build | xcbeautify || exit ${PIPESTATUS[0]}
+            CODE_SIGNING_ALLOWED=NO build | xcbeautify --renderer github-actions || exit ${PIPESTATUS[0]}
