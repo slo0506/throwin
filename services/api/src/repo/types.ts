@@ -250,7 +250,7 @@ export interface DealRecord {
   expiresAt: Date;
   legs: { giverId: string; receiverId: string; item: DealItemRecord }[];
   throwIns: { payerId: string; payeeId: string; amountCents: number }[];
-  participants: (DealPersonRecord & { approval: ApprovalState })[];
+  participants: (DealPersonRecord & { approval: ApprovalState; why: string | null })[];
 }
 
 /** public.approve_deal and public.decline_deal results; on success, the Deal afterwards. */

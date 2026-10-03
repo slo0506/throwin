@@ -4,6 +4,7 @@ import type { MatchDeal } from "./matcher.js";
 import type {
   ProspectingAsk,
   ProspectorStore,
+  ReviewContext,
   StageResult,
   StoredEdge,
   WantCandidate,
@@ -46,6 +47,22 @@ const StageRow = z.object({
     "items_taken",
   ]),
   deal_id: z.string().optional(),
+});
+
+const UserRow = z.object({ id: z.string(), display_name: z.string().nullable() });
+const FactRow = z.object({
+  user_id: z.string(),
+  key: z.string(),
+  value: z.string(),
+  category: z.string(),
+});
+const ReviewItemRow = z.object({
+  id: z.string(),
+  title: z.string(),
+  category: z.string().nullable(),
+  condition_grade: z.string().nullable(),
+  value_low_cents: z.number().int().nullable(),
+  value_high_cents: z.number().int().nullable(),
 });
 
 /** The Prospector's database access with the service role. */
@@ -159,13 +176,63 @@ export class SupabaseProspectorStore implements ProspectorStore {
     if (error) fail("replaceEdges.insert", error);
   }
 
-  async stageDeal(deal: MatchDeal): Promise<StageResult> {
-    const { data, error } = await this.db.rpc("stage_deal", { p_deal: deal, p_mode: "live" });
+  async stageDeal(deal: MatchDeal, whys: Record<string, string>): Promise<StageResult> {
+    const { data, error } = await this.db.rpc("stage_deal", {
+      p_deal: { ...deal, whys },
+      p_mode: "live",
+    });
     if (error) fail("stageDeal", error);
     const row = StageRow.parse(data);
     if (row.result !== "ok") return { result: row.result };
     if (!row.deal_id) fail("stageDeal", { message: "ok without a deal_id" });
     return { result: "ok", dealId: row.deal_id };
+  }
+
+  async reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext> {
+    const [users, facts, items] = await Promise.all([
+      this.db.from("users").select("id, display_name").in("id", userIds),
+      this.db
+        .from("taste_facts")
+        .select("user_id, key, value, category")
+        .in("user_id", userIds)
+        .eq("status", "active")
+        .in("category", ["limits", "hunting", "interests", "style"]),
+      this.db
+        .from("items")
+        .select("id, title, category, condition_grade, value_low_cents, value_high_cents")
+        .in("id", itemIds),
+    ]);
+    if (users.error) fail("reviewContext.users", users.error);
+    if (facts.error) fail("reviewContext.facts", facts.error);
+    if (items.error) fail("reviewContext.items", items.error);
+    const byUser: ReviewContext["facts"] = new Map();
+    for (const f of FactRow.array().parse(facts.data ?? [])) {
+      const list = byUser.get(f.user_id) ?? [];
+      list.push({ key: f.key, value: f.value, category: f.category });
+      byUser.set(f.user_id, list);
+    }
+    return {
+      names: new Map(
+        UserRow.array()
+          .parse(users.data ?? [])
+          .map((u) => [u.id, u.display_name || null]),
+      ),
+      facts: byUser,
+      items: new Map(
+        ReviewItemRow.array()
+          .parse(items.data ?? [])
+          .map((i) => [
+            i.id,
+            {
+              title: i.title,
+              category: i.category,
+              conditionGrade: i.condition_grade,
+              valueLowCents: i.value_low_cents,
+              valueHighCents: i.value_high_cents,
+            },
+          ]),
+      ),
+    };
   }
 
   /** public.expire_deals: cancels open Deals past expiry. Returns how many. */

@@ -1,0 +1,58 @@
+{
+  "id": "deal-review-never-trade-caught-in-code",
+  "suite": "deal_explanation",
+  "description": "Someone would give an Item their own never-trade fact protects; code drops it before any model call",
+  "state": {
+    "participants": [
+      {
+        "first_name": "Jordan",
+        "gives": {
+          "title": "LEGO Millennium Falcon 75192",
+          "category": "toys/lego",
+          "condition_grade": "B",
+          "value_low_cents": 60000,
+          "value_high_cents": 80000
+        },
+        "gets": {
+          "title": "LEGO Batman Batmobile Tumbler 76240",
+          "category": "toys/lego",
+          "condition_grade": "B",
+          "value_low_cents": 18000,
+          "value_high_cents": 25000
+        },
+        "receives_cents": 0,
+        "facts": [
+          {
+            "key": "never_trade",
+            "value": "Millennium Falcon",
+            "category": "limits"
+          }
+        ]
+      },
+      {
+        "first_name": "Maya",
+        "gives": {
+          "title": "LEGO Batman Batmobile Tumbler 76240",
+          "category": "toys/lego",
+          "condition_grade": "B",
+          "value_low_cents": 18000,
+          "value_high_cents": 25000
+        },
+        "gets": {
+          "title": "LEGO Millennium Falcon 75192",
+          "category": "toys/lego",
+          "condition_grade": "B",
+          "value_low_cents": 60000,
+          "value_high_cents": 80000
+        },
+        "facts": []
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "verdict": "drop",
+    "dropped_by": "never_trade"
+  }
+}

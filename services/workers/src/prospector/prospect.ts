@@ -10,17 +10,25 @@
  *    and keep the ones that clear the bar as explicit edges.
  * 4. Replace those Asks' stored edges and call the matcher anchored on the asker.
  *
- * 5. Stage each Deal the matcher returns (public.stage_deal re-checks everything and holds
- *    the Items), best first.
+ * 5. Review each Deal against every participant's taste facts (review.ts), dropping odd
+ *    ones and writing each person's "why".
+ * 6. Stage the kept Deals best first (public.stage_deal re-checks everything and holds the
+ *    Items).
  *
- * No model call here. Reviewing Deals against taste facts and writing the "why" is a later
- * step that will sit between matching and staging.
+ * The review is the only model call.
  */
 
 import { createHash } from "node:crypto";
 import { AskTarget } from "@throwin/shared";
 import type { QueryEmbedder } from "../appraiser/embeddings.js";
 import type { MatchDeal, Matcher, MatcherEdge } from "./matcher.js";
+import {
+  type ReviewFact,
+  type ReviewItem,
+  type ReviewModel,
+  type ReviewParticipant,
+  reviewDeal,
+} from "./review.js";
 
 export interface ProspectingAsk {
   id: string;
@@ -66,12 +74,24 @@ export interface ProspectorStore {
   candidates(circleId: string, model: string, perAsk: number): Promise<WantCandidate[]>;
   /** Deletes the edges of these Asks and writes the new ones, in that order. */
   replaceEdges(askIds: string[], edges: StoredEdge[]): Promise<void>;
-  /** public.stage_deal: re-checks the Deal against the database and holds its Items. */
-  stageDeal(deal: MatchDeal): Promise<StageResult>;
+  /**
+   * public.stage_deal: re-checks the Deal against the database, holds its Items and stores
+   * each participant's why (keyed by user ID).
+   */
+  stageDeal(deal: MatchDeal, whys: Record<string, string>): Promise<StageResult>;
+  /** What the review reads: participants' names and taste facts, and the Items' details. */
+  reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext>;
+}
+
+export interface ReviewContext {
+  names: Map<string, string | null>;
+  facts: Map<string, ReviewFact[]>;
+  items: Map<string, ReviewItem>;
 }
 
 export type StageResult =
   | { result: "ok"; dealId: string }
+  | { result: "dropped"; by: "never_trade" | "model"; reason: string }
   | {
       result: "invalid" | "ask_unavailable" | "offer_changed" | "over_ceiling" | "items_taken";
     };
@@ -89,6 +109,7 @@ export interface ProspectorDeps {
   store: ProspectorStore;
   embedder: QueryEmbedder;
   matcher: Matcher;
+  review: ReviewModel;
   config: ProspectorConfig;
   logger: { info(event: string, data?: Record<string, unknown>): void };
 }
@@ -100,7 +121,10 @@ export type ProspectOutcome =
 export interface CircleDeal {
   circleId: string;
   deal: MatchDeal;
-  /** What staging said. Anything but ok means the database had moved on since matching. */
+  /**
+   * What happened to it: dropped by the review, or what staging said. A staging refusal
+   * means the database had moved on since matching.
+   */
   staged: StageResult;
 }
 
@@ -142,6 +166,36 @@ export function scoreCandidate(
   }
   if (c.similarity < minSimilarity) return null;
   return Math.min(1, c.similarity);
+}
+
+/** Each person's side of a matched Deal, as the review reads it. */
+export async function reviewParticipants(
+  store: Pick<ProspectorStore, "reviewContext">,
+  deal: MatchDeal,
+): Promise<ReviewParticipant[]> {
+  const ctx = await store.reviewContext(
+    deal.users,
+    deal.item_legs.map((l) => l.item_id),
+  );
+  const unknown: ReviewItem = {
+    title: "an Item",
+    category: null,
+    conditionGrade: null,
+    valueLowCents: null,
+    valueHighCents: null,
+  };
+  const item = (id: string | undefined) => (id && ctx.items.get(id)) || unknown;
+  const cash = (pick: (c: MatchDeal["cash_legs"][number]) => boolean) =>
+    deal.cash_legs.filter(pick).reduce((sum, c) => sum + c.amount_cents, 0);
+  return deal.users.map((userId) => ({
+    userId,
+    firstName: ctx.names.get(userId) ?? null,
+    gives: item(deal.item_legs.find((l) => l.giver === userId)?.item_id),
+    gets: item(deal.item_legs.find((l) => l.receiver === userId)?.item_id),
+    paysCents: cash((c) => c.payer === userId),
+    receivesCents: cash((c) => c.payee === userId),
+    facts: ctx.facts.get(userId) ?? [],
+  }));
 }
 
 export async function prospectAsk(
@@ -221,10 +275,18 @@ export async function prospectAsk(
   }
   matched.sort((a, b) => b.deal.score - a.deal.score);
 
-  // 5. Stage, best first. A later Deal that shares an Ask or Item with an earlier one is
-  //    refused by the database, which is what we want.
+  // 5 and 6. Review, then stage, best first. A later Deal that shares an Ask or Item with an
+  //    earlier one is refused by the database, which is what we want.
   const deals: CircleDeal[] = [];
-  for (const m of matched) deals.push({ ...m, staged: await store.stageDeal(m.deal) });
+  for (const m of matched) {
+    const participants = await reviewParticipants(store, m.deal);
+    const verdict = await reviewDeal(participants, deps.review);
+    if (!verdict.keep) {
+      deals.push({ ...m, staged: { result: "dropped", by: verdict.by, reason: verdict.reason } });
+      continue;
+    }
+    deals.push({ ...m, staged: await store.stageDeal(m.deal, Object.fromEntries(verdict.whys)) });
+  }
   deps.logger.info("prospect_matched", {
     ask_id: askId,
     circles: circleIds.length,
@@ -233,6 +295,7 @@ export async function prospectAsk(
     edges: stored.size,
     deals: deals.length,
     staged: deals.filter((d) => d.staged.result === "ok").length,
+    dropped: deals.filter((d) => d.staged.result === "dropped").length,
   });
   return { status: "matched", edges: stored.size, embedded: stale.length, deals };
 }

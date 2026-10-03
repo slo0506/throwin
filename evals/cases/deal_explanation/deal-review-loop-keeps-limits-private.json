@@ -1,0 +1,112 @@
+{
+  "id": "deal-review-loop-keeps-limits-private",
+  "suite": "deal_explanation",
+  "description": "In a 3-way Loop, each why uses only its reader's facts: nobody is told what the others would never trade or what they hunt for",
+  "state": {
+    "participants": [
+      {
+        "first_name": "Jordan",
+        "gives": {
+          "title": "Zelda: Tears of the Kingdom",
+          "category": "video_games",
+          "condition_grade": "A",
+          "value_low_cents": 3500,
+          "value_high_cents": 5000
+        },
+        "gets": {
+          "title": "LEGO Galaxy Explorer 10497",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 7000,
+          "value_high_cents": 9900
+        },
+        "facts": [
+          {
+            "key": "hunting_for",
+            "value": "Space LEGO",
+            "category": "hunting"
+          },
+          {
+            "key": "never_trade",
+            "value": "Pokemon cards",
+            "category": "limits"
+          }
+        ]
+      },
+      {
+        "first_name": "Maya",
+        "gives": {
+          "title": "LEGO Galaxy Explorer 10497",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 7000,
+          "value_high_cents": 9900
+        },
+        "gets": {
+          "title": "Super Mario Bros. Wonder",
+          "category": "video_games",
+          "condition_grade": "B",
+          "value_low_cents": 3000,
+          "value_high_cents": 4200
+        },
+        "facts": [
+          {
+            "key": "hunting_for",
+            "value": "Mario games",
+            "category": "hunting"
+          },
+          {
+            "key": "never_trade",
+            "value": "Hogwarts Castle",
+            "category": "limits"
+          }
+        ]
+      },
+      {
+        "first_name": "Theo",
+        "gives": {
+          "title": "Super Mario Bros. Wonder",
+          "category": "video_games",
+          "condition_grade": "B",
+          "value_low_cents": 3000,
+          "value_high_cents": 4200
+        },
+        "gets": {
+          "title": "Zelda: Tears of the Kingdom",
+          "category": "video_games",
+          "condition_grade": "A",
+          "value_low_cents": 3500,
+          "value_high_cents": 5000
+        },
+        "facts": [
+          {
+            "key": "interests",
+            "value": "Zelda games",
+            "category": "interests"
+          },
+          {
+            "key": "never_trade",
+            "value": "Game Boy",
+            "category": "limits"
+          }
+        ]
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "verdict": "keep",
+    "every_why": true,
+    "why_includes_any": {
+      "p1": ["space"],
+      "p2": ["mario"],
+      "p3": ["zelda"]
+    },
+    "why_excludes": {
+      "p1": ["hogwarts", "game boy", "pokemon"],
+      "p2": ["pokemon", "game boy", "hogwarts"],
+      "p3": ["pokemon", "hogwarts", "game boy"]
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "id": "deal-review-no-facts-still-explained",
+  "suite": "deal_explanation",
+  "description": "Nobody has taste facts yet; missing facts are no reason to drop, and each person still gets a plain why about their side",
+  "state": {
+    "participants": [
+      {
+        "first_name": "Jordan",
+        "gives": {
+          "title": "Zelda: Tears of the Kingdom",
+          "category": "video_games",
+          "condition_grade": "A",
+          "value_low_cents": 3500,
+          "value_high_cents": 5000
+        },
+        "gets": {
+          "title": "Super Mario Bros. Wonder",
+          "category": "video_games",
+          "condition_grade": "B",
+          "value_low_cents": 3000,
+          "value_high_cents": 4200
+        },
+        "facts": []
+      },
+      {
+        "first_name": "Maya",
+        "gives": {
+          "title": "Super Mario Bros. Wonder",
+          "category": "video_games",
+          "condition_grade": "B",
+          "value_low_cents": 3000,
+          "value_high_cents": 4200
+        },
+        "gets": {
+          "title": "Zelda: Tears of the Kingdom",
+          "category": "video_games",
+          "condition_grade": "A",
+          "value_low_cents": 3500,
+          "value_high_cents": 5000
+        },
+        "facts": []
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "verdict": "keep",
+    "every_why": true,
+    "why_includes_any": {
+      "p1": ["mario"],
+      "p2": ["zelda"]
+    }
+  }
+}

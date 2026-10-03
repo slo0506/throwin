@@ -37,6 +37,17 @@ How a matcher Deal becomes rows in `deals`, `deal_legs` and `deal_participants`,
 
 `deals.fairness` stores `{ "participants": [matcher fairness], "cash_moved_cents", "score" }`.
 
+## The review before staging
+
+Between matching and staging, the Prospector reviews each Deal (`services/workers/src/prospector/review.ts`, prompt in `prompts.ts`, Sonnet). It sees each participant's side (titles fenced as untrusted, condition, value ranges, cash) and their active `limits`, `hunting`, `interests` and `style` facts, then keeps or drops the Deal and writes 1 why per person. Code enforces the hard rules:
+
+- **Never-trade:** a participant giving an Item whose title contains one of their own `limits` facts drops the Deal before any model call.
+- **Grounded amounts:** a why may only quote dollar amounts from its reader's own side (their Items' ranges and their cash). Otherwise it's discarded.
+- **Privacy:** a why that repeats another participant's `limits` fact is discarded.
+- **Style:** em dashes and exclamation marks are cleaned, and whys are capped at 220 characters.
+
+A dropped Deal is never staged; the job log records the reason. Kept Deals pass their whys to `stage_deal` as `p_deal.whys` (`{ "<user id>": "<why>" }`), stored in `deal_participants.why`. Eval cases live in `evals/cases/deal_explanation`, and `eval:review` runs them against the real model.
+
 ## Deal Sheet API
 
 All JSON is snake_case and money is integer cents. Someone else's Deal, or a `staged` one, is a 404.
@@ -68,7 +79,7 @@ All JSON is snake_case and money is integer cents. Someone else's Deal, or a `st
 - `DealItem` is `{ id, title, category, brand, model, condition_grade, value: ValueRange, photo_url }`. Every Item is showcase by the time a Deal is shown, so photos are always included.
 - `DealPerson` is `{ user_id, first_name, photo_url }`.
 - `fairness` holds the mid values of what the caller gives and gets, for "You give about $42 in value and get about $85". Everyone sees the same Items and ranges in `loop`, and nobody's cash ceiling ever appears.
-- `why` stays null until Claude's review writes it.
+- `why` is the caller's own "why your GM likes it", written by the Prospector's review. Each person sees only their own, and it's null when the review wrote none.
 
 ### Decisions
 
@@ -89,4 +100,3 @@ All JSON is snake_case and money is integer cents. Someone else's Deal, or a `st
 
 - Counter (a different Throw-In or Item) re-running the match.
 - Just-in-time photo requests to owners of non-showcase Items: needs notifications.
-- Claude's taste-fact review and the "why": it will sit between matching and staging.

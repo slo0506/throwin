@@ -95,6 +95,7 @@ export class MemoryRepository implements Repository {
     approval: ApprovalState;
     snapshot: unknown;
     declineReason: string | null;
+    why: string | null;
   }[] = [];
   readonly askExclusions: { askId: string; itemId: string }[] = [];
   readonly captures: CaptureRecord[] = [];
@@ -574,6 +575,7 @@ export class MemoryRepository implements Repository {
     createdAt?: Date;
     legs: { giverId: string; receiverId: string; itemId: string; askId?: string }[];
     throwIns?: { payerId: string; payeeId: string; amountCents: number }[];
+    whys?: Record<string, string>;
   }) {
     this.deals.push({
       id: deal.id,
@@ -612,6 +614,7 @@ export class MemoryRepository implements Repository {
         approval: "pending",
         snapshot: null,
         declineReason: null,
+        why: deal.whys?.[userId] ?? null,
       });
     }
   }
@@ -737,6 +740,7 @@ export class MemoryRepository implements Repository {
             displayName: user?.displayName ?? null,
             photoUrl: user?.photoUrl ?? null,
             approval: p.approval,
+            why: p.why,
           };
         }),
     };

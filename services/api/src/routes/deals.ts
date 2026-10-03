@@ -76,7 +76,8 @@ export function toDealSheet(
     })),
     participants: d.participants.map((p) => ({ ...person(p.userId), approval: p.approval })),
     your_approval: me.approval,
-    why: null,
+    // Each person's own why; nobody sees another participant's.
+    why: me.why,
   };
 }
 

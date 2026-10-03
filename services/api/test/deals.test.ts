@@ -41,6 +41,10 @@ function setup() {
       { giverId: ALICE, receiverId: BOB, itemId: ZELDA, askId: BOB_ASK },
     ],
     throwIns: [{ payerId: ALICE, payeeId: BOB, amountCents: 2000 }],
+    whys: {
+      [ALICE]: "You said Galaxy Explorer was your white whale.",
+      [BOB]: "Zelda, like you asked.",
+    },
   });
   const call = (method: string, path: string, as = ALICE, body?: unknown) =>
     h.request(path, { method, as, ...(body !== undefined && { body: JSON.stringify(body) }) });
@@ -61,7 +65,7 @@ describe("Deal Sheets", () => {
       cash: { pay_cents: 2000, receive_cents: 0 },
       fairness: { give_cents: 4200, get_cents: 8500 },
       your_approval: "pending",
-      why: null,
+      why: "You said Galaxy Explorer was your white whale.",
     });
     expect(alice.you_give.photo_url).toBe("https://storage.test/read/alice/zelda.jpg?token=t");
     expect(alice.loop).toHaveLength(2);
@@ -79,7 +83,9 @@ describe("Deal Sheets", () => {
       you_get: { id: ZELDA },
       cash: { pay_cents: 0, receive_cents: 2000 },
       fairness: { give_cents: 8500, get_cents: 4200 },
+      why: "Zelda, like you asked.",
     });
+    expect(JSON.stringify(bob)).not.toContain("white whale");
 
     const list = DealSheetsResponse.parse(await (await call("GET", "/v1/deals", BOB)).json());
     expect(list.deals.map((d) => d.id)).toEqual([DEAL]);

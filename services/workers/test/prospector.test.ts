@@ -13,11 +13,13 @@ import {
   type ProspectorConfig,
   type ProspectorStore,
   prospectAsk,
+  type ReviewContext,
   type StageResult,
   type StoredEdge,
   scoreCandidate,
   type WantCandidate,
 } from "../src/prospector/prospect.js";
+import type { ReviewFact, ReviewOutput, ReviewParticipant } from "../src/prospector/review.js";
 
 const MODEL = "voyage-multimodal-3.5";
 const JORDAN = "u-jordan";
@@ -96,8 +98,10 @@ class FakeStore implements ProspectorStore {
   saved: { askId: string; hash: string }[] = [];
   replaced: { askIds: string[]; edges: StoredEdge[] } | null = null;
   staged: number[] = [];
+  stagedWhys: Record<string, string>[] = [];
   /** Results to return from stageDeal, in order; ok with a fresh ID once they run out. */
   stageResults: StageResult[] = [];
+  facts = new Map<string, ReviewFact[]>();
 
   async getAsk(userId: string, askId: string) {
     const ask = this.asks.find((a) => a.id === askId && a.userId === userId);
@@ -118,9 +122,28 @@ class FakeStore implements ProspectorStore {
   async replaceEdges(askIds: string[], edges: StoredEdge[]) {
     this.replaced = { askIds, edges };
   }
-  async stageDeal(deal: MatchDeal): Promise<StageResult> {
+  async stageDeal(deal: MatchDeal, whys: Record<string, string>): Promise<StageResult> {
     this.staged.push(deal.score);
+    this.stagedWhys.push(whys);
     return this.stageResults.shift() ?? { result: "ok", dealId: `deal-${this.staged.length}` };
+  }
+  async reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext> {
+    return {
+      names: new Map(userIds.map((u) => [u, u.replace("u-", "")])),
+      facts: new Map(userIds.map((u) => [u, this.facts.get(u) ?? []])),
+      items: new Map(
+        itemIds.map((i) => [
+          i,
+          {
+            title: i,
+            category: "toys/lego",
+            conditionGrade: "B",
+            valueLowCents: 1000,
+            valueHighCents: 2000,
+          },
+        ]),
+      ),
+    };
   }
 }
 
@@ -136,7 +159,9 @@ function world(config: Partial<ProspectorConfig> = {}) {
   const store = new FakeStore();
   const embedded: string[] = [];
   const requests: MatchRequest[] = [];
+  const reviewed: ReviewParticipant[][] = [];
   let response: MatchResponse = EMPTY_MATCH;
+  let verdict: ReviewOutput = { verdict: "keep", drop_reason: null, whys: [] };
   const deps = {
     store,
     embedder: {
@@ -150,6 +175,12 @@ function world(config: Partial<ProspectorConfig> = {}) {
       match: async (req: MatchRequest) => {
         requests.push(req);
         return response;
+      },
+    },
+    review: {
+      review: async (participants: ReviewParticipant[]) => {
+        reviewed.push(participants);
+        return verdict;
       },
     },
     config: {
@@ -166,8 +197,12 @@ function world(config: Partial<ProspectorConfig> = {}) {
     embedded,
     requests,
     deps,
+    reviewed,
     respond: (r: MatchResponse) => {
       response = r;
+    },
+    reviewSays: (v: ReviewOutput) => {
+      verdict = v;
     },
   };
 }
@@ -314,6 +349,105 @@ describe("prospectAsk", () => {
       ["circle-1", 1.2, { result: "ok", dealId: "deal-best" }],
       ["circle-1", 0.4, { result: "items_taken" }],
     ]);
+  });
+
+  it("reviews each Deal first: drops what the review rules out, stages the rest with whys", async () => {
+    const w = world();
+    w.store.asks = [ask("ask-jordan", JORDAN)];
+    w.store.circles.set(JORDAN, ["circle-1"]);
+    w.store.candidatesByCircle.set("circle-1", [candidate({ model: null, brand: null })]);
+    const deal = (score: number, give: string) => ({
+      users: [JORDAN, MAYA],
+      item_legs: [
+        {
+          giver: MAYA,
+          receiver: JORDAN,
+          item_id: "item-bat",
+          value_cents: 2000,
+          ask_id: "a",
+          giver_ask_id: "b",
+          kind: "explicit" as const,
+        },
+        {
+          giver: JORDAN,
+          receiver: MAYA,
+          item_id: give,
+          value_cents: 1500,
+          ask_id: "b",
+          giver_ask_id: "a",
+          kind: "explicit" as const,
+        },
+      ],
+      cash_legs: [{ payer: JORDAN, payee: MAYA, amount_cents: 300 }],
+      fairness: [],
+      cash_moved_cents: 300,
+      score,
+    });
+    w.respond({
+      ...EMPTY_MATCH,
+      deals: [deal(1.2, "Millennium Falcon 75192"), deal(0.8, "item-zelda")],
+    });
+    // Jordan's never-trade fact rules out the best Deal before any model call.
+    w.store.facts.set(JORDAN, [
+      { key: "never_trade", value: "Millennium Falcon", category: "limits" },
+    ]);
+    w.reviewSays({
+      verdict: "keep",
+      drop_reason: null,
+      whys: [
+        { ref: "p1", why: "You wanted a Batmobile — this is it!" },
+        { ref: "p2", why: "Gets you Zelda for a set you listed." },
+      ],
+    });
+    const outcome = await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(outcome.status === "matched" && outcome.deals.map((d) => d.staged)).toEqual([
+      { result: "dropped", by: "never_trade", reason: "jordan never trades Millennium Falcon" },
+      { result: "ok", dealId: "deal-1" },
+    ]);
+    // Only the second Deal reached the model, with both sides and the cash.
+    expect(w.reviewed).toHaveLength(1);
+    expect(w.reviewed[0]?.[0]).toMatchObject({
+      userId: JORDAN,
+      gives: { title: "item-zelda" },
+      gets: { title: "item-bat" },
+      paysCents: 300,
+      receivesCents: 0,
+    });
+    expect(w.store.staged).toEqual([0.8]);
+    expect(w.store.stagedWhys).toEqual([
+      {
+        [JORDAN]: "You wanted a Batmobile, this is it.",
+        [MAYA]: "Gets you Zelda for a set you listed.",
+      },
+    ]);
+  });
+
+  it("drops a Deal the model rules out, without staging it", async () => {
+    const w = world();
+    w.store.asks = [ask("ask-jordan", JORDAN)];
+    w.store.circles.set(JORDAN, ["circle-1"]);
+    w.store.candidatesByCircle.set("circle-1", [candidate({ model: null, brand: null })]);
+    w.respond({
+      ...EMPTY_MATCH,
+      deals: [
+        {
+          users: [JORDAN, MAYA],
+          item_legs: [],
+          cash_legs: [],
+          fairness: [],
+          cash_moved_cents: 0,
+          score: 1,
+        },
+      ],
+    });
+    w.reviewSays({ verdict: "drop", drop_reason: "Maya only wants sealed sets", whys: [] });
+    const outcome = await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(outcome.status === "matched" && outcome.deals[0]?.staged).toEqual({
+      result: "dropped",
+      by: "model",
+      reason: "Maya only wants sealed sets",
+    });
+    expect(w.store.staged).toEqual([]);
   });
 
   it("stages nothing when the matcher finds nothing", async () => {

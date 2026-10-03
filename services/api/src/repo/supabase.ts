@@ -360,6 +360,7 @@ const DealParticipantRow = z.object({
   deal_id: z.string(),
   user_id: z.string(),
   approval: ApprovalState,
+  why: z.string().nullable(),
   users: z.object({ display_name: z.string().nullable(), photo_url: z.string().nullable() }),
 });
 const DecisionRow = z.object({ result: z.enum(["ok", "not_found", "closed", "decided"]) });
@@ -959,7 +960,7 @@ export class SupabaseRepository implements Repository {
         .in("deal_id", shownIds),
       this.db
         .from("deal_participants")
-        .select("deal_id, user_id, approval, users(display_name, photo_url)")
+        .select("deal_id, user_id, approval, why, users(display_name, photo_url)")
         .in("deal_id", shownIds),
     ]);
     if (legs.error) throw new RepositoryError("deals.legs", legs.error);
@@ -1025,6 +1026,7 @@ export class SupabaseRepository implements Repository {
           displayName: p.users.display_name,
           photoUrl: p.users.photo_url,
           approval: p.approval,
+          why: p.why,
         })),
     }));
   }

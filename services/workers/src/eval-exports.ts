@@ -9,6 +9,7 @@ import {
   DEFAULT_VISION,
   type ModelRun,
 } from "./appraiser/claude.js";
+import { ClaudeReviewModel } from "./prospector/review.js";
 
 export {
   ClaudeVision,
@@ -66,6 +67,17 @@ export {
   sensitiveCategory,
   validateOperations,
 } from "./memory/validator.js";
+export { REVIEW_PROMPT_VERSION } from "./prospector/prompts.js";
+export {
+  ClaudeReviewModel,
+  checkWhy,
+  type ReviewModel,
+  type ReviewOutput,
+  type ReviewParticipant,
+  type ReviewResult,
+  reviewDeal,
+  reviewText,
+} from "./prospector/review.js";
 export { CATEGORIES, type CategorySpec, categoryOf } from "./refiner/categories.js";
 export {
   ClaudeRefinerModels,
@@ -85,6 +97,11 @@ export {
 
 /** SDK retries per call, the worker's ANTHROPIC_MAX_RETRIES default. */
 const MAX_RETRIES = 4;
+
+/** The production review model, reporting every model run. */
+export function createReviewModel(apiKey: string, onRun: (run: ModelRun) => void) {
+  return new ClaudeReviewModel(new Anthropic({ apiKey, maxRetries: MAX_RETRIES }), onRun);
+}
 
 /**
  * The production Vision, built the way the worker builds it with its default settings,

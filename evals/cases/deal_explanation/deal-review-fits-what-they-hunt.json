@@ -1,0 +1,77 @@
+{
+  "id": "deal-review-fits-what-they-hunt",
+  "suite": "deal_explanation",
+  "description": "A 2-way swap that gives each person what their facts say they hunt for is kept, and each why ties to their own words",
+  "state": {
+    "participants": [
+      {
+        "first_name": "Jordan",
+        "gives": {
+          "title": "LEGO Galaxy Explorer 10497",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 7000,
+          "value_high_cents": 9900
+        },
+        "gets": {
+          "title": "Super Mario Bros. Wonder",
+          "category": "video_games",
+          "condition_grade": "B",
+          "value_low_cents": 3000,
+          "value_high_cents": 4200
+        },
+        "facts": [
+          {
+            "key": "hunting_for",
+            "value": "Mario games for the kids",
+            "category": "hunting"
+          },
+          {
+            "key": "interests",
+            "value": "Switch games",
+            "category": "interests"
+          }
+        ]
+      },
+      {
+        "first_name": "Maya",
+        "gives": {
+          "title": "Super Mario Bros. Wonder",
+          "category": "video_games",
+          "condition_grade": "B",
+          "value_low_cents": 3000,
+          "value_high_cents": 4200
+        },
+        "gets": {
+          "title": "LEGO Galaxy Explorer 10497",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 7000,
+          "value_high_cents": 9900
+        },
+        "pays_cents": 0,
+        "facts": [
+          {
+            "key": "hunting_for",
+            "value": "Classic space LEGO",
+            "category": "hunting"
+          }
+        ]
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "verdict": "keep",
+    "every_why": true,
+    "why_includes_any": {
+      "p1": ["mario", "kids"],
+      "p2": ["space"]
+    },
+    "why_excludes": {
+      "p1": ["classic space"],
+      "p2": ["kids"]
+    }
+  }
+}
