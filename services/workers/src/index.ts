@@ -266,8 +266,22 @@ async function expireLoop() {
   }
 }
 
+/** Logs whether the matcher answers, so a deploy shows the private network works. */
+async function checkMatcher() {
+  try {
+    const res = await fetch(new URL("/healthz", env.MATCHER_URL), {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) logger.info("matcher_reachable", { url: env.MATCHER_URL });
+    else logger.warn("matcher_unhealthy", { url: env.MATCHER_URL, status: res.status });
+  } catch (err) {
+    logger.error("matcher_unreachable", { url: env.MATCHER_URL, error: String(err) });
+  }
+}
+
 async function main() {
   if (!prospector) logger.warn("prospector_off", { reason: "MATCHER_URL is not set" });
+  else void checkMatcher();
   logger.info("worker_started", {
     kinds: KINDS,
     pricing,
