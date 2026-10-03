@@ -151,7 +151,8 @@ export const identificationJsonSchema = strict({
   properties: {
     is_tradeable_item: {
       type: "boolean",
-      description: "False for furniture, people, pets, or anything not a tradeable possession",
+      description:
+        "False for furniture, fixtures, people, pets, medications, supplements, medical devices, personal hygiene items, documents, IDs, bank or credit cards, or anything not a tradeable possession",
     },
     title: {
       type: "string",

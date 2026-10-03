@@ -47,6 +47,8 @@ export interface ItemRecord {
   conditionConf: number | null;
   reservedByDealId: string | null;
   followUp: string | null;
+  /** True while the Appraiser is pricing or re-reading the Item. */
+  appraising: boolean;
   captureId: string | null;
   /** Storage path of the Item's first photo or crop, if any. */
   thumbnailPath: string | null;
@@ -103,6 +105,17 @@ export interface Repository {
   listShelfItems(userId: string): Promise<ItemRecord[]>;
   /** Returns null when the Item does not exist or belongs to someone else. */
   updateItem(userId: string, itemId: string, update: ItemUpdate): Promise<ItemRecord | null>;
+  /** Any of the user's Items except removed ones. Null when missing or someone else's. */
+  getItem(userId: string, itemId: string): Promise<ItemRecord | null>;
+  /**
+   * Records follow-up photos, marks the Item appraising and enqueues the Appraiser, all at
+   * once. "conflict" when a Deal holds the Item or it is already being appraised.
+   */
+  submitItemMedia(
+    userId: string,
+    itemId: string,
+    media: CaptureMediaInput[],
+  ): Promise<ItemRecord | "not_found" | "conflict">;
   /** Marks the Item removed. False when missing, not the user's, or reserved by a Deal. */
   removeItem(userId: string, itemId: string): Promise<"removed" | "not_found" | "reserved">;
 

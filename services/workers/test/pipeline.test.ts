@@ -1,136 +1,15 @@
-import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import type { Vision } from "../src/appraiser/claude.js";
 import type { Embedder } from "../src/appraiser/embeddings.js";
 import {
-  type AppraiserStore,
   appraiseCapture,
   bestAppearances,
+  DEFAULT_PIPELINE,
   looksAlike,
-  type NewItem,
-  type Progress,
   titleOverlap,
 } from "../src/appraiser/pipeline.js";
-import type { Detection, Identification } from "../src/appraiser/schemas.js";
+import type { Detection } from "../src/appraiser/schemas.js";
 import { silentLogger } from "../src/log.js";
-
-const USER = "u1";
-const CAPTURE = "c1";
-
-async function solidJpeg(color: string, width = 1600, height = 1200) {
-  return sharp({ create: { width, height, channels: 3, background: color } })
-    .jpeg()
-    .toBuffer();
-}
-
-class MemoryStore implements AppraiserStore {
-  files = new Map<string, Buffer>();
-  progress: Progress[] = [];
-  items: (NewItem & { id: string })[] = [];
-  embeddings: { itemId: string; vector: number[] }[] = [];
-  finished: { count: number; progress: Progress } | null = null;
-  cleared = 0;
-  media = [
-    { path: `${USER}/${CAPTURE}/0.jpg`, position: 0, sharpness: 10 },
-    { path: `${USER}/${CAPTURE}/1.jpg`, position: 1, sharpness: 50 },
-  ];
-
-  async loadCapture() {
-    return { userId: USER, media: this.media };
-  }
-  async clearCaptureItems() {
-    this.cleared++;
-  }
-  async download(path: string) {
-    const file = this.files.get(path);
-    if (!file) throw new Error(`missing ${path}`);
-    return file;
-  }
-  async upload(path: string, jpeg: Buffer) {
-    this.files.set(path, jpeg);
-  }
-  async setProgress(_: string, p: Progress) {
-    this.progress.push(p);
-  }
-  async insertItem(item: NewItem) {
-    const id = `item-${this.items.length}`;
-    this.items.push({ ...item, id });
-    return id;
-  }
-  async saveEmbedding(itemId: string, _model: string, vector: number[]) {
-    this.embeddings.push({ itemId, vector });
-  }
-  async finishCapture(_: string, count: number, progress: Progress) {
-    this.finished = { count, progress };
-  }
-  async failCapture() {}
-  async recordRun() {}
-}
-
-const identification = (overrides: Partial<Identification> = {}): Identification => ({
-  is_tradeable_item: true,
-  title: "LEGO Typewriter 21327",
-  category: "toys/lego",
-  brand: "LEGO",
-  model: "21327",
-  variant: null,
-  attributes: { box: "yes" },
-  condition_grade: "B",
-  defects: [],
-  age_estimate_years: [1, 3],
-  identity_confidence: 0.9,
-  condition_confidence: 0.8,
-  follow_up: null,
-  ...overrides,
-});
-
-function fakeVision(
-  detection: Detection,
-  idents: Identification[],
-  same = false,
-): Vision & { identifyCalls: number; sameCalls: number } {
-  let i = 0;
-  return {
-    identifyCalls: 0,
-    sameCalls: 0,
-    async sameItem() {
-      this.sameCalls++;
-      return same;
-    },
-    async detect() {
-      return detection;
-    },
-    async identify(crops) {
-      this.identifyCalls++;
-      expect(crops.length).toBeGreaterThan(0);
-      for (const c of crops) expect(Math.max(c.width, c.height)).toBeLessThanOrEqual(1000);
-      return idents[i++ % idents.length] as Identification;
-    },
-    async price() {
-      return {
-        value: {
-          low_usd: 140,
-          mid_usd: 165,
-          high_usd: 190,
-          basis: ["eBay sold $165"],
-          confidence: 0.8,
-        },
-        research: "notes",
-      };
-    },
-  };
-}
-
-const embedder: Embedder = { model: "test-embed", embed: async () => [0.1, 0.2] };
-
-async function setup() {
-  const store = new MemoryStore();
-  const colors = ["#ff7a2f", "#2fc4ff"];
-  for (const [i, m] of store.media.entries()) {
-    store.files.set(m.path, await solidJpeg(colors[i] ?? "#7a5cff"));
-  }
-  return store;
-}
+import { CAPTURE, embedder, fakeVision, identification, priceResult, setup } from "./support.js";
 
 describe("appraiseCapture", () => {
   it("turns detected objects into priced Items with crops and embeddings", async () => {
@@ -172,7 +51,7 @@ describe("appraiseCapture", () => {
     expect(sneaker?.identification.follow_up).toBe("Photo of the size tag");
     const lego = store.items.find((i) => i.title.startsWith("LEGO"));
     expect(lego?.identification.follow_up).toBeNull();
-    expect(lego?.value?.mid_usd).toBe(165);
+    expect(lego?.priced?.value?.mid_usd).toBe(165);
     expect(store.files.has(lego!.cropPath)).toBe(true);
     expect(store.embeddings).toHaveLength(2);
     expect(store.finished).toEqual({
@@ -223,6 +102,158 @@ describe("appraiseCapture", () => {
     });
     expect(saved).toBe(0);
     expect(store.finished?.progress.detail).toContain("Try closer");
+  });
+});
+
+describe("progressive Items", () => {
+  const threeThings: Detection = {
+    objects: [0, 1, 2].map((n) => ({
+      label: `thing ${n}`,
+      category: "other",
+      appearances: [{ frame: n % 2, box: [0.05 + n * 0.3, 0.1, 0.3 + n * 0.3, 0.4] }],
+    })),
+  };
+  const idents = [
+    identification({ title: "Mario Kart 8 Deluxe", brand: "Nintendo", model: null }),
+    identification({ title: "Sony WH-1000XM4", brand: "Sony", model: "WH-1000XM4" }),
+    identification({ title: "Catan board game", brand: "Catan", model: null }),
+  ];
+
+  it("saves every Item unpriced before pricing any, and finishes the capture last", async () => {
+    const store = await setup();
+    const vision = fakeVision(threeThings, idents);
+    const seenWhilePricing: boolean[] = [];
+    vision.priceImpl = async () => {
+      // Every Item exists, still appraising, before the first price comes back.
+      seenWhilePricing.push(store.items.length === 3 && store.items.some((i) => i.appraising));
+      return priceResult();
+    };
+    await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger });
+
+    const firstFinish = store.events.findIndex((e) => e.startsWith("finish:"));
+    const inserts = store.events.filter((e) => e.startsWith("insert:"));
+    expect(inserts).toHaveLength(3);
+    expect(store.events.slice(0, firstFinish)).toEqual(inserts);
+    expect(store.events.at(-1)).toBe("capture_done");
+    expect(seenWhilePricing.every(Boolean)).toBe(true);
+    expect(store.items.every((i) => !i.appraising && i.priced?.value)).toBe(true);
+    expect(store.items.every((i) => i.appraisals === 1)).toBe(true);
+    expect(store.progress.map((p) => p.detail)).toContain("Found 3 items. Pricing them now");
+  });
+
+  it("keeps an Item with a null value when pricing fails", async () => {
+    const store = await setup();
+    const vision = fakeVision(threeThings, idents);
+    vision.priceImpl = async (item) => {
+      if (item.brand === "Sony") throw new Error("research timed out");
+      return priceResult();
+    };
+    expect(await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger })).toBe(
+      3,
+    );
+    const sony = store.items.find((i) => i.identification.brand === "Sony");
+    expect(sony?.appraising).toBe(false);
+    expect(sony?.priced?.value).toBeNull();
+    expect(store.finished?.count).toBe(3);
+  });
+
+  it("prices 2 copies of 1 product once, through the cache", async () => {
+    const store = await setup();
+    const sameGame = identification({
+      title: "Mario Kart 8 Deluxe",
+      brand: "Nintendo",
+      model: null,
+    });
+    const vision = fakeVision(threeThings, [sameGame, sameGame, idents[1] ?? sameGame]);
+    await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger });
+    expect(vision.priceCalls).toBe(2);
+    expect(store.cache.size).toBe(2);
+
+    // A later capture of the same product reuses the cached range.
+    const again = await setup();
+    again.cache = store.cache;
+    const vision2 = fakeVision(threeThings, [sameGame]);
+    await appraiseCapture(CAPTURE, {
+      store: again,
+      vision: vision2,
+      embedder,
+      logger: silentLogger,
+    });
+    expect(vision2.priceCalls).toBe(0);
+    expect(again.items[0]?.priced?.comps.cached).toBe(true);
+    expect(again.items[0]?.priced?.value?.low_usd).toBe(140);
+  });
+
+  it("respects the concurrency limits", async () => {
+    const store = await setup();
+    const vision = fakeVision(threeThings, idents);
+    let active = 0;
+    let peak = 0;
+    vision.priceImpl = async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      return priceResult();
+    };
+    await appraiseCapture(CAPTURE, {
+      store,
+      vision,
+      embedder,
+      logger: silentLogger,
+      config: { ...DEFAULT_PIPELINE, parallelPricing: 2 },
+    });
+    expect(peak).toBe(2);
+  });
+});
+
+describe("privacy", () => {
+  it("never reads or saves medications, retainers or remotes next to real items", async () => {
+    const store = await setup();
+    const vision = fakeVision(
+      {
+        objects: [
+          {
+            label: "prescription pill bottle",
+            category: "other",
+            appearances: [{ frame: 0, box: [0.05, 0.1, 0.2, 0.4] }],
+          },
+          {
+            label: "retainer case",
+            category: "other",
+            appearances: [{ frame: 0, box: [0.25, 0.1, 0.4, 0.4] }],
+          },
+          {
+            label: "air conditioner remote",
+            category: "electronics",
+            appearances: [{ frame: 1, box: [0.05, 0.5, 0.2, 0.9] }],
+          },
+          {
+            label: "over-ear headphones",
+            category: "electronics",
+            appearances: [{ frame: 1, box: [0.5, 0.2, 0.9, 0.8] }],
+          },
+          {
+            label: "white bottle",
+            category: "other",
+            appearances: [{ frame: 0, box: [0.6, 0.1, 0.75, 0.4] }],
+          },
+        ],
+      },
+      [],
+    );
+    const hints: string[] = [];
+    vision.identify = async (_crops, _frame, hint) => {
+      hints.push(hint);
+      return hint.includes("headphones")
+        ? identification({ title: "Sony WH-1000XM4", brand: "Sony", model: "WH-1000XM4" })
+        : // The detector's label was vague; identification catches it.
+          identification({ title: "Vitamin D3 supplement bottle", brand: null, model: null });
+    };
+    const saved = await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger });
+    expect(hints.sort()).toEqual(["over-ear headphones", "white bottle"]);
+    expect(saved).toBe(1);
+    expect(store.items.map((i) => i.title)).toEqual(["Sony WH-1000XM4"]);
   });
 });
 

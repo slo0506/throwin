@@ -41,6 +41,30 @@ export async function crop(
   return prepare(cropped);
 }
 
+/**
+ * Sharpness as the variance of the Laplacian, the same measure the iOS app uses. Images are
+ * scaled to fit 512 px first so a big photo and a small crop are compared fairly.
+ */
+export async function sharpness(image: PreparedImage): Promise<number> {
+  const { channels } = await sharp(image.jpeg)
+    .resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true })
+    .greyscale()
+    .convolve({ width: 3, height: 3, kernel: [0, 1, 0, 1, -4, 1, 0, 1, 0], offset: 128 })
+    .stats();
+  const stdev = channels[0]?.stdev ?? 0;
+  return stdev * stdev;
+}
+
+/**
+ * Whether a new photo should replace the current hero image: it must be at least as large
+ * and clearly sharper, so a lateral move never churns the thumbnail.
+ */
+export async function isBetterHero(candidate: PreparedImage, current: PreparedImage) {
+  if (candidate.width * candidate.height < current.width * current.height) return false;
+  const [a, b] = await Promise.all([sharpness(candidate), sharpness(current)]);
+  return a > b * 1.1;
+}
+
 /** Box area as a share of the frame. */
 export const boxArea = ([x0, y0, x1, y1]: [number, number, number, number]) =>
   Math.max(0, x1 - x0) * Math.max(0, y1 - y0);

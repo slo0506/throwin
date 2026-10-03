@@ -59,6 +59,7 @@ const ItemRow = z.object({
   condition_conf: z.number().nullable(),
   reserved_by_deal_id: z.string().nullable(),
   follow_up: z.string().nullable(),
+  appraising: z.boolean(),
   capture_id: z.string().nullable(),
   item_media: z.array(z.object({ storage_path: z.string(), position: z.number() })).nullable(),
   created_at: ts,
@@ -115,6 +116,7 @@ function toItem(r: z.infer<typeof ItemRow>): ItemRecord {
     conditionConf: r.condition_conf,
     reservedByDealId: r.reserved_by_deal_id,
     followUp: r.follow_up,
+    appraising: r.appraising,
     captureId: r.capture_id,
     thumbnailPath: media[0]?.storage_path ?? null,
     createdAt: r.created_at,
@@ -125,7 +127,7 @@ function toItem(r: z.infer<typeof ItemRow>): ItemRecord {
 const USER_SELECT =
   "id, display_name, photo_url, created_at, deleted_at, profiles(autonomy_level, notification_prefs, home_area, default_handoff_place_id)";
 const ITEM_SELECT =
-  "id, owner_id, status, title, willingness, category, brand, model, variant, condition_grade, defects, value_low_cents, value_mid_cents, value_high_cents, identity_conf, condition_conf, reserved_by_deal_id, follow_up, capture_id, item_media(storage_path, position), created_at, updated_at";
+  "id, owner_id, status, title, willingness, category, brand, model, variant, condition_grade, defects, value_low_cents, value_mid_cents, value_high_cents, identity_conf, condition_conf, reserved_by_deal_id, follow_up, appraising, capture_id, item_media(storage_path, position), created_at, updated_at";
 const CAPTURE_SELECT = "id, user_id, status, media_count, item_count, progress, error, created_at";
 
 export class RepositoryError extends Error {
@@ -259,6 +261,35 @@ export class SupabaseRepository implements Repository {
       if (error) throw new RepositoryError("updateItem.confirm", error);
     }
     return this.#getItem(userId, itemId);
+  }
+
+  async getItem(userId: string, itemId: string): Promise<ItemRecord | null> {
+    const { data, error } = await this.db
+      .from("items")
+      .select(ITEM_SELECT)
+      .eq("id", itemId)
+      .eq("owner_id", userId)
+      .neq("status", "removed")
+      .maybeSingle();
+    if (error) throw new RepositoryError("getItem", error);
+    return data ? toItem(ItemRow.parse(data)) : null;
+  }
+
+  async submitItemMedia(
+    userId: string,
+    itemId: string,
+    media: CaptureMediaInput[],
+  ): Promise<ItemRecord | "not_found" | "conflict"> {
+    const { data, error } = await this.db.rpc("submit_item_media", {
+      p_user_id: userId,
+      p_item_id: itemId,
+      p_media: media,
+    });
+    // object_in_use: a Deal holds the Item, or it is already being appraised.
+    if (error?.code === "55006") return "conflict";
+    if (error) throw new RepositoryError("submitItemMedia", error);
+    if (!data || (data as { id?: string | null }).id == null) return "not_found";
+    return (await this.getItem(userId, itemId)) ?? "not_found";
   }
 
   async removeItem(userId: string, itemId: string): Promise<"removed" | "not_found" | "reserved"> {

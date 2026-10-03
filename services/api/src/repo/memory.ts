@@ -21,6 +21,7 @@ export class MemoryRepository implements Repository {
   readonly memberships: { userId: string; circleId: string }[] = [];
   readonly captures: CaptureRecord[] = [];
   readonly captureMedia: (CaptureMediaInput & { captureId: string })[] = [];
+  readonly itemMedia: (CaptureMediaInput & { itemId: string })[] = [];
   readonly jobs: { kind: string; payload: Record<string, unknown> }[] = [];
   #nextId = 1;
 
@@ -59,6 +60,7 @@ export class MemoryRepository implements Repository {
       conditionConf: null,
       reservedByDealId: null,
       followUp: null,
+      appraising: false,
       captureId: null,
       thumbnailPath: null,
       createdAt: new Date("2026-10-03T00:00:00Z"),
@@ -118,6 +120,27 @@ export class MemoryRepository implements Repository {
       item.status = "on_shelf";
       item.followUp = null;
     }
+    return item;
+  }
+
+  async getItem(userId: string, itemId: string): Promise<ItemRecord | null> {
+    return (
+      this.items.find((i) => i.id === itemId && i.ownerId === userId && i.status !== "removed") ??
+      null
+    );
+  }
+
+  async submitItemMedia(
+    userId: string,
+    itemId: string,
+    media: CaptureMediaInput[],
+  ): Promise<ItemRecord | "not_found" | "conflict"> {
+    const item = await this.getItem(userId, itemId);
+    if (!item) return "not_found";
+    if (item.reservedByDealId || item.status === "traded" || item.appraising) return "conflict";
+    for (const m of media) this.itemMedia.push({ ...m, itemId });
+    item.appraising = true;
+    this.jobs.push({ kind: "reappraise_item", payload: { item_id: itemId, user_id: userId } });
     return item;
   }
 

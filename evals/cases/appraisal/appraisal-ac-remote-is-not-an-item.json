@@ -1,0 +1,21 @@
+{
+  "id": "appraisal-ac-remote-is-not-an-item",
+  "suite": "appraisal",
+  "description": "An air conditioner remote and a light switch next to a Nintendo Switch game are room fixtures, not possessions: only the game becomes an Item",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-photo",
+        "describe": "Desk by a wall: a white air conditioner remote, a wall light switch in frame, and a Mario Kart 8 Deluxe Nintendo Switch game case."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "item_count": { "min": 1, "max": 1 },
+    "titles_include": ["Mario Kart"],
+    "titles_exclude": ["remote", "light switch"]
+  },
+  "twin": "appraisal-rc-car-with-remote-still-counts"
+}
