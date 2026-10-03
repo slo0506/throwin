@@ -77,11 +77,9 @@ struct CaptureSheet: View {
         case .collecting:
             collecting
                 .transition(.blurReplace)
-        case let .uploading(done, total):
-            working(detail: "Sending \(done) of \(total) photos")
-                .transition(.blurReplace)
-        case let .working(detail):
-            working(detail: detail)
+        case .uploading, .working:
+            // 1 branch for both, so the deck stays put and only the caption changes.
+            working(detail: workingDetail)
                 .transition(.blurReplace)
         case let .finished(items, summary):
             CaptureResults(items: items, summary: summary, onDone: close, onAgain: startOver)
@@ -218,6 +216,14 @@ struct CaptureSheet: View {
     }
 
     // MARK: Working
+
+    private var workingDetail: String {
+        switch capture.phase {
+        case let .uploading(done, total): "Sending \(done) of \(total) photos"
+        case let .working(detail): detail
+        default: ""
+        }
+    }
 
     private func working(detail: String) -> some View {
         VStack(spacing: Space.xxl) {
@@ -382,6 +388,14 @@ private struct CaptureResults: View {
 
     var body: some View {
         VStack(spacing: Space.lg) {
+            if items.isEmpty {
+                Spacer()
+                Image(systemName: "eye.trianglebadge.exclamationmark")
+                    .font(.system(size: 52, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Palette.iris)
+                    .symbolEffect(.bounce, value: shown)
+            }
             VStack(spacing: Space.xs) {
                 Text(items.isEmpty ? "Nothing to trade here" : summary)
                     .font(Typo.title2)
@@ -400,6 +414,9 @@ private struct CaptureResults: View {
             }
             .padding(.top, Space.xl)
 
+            if items.isEmpty {
+                Spacer()
+            }
             ScrollView {
                 VStack(spacing: Space.sm) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -412,6 +429,7 @@ private struct CaptureResults: View {
                 .padding(.vertical, Space.xs)
             }
             .scrollIndicators(.hidden)
+            .frame(maxHeight: items.isEmpty ? 0 : .infinity)
 
             VStack(spacing: Space.sm) {
                 Button(action: onDone) {
@@ -420,7 +438,7 @@ private struct CaptureResults: View {
                 }
                 .buttonStyle(.glassProminent)
                 .tint(Palette.ink)
-                Button("Add more", action: onAgain)
+                Button(items.isEmpty ? "Try other photos" : "Add more", action: onAgain)
                     .font(Typo.callout)
                     .foregroundStyle(Palette.inkSecondary)
             }

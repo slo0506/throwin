@@ -30,21 +30,61 @@ struct ItemArtwork: View {
                     .foregroundStyle(style.tint)
                     .shadow(color: style.tint.opacity(0.35), radius: side * 0.06, y: side * 0.04)
                 if let url = item.thumbnailUrl.flatMap(URL.init(string:)) {
-                    AsyncImage(url: url, transaction: Transaction(animation: Motion.soft)) { phase in
-                        if let image = phase.image {
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: proxy.size.width, height: proxy.size.height)
-                                .transition(.opacity)
-                        }
-                    }
+                    RemoteImage(url: url)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .accessibilityHidden(true)
+    }
+}
+
+/// Item photos for this session. Signed URLs change on every fetch, so the key is the path,
+/// which names the stored file and doesn't change.
+enum ThumbnailCache {
+    static let images: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 300
+        return cache
+    }()
+
+    static func key(_ url: URL) -> NSString { url.path() as NSString }
+}
+
+/// A remote photo that shows instantly when cached and fades in otherwise.
+struct RemoteImage: View {
+    var url: URL
+    @State private var image: UIImage?
+
+    init(url: URL) {
+        self.url = url
+        _image = State(initialValue: ThumbnailCache.images.object(forKey: ThumbnailCache.key(url)))
+    }
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .transition(.opacity)
+            }
+        }
+        .task(id: url) {
+            let key = ThumbnailCache.key(url)
+            if let cached = ThumbnailCache.images.object(forKey: key) {
+                image = cached
+                return
+            }
+            guard let (data, response) = try? await URLSession.shared.data(from: url),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let decoded = await UIImage(data: data)?.byPreparingForDisplay()
+            else { return }
+            ThumbnailCache.images.setObject(decoded, forKey: key)
+            withAnimation(Motion.soft) { image = decoded }
+        }
     }
 }
 

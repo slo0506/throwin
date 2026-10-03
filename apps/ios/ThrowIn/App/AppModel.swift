@@ -138,6 +138,11 @@ final class AppModel {
         signOutLocally()
     }
 
+    func signOut() async {
+        await auth.signOut()
+        signOutLocally()
+    }
+
     /// Clears the session and content and returns to onboarding.
     func signOutLocally() {
         KeychainStore.delete(account: Self.sessionAccount)
