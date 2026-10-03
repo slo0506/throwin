@@ -48,6 +48,7 @@ export function toShelfItem(r: ItemRecord, urls?: Map<string, string | null>): S
     is_reserved: r.reservedByDealId !== null,
     thumbnail_url: r.thumbnailPath ? (urls?.get(r.thumbnailPath) ?? null) : null,
     follow_up: r.followUp,
+    is_appraising: r.appraising,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
   };

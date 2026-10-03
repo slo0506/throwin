@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ErrorBody, PatchMe, ShelfItem, ValueRange } from "../src/api.js";
+import {
+  ErrorBody,
+  ItemMediaRequest,
+  ItemMediaUploadRequest,
+  PatchMe,
+  ShelfItem,
+  ValueRange,
+} from "../src/api.js";
 import { AskStatus, DealStatus } from "../src/enums.js";
 
 describe("PatchMe", () => {
@@ -56,10 +63,22 @@ describe("ShelfItem", () => {
       is_reserved: false,
       thumbnail_url: null,
       follow_up: null,
+      is_appraising: true,
       created_at: "2026-10-03T12:00:00.000Z",
       updated_at: "2026-10-03T12:00:00+00:00",
     });
     expect(item.status).toBe("draft");
+    expect(item.is_appraising).toBe(true);
+  });
+});
+
+describe("follow-up photos", () => {
+  it("caps uploads at 5 and rejects unknown keys", () => {
+    expect(ItemMediaUploadRequest.safeParse({ count: 5 }).success).toBe(true);
+    expect(ItemMediaUploadRequest.safeParse({ count: 6 }).success).toBe(false);
+    expect(ItemMediaUploadRequest.safeParse({ count: 1, kind: "photo" }).success).toBe(false);
+    expect(ItemMediaRequest.safeParse({ media: [] }).success).toBe(false);
+    expect(ItemMediaRequest.safeParse({ media: [{ path: "a/items/b/c.jpg" }] }).success).toBe(true);
   });
 });
 

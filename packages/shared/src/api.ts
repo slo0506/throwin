@@ -112,6 +112,8 @@ export const ShelfItem = z.object({
   thumbnail_url: z.string().nullable(),
   /** A specific photo the Appraiser needs, e.g. "Photo of the size tag". Set when status is needs_photos. */
   follow_up: z.string().nullable(),
+  /** True while the Appraiser is still pricing or re-reading this Item. Value may be null. */
+  is_appraising: z.boolean(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });
@@ -185,3 +187,22 @@ export const ItemPatch = z
   .partial()
   .refine((v) => Object.keys(v).length > 0, { message: "At least 1 field is required" });
 export type ItemPatch = z.infer<typeof ItemPatch>;
+
+// ---------------------------------------------------------------------------
+// Follow-up photos: answer an Item's follow_up with up to 5 more photos.
+// ---------------------------------------------------------------------------
+
+export const ItemMediaUploadRequest = z.strictObject({
+  count: z.number().int().min(1).max(5),
+});
+export type ItemMediaUploadRequest = z.infer<typeof ItemMediaUploadRequest>;
+
+export const ItemMediaUploadResponse = z.object({
+  uploads: z.array(z.object({ path: z.string(), upload_url: z.url() })),
+});
+export type ItemMediaUploadResponse = z.infer<typeof ItemMediaUploadResponse>;
+
+export const ItemMediaRequest = z.strictObject({
+  media: z.array(CaptureMediaInput).min(1).max(5),
+});
+export type ItemMediaRequest = z.infer<typeof ItemMediaRequest>;

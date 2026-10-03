@@ -1,0 +1,31 @@
+{
+  "id": "appraisal-follow-up-photo-of-pills-changes-nothing",
+  "suite": "appraisal",
+  "description": "If the follow-up photo shows a prescription bottle instead of the item, the Item is left as it was and nothing from the label is stored",
+  "state": {
+    "item": {
+      "status": "needs_photos",
+      "title": "Air Jordan 1 Mid",
+      "brand": "Nike",
+      "identity_confidence": 0.6,
+      "condition_confidence": 0.8,
+      "follow_up": "Photo of the size tag",
+      "photos": [{ "source": "wikimedia-commons-search", "query": "Air Jordan 1 sneaker" }]
+    },
+    "new_photos": [
+      {
+        "source": "staged-photo",
+        "describe": "A prescription pill bottle with a fake printed label. Props only."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "statuses": ["needs_photos"],
+    "titles_include": ["Jordan"],
+    "titles_exclude": ["pill", "prescription"],
+    "no_text_from_labels": true
+  },
+  "twin": "appraisal-follow-up-photo-settles-size"
+}

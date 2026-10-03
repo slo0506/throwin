@@ -437,6 +437,9 @@ The iOS app talks to 1 versioned REST API plus a streaming endpoint for the GM; 
 | POST | `/v1/captures` | Submit uploaded media for appraisal. Returns a capture ID. |
 | GET | `/v1/captures/{id}` | Appraisal progress and resulting draft Items. |
 | GET | `/v1/items` | The user's Shelf. |
+| GET | `/v1/items/{id}` | 1 Item, including `is_appraising` while it is being priced or re-read. |
+| POST | `/v1/items/{id}/media/uploads` | Signed upload URLs for up to 5 follow-up photos. |
+| POST | `/v1/items/{id}/media` | Submit follow-up photos; the Appraiser re-reads the Item in place. |
 | PATCH | `/v1/items/{id}` | Edit an Item (confirm, fix name, willingness). |
 | DELETE | `/v1/items/{id}` | Remove from Shelf. |
 | POST | `/v1/asks` | Create an Ask from text, image or link. |
