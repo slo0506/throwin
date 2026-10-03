@@ -42,6 +42,7 @@ describe("ShelfItem", () => {
     const item = ShelfItem.parse({
       id: "6f1c1c5e-6a8a-4b7a-9f0e-2a0d1c3b4e5f",
       status: "draft",
+      title: "",
       willingness: "would_trade",
       category: null,
       brand: null,
