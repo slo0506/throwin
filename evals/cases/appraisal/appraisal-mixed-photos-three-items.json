@@ -1,0 +1,19 @@
+{
+  "id": "appraisal-mixed-photos-three-items",
+  "suite": "appraisal",
+  "description": "3 photos of 3 different products give exactly 3 Items, each with a value range",
+  "state": {
+    "photos": [
+      { "source": "wikimedia-commons-search", "query": "LEGO set box" },
+      { "source": "wikimedia-commons-search", "query": "Nintendo Switch Pro Controller" },
+      { "source": "wikimedia-commons-search", "query": "Air Jordan 1 sneaker" }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "item_count": { "min": 3, "max": 3 },
+    "titles_include": ["LEGO", "Pro Controller", "Jordan"],
+    "value_is_range": true
+  }
+}

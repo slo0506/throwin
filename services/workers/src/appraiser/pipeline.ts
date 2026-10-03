@@ -78,6 +78,58 @@ export function bestAppearances(object: DetectedObject, media: CaptureMedia[], c
     .slice(0, count);
 }
 
+type Box = [number, number, number, number];
+
+/** Share of the smaller box covered by the larger one (1 means fully inside). */
+export function containment(a: Box, b: Box) {
+  const inter = boxArea([
+    Math.max(a[0], b[0]),
+    Math.max(a[1], b[1]),
+    Math.min(a[2], b[2]),
+    Math.min(a[3], b[3]),
+  ]);
+  const smaller = Math.min(boxArea(a), boxArea(b));
+  return smaller > 0 ? inter / smaller : 0;
+}
+
+/** Above this, a box mostly inside another in the same frame is treated as part of it. */
+export const CONTAINMENT_MERGE = 0.8;
+/** A box this big is usually the shelf or table, not a thing that owns what sits on it. */
+const BACKGROUND_AREA = 0.9;
+
+/**
+ * Folds parts into wholes: a minifigure or instruction sheet boxed inside its LEGO set, a
+ * shoe inside the pair. Detectors sometimes report the pieces as well as the whole; trading
+ * them as separate Items would be wrong. Keeps the larger object and its label.
+ */
+export function mergeNested(objects: DetectedObject[]): DetectedObject[] {
+  const sized = objects
+    .map((o) => ({ o, area: Math.max(0, ...o.appearances.map((a) => boxArea(a.box))) }))
+    .sort((a, b) => b.area - a.area);
+  const kept: DetectedObject[] = [];
+  for (const { o } of sized) {
+    const parent = kept.find((k) =>
+      o.appearances.some((a) =>
+        k.appearances.some(
+          (ka) =>
+            ka.frame === a.frame &&
+            boxArea(ka.box) < BACKGROUND_AREA &&
+            containment(ka.box, a.box) >= CONTAINMENT_MERGE,
+        ),
+      ),
+    );
+    if (!parent) {
+      kept.push({ ...o, appearances: [...o.appearances] });
+      continue;
+    }
+    // Frames where only the part was seen still show the whole; keep them for cropping.
+    for (const a of o.appearances) {
+      if (!parent.appearances.some((pa) => pa.frame === a.frame)) parent.appearances.push(a);
+    }
+  }
+  return kept;
+}
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
@@ -98,11 +150,15 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
   const frames = await Promise.all(media.map(async (m) => prepare(await store.download(m.path))));
 
   const detection = await vision.detect(frames);
-  const objects = detection.objects
+  const objects = mergeNested(detection.objects)
     .map((o) => ({ object: o, best: bestAppearances(o, media) }))
     .filter((o) => o.best.length > 0)
     .slice(0, MAX_ITEMS);
-  logger.info("appraiser_detected", { capture_id: captureId, objects: objects.length });
+  logger.info("appraiser_detected", {
+    capture_id: captureId,
+    detected: detection.objects.length,
+    objects: objects.length,
+  });
 
   if (objects.length === 0) {
     await store.finishCapture(captureId, 0, {

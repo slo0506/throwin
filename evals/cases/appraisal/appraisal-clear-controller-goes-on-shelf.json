@@ -1,0 +1,15 @@
+{
+  "id": "appraisal-clear-controller-goes-on-shelf",
+  "suite": "appraisal",
+  "description": "A clear product photo of a common controller is confident enough to go straight onto the Shelf",
+  "state": {
+    "photos": [{ "source": "wikimedia-commons-search", "query": "Nintendo Switch Pro Controller" }]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "item_count": { "min": 1, "max": 1 },
+    "statuses": ["on_shelf"],
+    "titles_include": ["Pro Controller"]
+  }
+}
