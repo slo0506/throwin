@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// The Shelf: everything you'd trade, priced as ranges. Capture opens the camera
-/// (Milestone 1); in demo mode it plays a sample capture instead.
+/// The Shelf: everything you'd trade, priced as ranges. Capture opens the camera and photo
+/// picker; in demo mode it plays a sample capture instead.
 struct ShelfView: View {
     @Environment(AppModel.self) private var model
     @Namespace private var itemNamespace
     @State private var isCapturing = false
     @State private var scanGeneration = 0
+    @State private var isCaptureSheetPresented = false
 
     private let columns = [
         GridItem(.flexible(), spacing: Space.md),
@@ -26,6 +27,31 @@ struct ShelfView: View {
                 }
             }
             .animation(Motion.soft, value: model.shelf.isEmpty)
+            .task { await model.refreshShelf() }
+            .sheet(isPresented: $isCaptureSheetPresented) {
+                CaptureSheet {
+                    Task {
+                        await model.refreshShelf()
+                        scanGeneration += 1
+                    }
+                }
+            }
+            .overlay(alignment: .top) {
+                if let message = model.shelfError {
+                    Text(message)
+                        .font(Typo.callout)
+                        .padding(.horizontal, Space.md)
+                        .padding(.vertical, Space.sm)
+                        .glassEffect(.regular, in: .capsule)
+                        .padding(.top, Space.xs)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .task {
+                            try? await Task.sleep(for: .seconds(3))
+                            withAnimation(Motion.soft) { model.shelfError = nil }
+                        }
+                }
+            }
+            .animation(Motion.bouncy, value: model.shelfError)
             .navigationDestination(for: ShelfItem.self) { item in
                 ItemDetailView(itemID: item.id)
                     .navigationTransition(.zoom(sourceID: item.id, in: itemNamespace))
@@ -73,6 +99,7 @@ struct ShelfView: View {
             .padding(.bottom, Space.tabBarClearance)
         }
         .scrollIndicators(.hidden)
+        .refreshable { await model.refreshShelf() }
     }
 
     private var totalValue: Int {
@@ -80,6 +107,10 @@ struct ShelfView: View {
     }
 
     private func capture() {
+        if model.isLive {
+            isCaptureSheetPresented = true
+            return
+        }
         guard !isCapturing else { return }
         isCapturing = true
         Task {
@@ -111,6 +142,17 @@ struct ItemCard: View {
                 .overlay(alignment: .topTrailing) {
                     WillingnessDot(willingness: item.willingness)
                         .padding(10)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    if item.status == .needsPhotos {
+                        Label("1 more photo", systemImage: "camera.viewfinder")
+                            .font(Typo.caption)
+                            .foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .glassEffect(.regular, in: .capsule)
+                            .padding(8)
+                    }
                 }
 
             VStack(alignment: .leading, spacing: 6) {

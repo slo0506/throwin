@@ -2,8 +2,8 @@ import SwiftUI
 
 // MARK: - Item artwork
 
-/// Placeholder "photo" for an Item until real capture lands in Milestone 1: a soft tinted
-/// tile with a dimensional symbol. Category picks the symbol and the tint.
+/// An Item's photo: the Appraiser's crop when there is one, over a soft tinted tile with a
+/// dimensional symbol (category picks both) that also shows while the photo loads.
 struct ItemArtwork: View {
     var item: ShelfItem
     var cornerRadius: CGFloat = Radius.tile
@@ -29,6 +29,17 @@ struct ItemArtwork: View {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(style.tint)
                     .shadow(color: style.tint.opacity(0.35), radius: side * 0.06, y: side * 0.04)
+                if let url = item.thumbnailUrl.flatMap(URL.init(string:)) {
+                    AsyncImage(url: url, transaction: Transaction(animation: Motion.soft)) { phase in
+                        if let image = phase.image {
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                                .transition(.opacity)
+                        }
+                    }
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }

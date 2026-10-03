@@ -95,6 +95,41 @@ final class APIClient {
         return response.items
     }
 
+    func updateItem(_ id: String, _ patch: ItemPatch) async throws -> ShelfItem {
+        try await send("PATCH", "v1/items/\(id)", body: patch)
+    }
+
+    func deleteItem(_ id: String) async throws {
+        let _: EmptyResponse = try await send("DELETE", "v1/items/\(id)")
+    }
+
+    // MARK: Capture
+
+    /// Reserves a capture and returns 1 signed upload URL per photo.
+    func requestUploads(count: Int) async throws -> UploadResponse {
+        try await send("POST", "v1/media/uploads", body: UploadRequest(count: count))
+    }
+
+    /// PUTs JPEG bytes straight to storage. The signed URL is the credential, so no bearer token.
+    func upload(_ jpeg: Data, to url: URL) async throws {
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        let (_, response) = try await session.upload(for: request, from: jpeg)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw APIError(status: status, code: "upload_failed", message: "A photo didn't upload. Try again.")
+        }
+    }
+
+    func submitCapture(_ request: CaptureRequest) async throws -> Capture {
+        try await send("POST", "v1/captures", body: request)
+    }
+
+    func capture(_ id: String) async throws -> Capture {
+        try await send("GET", "v1/captures/\(id)")
+    }
+
     // MARK: Transport
 
     private nonisolated struct EmptyResponse: Decodable {}

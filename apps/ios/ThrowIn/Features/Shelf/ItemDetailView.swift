@@ -35,6 +35,12 @@ struct ItemDetailView: View {
                         }
                     }
 
+                    if item.status == .needsPhotos {
+                        FollowUpCard(item: item) {
+                            await model.confirmItem(item.id)
+                        }
+                    }
+
                     if let value = item.value {
                         PaperCard {
                             VStack(alignment: .leading, spacing: Space.md) {
@@ -43,7 +49,7 @@ struct ItemDetailView: View {
                                     .font(Typo.valueLarge)
                                     .foregroundStyle(Palette.ink)
                                 ValueRangeBar(range: value, tint: ArtworkStyle(category: item.category).tint)
-                                Text("Based on 3 similar listings and 2 recent trades. Ranges, not prices: the final number is whatever you both agree on.")
+                                Text("From recent sold listings for this item in this condition. A range, not a price: the final number is whatever you both agree on.")
                                     .font(Typo.footnote)
                                     .foregroundStyle(Palette.inkSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -94,6 +100,49 @@ struct ItemDetailView: View {
             get: { model.shelf.first { $0.id == item.id }?.willingness ?? item.willingness },
             set: { model.setWillingness($0, for: item.id) }
         )
+    }
+}
+
+/// What the GM still needs before this Item goes up, and a way to say the read is right.
+private struct FollowUpCard: View {
+    var item: ShelfItem
+    var onConfirm: () async -> Void
+
+    @State private var isSaving = false
+
+    var body: some View {
+        PaperCard {
+            VStack(alignment: .leading, spacing: Space.md) {
+                Label("1 more photo would help", systemImage: "camera.viewfinder")
+                    .font(Typo.headline)
+                    .foregroundStyle(Palette.tangerine)
+                Text(item.followUp ?? "A closer photo would help your GM be sure.")
+                    .font(Typo.body)
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Or, if this looks right to you, put it up as is.")
+                    .font(Typo.footnote)
+                    .foregroundStyle(Palette.inkSecondary)
+                Button {
+                    isSaving = true
+                    Task {
+                        await onConfirm()
+                        isSaving = false
+                    }
+                } label: {
+                    ZStack {
+                        PrimaryLabel("Looks right", symbol: "checkmark")
+                            .opacity(isSaving ? 0 : 1)
+                        LoopIndicator(people: 2, size: 20)
+                            .opacity(isSaving ? 1 : 0)
+                    }
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Palette.ink)
+                .disabled(isSaving)
+            }
+        }
+        .transition(.blurReplace)
     }
 }
 
