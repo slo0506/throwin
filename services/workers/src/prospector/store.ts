@@ -1,6 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { ProspectingAsk, ProspectorStore, StoredEdge, WantCandidate } from "./prospect.js";
+import type { MatchDeal } from "./matcher.js";
+import type {
+  ProspectingAsk,
+  ProspectorStore,
+  StageResult,
+  StoredEdge,
+  WantCandidate,
+} from "./prospect.js";
 
 function fail(op: string, error: { message: string } | null): never {
   throw new Error(`${op}: ${error?.message ?? "unknown error"}`);
@@ -27,6 +34,18 @@ const CandidateRow = z.object({
   brand: z.string().nullable(),
   model: z.string().nullable(),
   value_mid_cents: z.number().int(),
+});
+
+const StageRow = z.object({
+  result: z.enum([
+    "ok",
+    "invalid",
+    "ask_unavailable",
+    "offer_changed",
+    "over_ceiling",
+    "items_taken",
+  ]),
+  deal_id: z.string().optional(),
 });
 
 /** The Prospector's database access with the service role. */
@@ -138,5 +157,21 @@ export class SupabaseProspectorStore implements ProspectorStore {
       })),
     );
     if (error) fail("replaceEdges.insert", error);
+  }
+
+  async stageDeal(deal: MatchDeal): Promise<StageResult> {
+    const { data, error } = await this.db.rpc("stage_deal", { p_deal: deal, p_mode: "live" });
+    if (error) fail("stageDeal", error);
+    const row = StageRow.parse(data);
+    if (row.result !== "ok") return { result: row.result };
+    if (!row.deal_id) fail("stageDeal", { message: "ok without a deal_id" });
+    return { result: "ok", dealId: row.deal_id };
+  }
+
+  /** public.expire_deals: cancels open Deals past expiry. Returns how many. */
+  async expireDeals(): Promise<number> {
+    const { data, error } = await this.db.rpc("expire_deals");
+    if (error) fail("expireDeals", error);
+    return z.number().int().parse(data);
   }
 }
