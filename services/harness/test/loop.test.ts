@@ -91,6 +91,7 @@ describe("tool round trips", () => {
           user_id: ALICE,
           conversation_id: prepared.conversationId,
           message_ids: [prepared.messageId, ...assistantIds],
+          mode: "intake",
         },
       },
     ]);

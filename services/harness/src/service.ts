@@ -407,7 +407,16 @@ export class GmService {
       if (result.error) return fail();
 
       const finalId = assistantIds.at(-1) as string;
-      await this.#enqueueMemory(userId, session.conversationId, [t.messageId, ...assistantIds]);
+      // Facts from the intake turns are labeled "Intake chat", including the turn that ends it.
+      const intakeTurn =
+        session.mode === "intake" ||
+        steps.some((s) => s.calls.some((c) => c.name === "finish_intake"));
+      await this.#enqueueMemory(
+        userId,
+        session.conversationId,
+        [t.messageId, ...assistantIds],
+        intakeTurn ? "intake" : "chat",
+      );
       emit({ event: "done", data: { message_id: finalId } });
     } catch (err) {
       this.#logger.error("gm_turn_crashed", { user_id: userId, error: String(err) });
@@ -449,12 +458,18 @@ export class GmService {
     return assistantIds;
   }
 
-  async #enqueueMemory(userId: string, conversationId: string, messageIds: string[]) {
+  async #enqueueMemory(
+    userId: string,
+    conversationId: string,
+    messageIds: string[],
+    mode: "intake" | "chat",
+  ) {
     try {
       await this.#data.enqueueJob("extract_memory", {
         user_id: userId,
         conversation_id: conversationId,
         message_ids: messageIds,
+        mode,
       });
     } catch (err) {
       this.#logger.error("gm_enqueue_memory_failed", { user_id: userId, error: String(err) });
