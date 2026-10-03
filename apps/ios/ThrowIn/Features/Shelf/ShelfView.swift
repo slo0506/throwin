@@ -67,7 +67,7 @@ struct ShelfView: View {
                         Text("Shelf")
                             .font(Typo.title)
                             .tracking(-0.4)
-                        Text("\(model.shelf.count) items, about \(Money.dollars(totalValue))")
+                        Text(shelfSummary)
                             .font(Typo.callout)
                             .foregroundStyle(Palette.inkSecondary)
                             .contentTransition(.numericText())
@@ -102,8 +102,14 @@ struct ShelfView: View {
         .refreshable { await model.refreshShelf() }
     }
 
-    private var totalValue: Int {
-        model.shelf.compactMap(\.value?.midCents).reduce(0, +)
+    /// Values are always ranges, so the total is too.
+    private var shelfSummary: String {
+        let count = "\(model.shelf.count) \(model.shelf.count == 1 ? "item" : "items")"
+        let values = model.shelf.compactMap(\.value)
+        guard !values.isEmpty else { return count }
+        let low = values.map(\.lowCents).reduce(0, +)
+        let high = values.map(\.highCents).reduce(0, +)
+        return "\(count), worth \(Money.range(low: low, high: high))"
     }
 
     private func capture() {
