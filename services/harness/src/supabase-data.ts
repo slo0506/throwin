@@ -144,13 +144,13 @@ const NetworkRow = z.object({
 });
 
 const ASK_COLUMNS =
-  "id, user_id, raw_text, target, status, cash_ceiling_cents, deadline, autonomy, created_at, updated_at, offer_sets(item_id)";
+  "id, user_id, raw_text, title, target, status, cash_ceiling_cents, deadline, autonomy, created_at, updated_at, offer_sets(item_id)";
 
 const AskRow = z.object({
   id: z.string(),
   user_id: z.string(),
   raw_text: z.string(),
-  title: z.string().nullable().optional(),
+  title: z.string().nullable(),
   target: z.unknown(),
   status: AskStatus,
   cash_ceiling_cents: z.number().int(),
@@ -167,7 +167,7 @@ function toAsk(r: z.infer<typeof AskRow>): AskRecord {
     id: r.id,
     userId: r.user_id,
     rawText: r.raw_text,
-    title: r.title ?? null,
+    title: r.title,
     status: r.status,
     target: target.success ? target.data : null,
     cashCeilingCents: r.cash_ceiling_cents,
@@ -215,22 +215,7 @@ function sniffImage(bytes: Uint8Array): LoadedImage["mediaType"] | null {
  * under the service role), plus the showcase rule.
  */
 export class SupabaseGmData implements GmData {
-  #askTitle: Promise<boolean> | null = null;
-
   constructor(private readonly db: SupabaseClient) {}
-
-  /** Whether `asks.title` exists yet (it lands with the Asks module's migration). */
-  #hasAskTitle(): Promise<boolean> {
-    this.#askTitle ??= (async () => {
-      const { error } = await this.db.from("asks").select("title").limit(1);
-      return !error;
-    })();
-    return this.#askTitle;
-  }
-
-  async #askSelect() {
-    return (await this.#hasAskTitle()) ? `${ASK_COLUMNS}, title` : ASK_COLUMNS;
-  }
 
   async getUser(userId: string): Promise<GmUser | null> {
     const { data, error } = await this.db
@@ -408,7 +393,7 @@ export class SupabaseGmData implements GmData {
   async listActiveAsks(userId: string): Promise<AskRecord[]> {
     const { data, error } = await this.db
       .from("asks")
-      .select(await this.#askSelect())
+      .select(ASK_COLUMNS)
       .eq("user_id", userId)
       .in("status", [...ACTIVE_ASK_STATUSES])
       .order("created_at", { ascending: false })
@@ -424,17 +409,12 @@ export class SupabaseGmData implements GmData {
     if (!isUuid(askId)) return null;
     const { data, error } = await this.db
       .from("asks")
-      .select(await this.#askSelect())
+      .select(ASK_COLUMNS)
       .eq("id", askId)
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw new GmDataError("getAsk", error);
     return data ? toAsk(AskRow.parse(data)) : null;
-  }
-
-  /** Writes the title column when it exists; target.name always carries the title too. */
-  async #titleField(title: string | null | undefined) {
-    return title !== undefined && (await this.#hasAskTitle()) ? { title } : {};
   }
 
   async createAsk(userId: string, ask: NewAsk): Promise<AskRecord> {
@@ -447,7 +427,7 @@ export class SupabaseGmData implements GmData {
         status: ask.status,
         autonomy: ask.autonomy,
         deadline: ask.deadline?.toISOString() ?? null,
-        ...(await this.#titleField(ask.title)),
+        title: ask.title,
       })
       .select("id")
       .single();
