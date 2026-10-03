@@ -10,7 +10,11 @@ import {
 import { z } from "zod";
 import {
   ACTIVE_ASK_STATUSES,
+  type CaptureMediaInput,
+  type CaptureRecord,
+  type CaptureStatus,
   type ItemRecord,
+  type ItemUpdate,
   type MePatch,
   type MeRecord,
   type Repository,
@@ -54,14 +58,75 @@ const ItemRow = z.object({
   identity_conf: z.number().nullable(),
   condition_conf: z.number().nullable(),
   reserved_by_deal_id: z.string().nullable(),
+  follow_up: z.string().nullable(),
+  capture_id: z.string().nullable(),
+  item_media: z.array(z.object({ storage_path: z.string(), position: z.number() })).nullable(),
   created_at: ts,
   updated_at: ts,
 });
 
+const CaptureRow = z.object({
+  id: z.string(),
+  user_id: z.string(),
+  status: z.enum(["uploading", "processing", "done", "failed"]),
+  media_count: z.number().int(),
+  item_count: z.number().int(),
+  progress: z.record(z.string(), z.unknown()).nullable(),
+  error: z.string().nullable(),
+  created_at: ts,
+});
+
+function toCapture(row: z.infer<typeof CaptureRow>): CaptureRecord {
+  const p = row.progress ?? {};
+  return {
+    id: row.id,
+    userId: row.user_id,
+    status: row.status as CaptureStatus,
+    mediaCount: row.media_count,
+    itemCount: row.item_count,
+    progress: {
+      ...(typeof p.stage === "string" && { stage: p.stage }),
+      ...(typeof p.detail === "string" && { detail: p.detail }),
+      ...(typeof p.found === "number" && { found: p.found }),
+    },
+    error: row.error,
+    createdAt: row.created_at,
+  };
+}
+
+function toItem(r: z.infer<typeof ItemRow>): ItemRecord {
+  const media = [...(r.item_media ?? [])].sort((a, b) => a.position - b.position);
+  return {
+    id: r.id,
+    ownerId: r.owner_id,
+    status: r.status,
+    title: r.title,
+    willingness: r.willingness,
+    category: r.category,
+    brand: r.brand,
+    model: r.model,
+    variant: r.variant,
+    conditionGrade: r.condition_grade,
+    defects: r.defects ?? [],
+    valueLowCents: r.value_low_cents,
+    valueMidCents: r.value_mid_cents,
+    valueHighCents: r.value_high_cents,
+    identityConf: r.identity_conf,
+    conditionConf: r.condition_conf,
+    reservedByDealId: r.reserved_by_deal_id,
+    followUp: r.follow_up,
+    captureId: r.capture_id,
+    thumbnailPath: media[0]?.storage_path ?? null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
 const USER_SELECT =
   "id, display_name, photo_url, created_at, deleted_at, profiles(autonomy_level, notification_prefs, home_area, default_handoff_place_id)";
 const ITEM_SELECT =
-  "id, owner_id, status, title, willingness, category, brand, model, variant, condition_grade, defects, value_low_cents, value_mid_cents, value_high_cents, identity_conf, condition_conf, reserved_by_deal_id, created_at, updated_at";
+  "id, owner_id, status, title, willingness, category, brand, model, variant, condition_grade, defects, value_low_cents, value_mid_cents, value_high_cents, identity_conf, condition_conf, reserved_by_deal_id, follow_up, capture_id, item_media(storage_path, position), created_at, updated_at";
+const CAPTURE_SELECT = "id, user_id, status, media_count, item_count, progress, error, created_at";
 
 export class RepositoryError extends Error {
   constructor(operation: string, cause: { message: string; code?: string }) {
@@ -167,27 +232,114 @@ export class SupabaseRepository implements Repository {
     return z
       .array(ItemRow)
       .parse(data ?? [])
-      .map((r) => ({
-        id: r.id,
-        ownerId: r.owner_id,
-        status: r.status,
-        title: r.title,
-        willingness: r.willingness,
-        category: r.category,
-        brand: r.brand,
-        model: r.model,
-        variant: r.variant,
-        conditionGrade: r.condition_grade,
-        defects: r.defects ?? [],
-        valueLowCents: r.value_low_cents,
-        valueMidCents: r.value_mid_cents,
-        valueHighCents: r.value_high_cents,
-        identityConf: r.identity_conf,
-        conditionConf: r.condition_conf,
-        reservedByDealId: r.reserved_by_deal_id,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      }));
+      .map(toItem);
+  }
+
+  async updateItem(userId: string, itemId: string, update: ItemUpdate): Promise<ItemRecord | null> {
+    const fields: Record<string, unknown> = {};
+    if (update.title !== undefined) fields.title = update.title;
+    if (update.willingness !== undefined) fields.willingness = update.willingness;
+    if (update.conditionGrade !== undefined) fields.condition_grade = update.conditionGrade;
+    if (Object.keys(fields).length > 0) {
+      const { error } = await this.db
+        .from("items")
+        .update(fields)
+        .eq("id", itemId)
+        .eq("owner_id", userId)
+        .in("status", [...SHELF_STATUSES]);
+      if (error) throw new RepositoryError("updateItem", error);
+    }
+    if (update.confirm) {
+      const { error } = await this.db
+        .from("items")
+        .update({ status: "on_shelf", follow_up: null })
+        .eq("id", itemId)
+        .eq("owner_id", userId)
+        .in("status", ["draft", "needs_photos"]);
+      if (error) throw new RepositoryError("updateItem.confirm", error);
+    }
+    return this.#getItem(userId, itemId);
+  }
+
+  async removeItem(userId: string, itemId: string): Promise<"removed" | "not_found" | "reserved"> {
+    const item = await this.#getItem(userId, itemId);
+    if (!item) return "not_found";
+    if (item.reservedByDealId) return "reserved";
+    const { error } = await this.db
+      .from("items")
+      .update({ status: "removed" })
+      .eq("id", itemId)
+      .eq("owner_id", userId)
+      .is("reserved_by_deal_id", null);
+    if (error) throw new RepositoryError("removeItem", error);
+    return "removed";
+  }
+
+  async createCapture(
+    userId: string,
+    mediaCount: number,
+    _kind: "photo" | "frame",
+  ): Promise<CaptureRecord> {
+    const { data, error } = await this.db
+      .from("captures")
+      .insert({ user_id: userId, media_count: mediaCount, progress: { stage: "uploading" } })
+      .select(CAPTURE_SELECT)
+      .single();
+    if (error) throw new RepositoryError("createCapture", error);
+    return toCapture(CaptureRow.parse(data));
+  }
+
+  async getCapture(userId: string, captureId: string): Promise<CaptureRecord | null> {
+    const { data, error } = await this.db
+      .from("captures")
+      .select(CAPTURE_SELECT)
+      .eq("id", captureId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new RepositoryError("getCapture", error);
+    return data ? toCapture(CaptureRow.parse(data)) : null;
+  }
+
+  async submitCapture(
+    userId: string,
+    captureId: string,
+    media: CaptureMediaInput[],
+  ): Promise<CaptureRecord | null> {
+    const { data, error } = await this.db.rpc("submit_capture", {
+      p_user_id: userId,
+      p_capture_id: captureId,
+      p_media: media,
+    });
+    if (error) throw new RepositoryError("submitCapture", error);
+    if (!data || (data as { id?: string | null }).id == null) return null;
+    return toCapture(CaptureRow.parse(data));
+  }
+
+  async listCaptureItems(userId: string, captureId: string): Promise<ItemRecord[]> {
+    const { data, error } = await this.db
+      .from("items")
+      .select(ITEM_SELECT)
+      .eq("owner_id", userId)
+      .eq("capture_id", captureId)
+      .in("status", [...SHELF_STATUSES])
+      .order("created_at", { ascending: true });
+    if (error) throw new RepositoryError("listCaptureItems", error);
+    return z
+      .array(ItemRow)
+      .parse(data ?? [])
+      .map(toItem);
+  }
+
+  async #getItem(userId: string, itemId: string): Promise<ItemRecord | null> {
+    const { data, error } = await this.db
+      .from("items")
+      .select(ITEM_SELECT)
+      .eq("id", itemId)
+      .eq("owner_id", userId)
+      .in("status", [...SHELF_STATUSES])
+      .maybeSingle();
+    if (error) throw new RepositoryError("getItem", error);
+    return data ? toItem(ItemRow.parse(data)) : null;
   }
 
   async #counts(userId: string): Promise<MeRecord["counts"]> {

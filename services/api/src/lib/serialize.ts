@@ -1,5 +1,5 @@
-import type { Me, ShelfItem } from "@throwin/shared";
-import type { ItemRecord, MeRecord } from "../repo/types.js";
+import type { Capture, Me, ShelfItem } from "@throwin/shared";
+import type { CaptureRecord, ItemRecord, MeRecord } from "../repo/types.js";
 
 export function toMe(r: MeRecord): Me {
   return {
@@ -21,7 +21,7 @@ export function toMe(r: MeRecord): Me {
   };
 }
 
-export function toShelfItem(r: ItemRecord): ShelfItem {
+export function toShelfItem(r: ItemRecord, urls?: Map<string, string | null>): ShelfItem {
   const hasValue =
     r.valueLowCents !== null && r.valueMidCents !== null && r.valueHighCents !== null;
   return {
@@ -46,8 +46,26 @@ export function toShelfItem(r: ItemRecord): ShelfItem {
     identity_confidence: r.identityConf,
     condition_confidence: r.conditionConf,
     is_reserved: r.reservedByDealId !== null,
-    thumbnail_url: null,
+    thumbnail_url: r.thumbnailPath ? (urls?.get(r.thumbnailPath) ?? null) : null,
+    follow_up: r.followUp,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
+  };
+}
+
+export function toCapture(
+  r: CaptureRecord,
+  items: ItemRecord[],
+  urls?: Map<string, string | null>,
+): Capture {
+  return {
+    id: r.id,
+    status: r.status,
+    media_count: r.mediaCount,
+    item_count: r.itemCount,
+    progress: r.progress as Capture["progress"],
+    error: r.error,
+    items: items.map((i) => toShelfItem(i, urls)),
+    created_at: r.createdAt.toISOString(),
   };
 }

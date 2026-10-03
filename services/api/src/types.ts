@@ -3,10 +3,12 @@ import type { TokenVerifier } from "./auth/verifier.js";
 import type { Logger } from "./lib/logger.js";
 import type { AppAttestMode, AppAttestVerifier } from "./middleware/app-attest.js";
 import type { IdempotencyStore } from "./repo/idempotency.js";
+import type { MediaStore } from "./repo/media.js";
 import type { Repository } from "./repo/types.js";
 
 export interface AppDeps {
   repo: Repository;
+  media: MediaStore;
   idempotency: IdempotencyStore;
   tokens: TokenVerifier;
   sessions: SessionIssuer;

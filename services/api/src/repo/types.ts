@@ -46,8 +46,40 @@ export interface ItemRecord {
   identityConf: number | null;
   conditionConf: number | null;
   reservedByDealId: string | null;
+  followUp: string | null;
+  captureId: string | null;
+  /** Storage path of the Item's first photo or crop, if any. */
+  thumbnailPath: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ItemUpdate {
+  title?: string;
+  willingness?: ItemWillingness;
+  conditionGrade?: ConditionGrade;
+  /** Promote draft or needs_photos to on_shelf. */
+  confirm?: boolean;
+}
+
+export type CaptureStatus = "uploading" | "processing" | "done" | "failed";
+
+export interface CaptureRecord {
+  id: string;
+  userId: string;
+  status: CaptureStatus;
+  mediaCount: number;
+  itemCount: number;
+  progress: { stage?: string; detail?: string; found?: number };
+  error: string | null;
+  createdAt: Date;
+}
+
+export interface CaptureMediaInput {
+  path: string;
+  width?: number | undefined;
+  height?: number | undefined;
+  sharpness?: number | undefined;
 }
 
 /** Statuses shown on the Shelf. Removed and traded Items are history, not inventory. */
@@ -69,4 +101,22 @@ export interface Repository {
   /** Sets users.deleted_at if not already set and returns the stored value. */
   softDeleteUser(userId: string, at: Date): Promise<Date | null>;
   listShelfItems(userId: string): Promise<ItemRecord[]>;
+  /** Returns null when the Item does not exist or belongs to someone else. */
+  updateItem(userId: string, itemId: string, update: ItemUpdate): Promise<ItemRecord | null>;
+  /** Marks the Item removed. False when missing, not the user's, or reserved by a Deal. */
+  removeItem(userId: string, itemId: string): Promise<"removed" | "not_found" | "reserved">;
+
+  createCapture(
+    userId: string,
+    mediaCount: number,
+    kind: "photo" | "frame",
+  ): Promise<CaptureRecord>;
+  getCapture(userId: string, captureId: string): Promise<CaptureRecord | null>;
+  /** Records uploaded media, moves the capture to processing and enqueues the Appraiser. */
+  submitCapture(
+    userId: string,
+    captureId: string,
+    media: CaptureMediaInput[],
+  ): Promise<CaptureRecord | null>;
+  listCaptureItems(userId: string, captureId: string): Promise<ItemRecord[]>;
 }

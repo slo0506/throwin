@@ -1,7 +1,10 @@
 import { DEFAULT_NOTIFICATION_PREFS } from "@throwin/shared";
 import {
   ACTIVE_ASK_STATUSES,
+  type CaptureMediaInput,
+  type CaptureRecord,
   type ItemRecord,
+  type ItemUpdate,
   type MePatch,
   type MeRecord,
   type Repository,
@@ -16,6 +19,10 @@ export class MemoryRepository implements Repository {
   readonly items: ItemRecord[] = [];
   readonly asks: { userId: string; status: string }[] = [];
   readonly memberships: { userId: string; circleId: string }[] = [];
+  readonly captures: CaptureRecord[] = [];
+  readonly captureMedia: (CaptureMediaInput & { captureId: string })[] = [];
+  readonly jobs: { kind: string; payload: Record<string, unknown> }[] = [];
+  #nextId = 1;
 
   addUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser {
     const user: StoredUser = {
@@ -51,6 +58,9 @@ export class MemoryRepository implements Repository {
       identityConf: null,
       conditionConf: null,
       reservedByDealId: null,
+      followUp: null,
+      captureId: null,
+      thumbnailPath: null,
       createdAt: new Date("2026-10-03T00:00:00Z"),
       updatedAt: new Date("2026-10-03T00:00:00Z"),
       ...item,
@@ -96,6 +106,69 @@ export class MemoryRepository implements Repository {
 
   async listShelfItems(userId: string): Promise<ItemRecord[]> {
     return this.#shelf(userId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async updateItem(userId: string, itemId: string, update: ItemUpdate): Promise<ItemRecord | null> {
+    const item = this.#shelf(userId).find((i) => i.id === itemId);
+    if (!item) return null;
+    if (update.title !== undefined) item.title = update.title;
+    if (update.willingness !== undefined) item.willingness = update.willingness;
+    if (update.conditionGrade !== undefined) item.conditionGrade = update.conditionGrade;
+    if (update.confirm && (item.status === "draft" || item.status === "needs_photos")) {
+      item.status = "on_shelf";
+      item.followUp = null;
+    }
+    return item;
+  }
+
+  async removeItem(userId: string, itemId: string): Promise<"removed" | "not_found" | "reserved"> {
+    const item = this.#shelf(userId).find((i) => i.id === itemId);
+    if (!item) return "not_found";
+    if (item.reservedByDealId) return "reserved";
+    item.status = "removed";
+    return "removed";
+  }
+
+  async createCapture(userId: string, mediaCount: number): Promise<CaptureRecord> {
+    const capture: CaptureRecord = {
+      id: `00000000-0000-4000-8000-${String(this.#nextId++).padStart(12, "0")}`,
+      userId,
+      status: "uploading",
+      mediaCount,
+      itemCount: 0,
+      progress: { stage: "uploading" },
+      error: null,
+      createdAt: new Date("2026-10-03T00:00:00Z"),
+    };
+    this.captures.push(capture);
+    return capture;
+  }
+
+  async getCapture(userId: string, captureId: string): Promise<CaptureRecord | null> {
+    return this.captures.find((c) => c.id === captureId && c.userId === userId) ?? null;
+  }
+
+  async submitCapture(
+    userId: string,
+    captureId: string,
+    media: CaptureMediaInput[],
+  ): Promise<CaptureRecord | null> {
+    const capture = await this.getCapture(userId, captureId);
+    if (!capture) return null;
+    if (capture.status !== "uploading") throw new Error("capture already submitted");
+    for (const m of media) this.captureMedia.push({ ...m, captureId });
+    capture.status = "processing";
+    capture.mediaCount = media.length;
+    capture.progress = { stage: "detecting", detail: "Looking at your photos" };
+    this.jobs.push({
+      kind: "appraise_capture",
+      payload: { capture_id: captureId, user_id: userId },
+    });
+    return capture;
+  }
+
+  async listCaptureItems(userId: string, captureId: string): Promise<ItemRecord[]> {
+    return this.#shelf(userId).filter((i) => i.captureId === captureId);
   }
 
   #shelf(userId: string): ItemRecord[] {

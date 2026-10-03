@@ -5,6 +5,7 @@ import { requireAuth } from "./middleware/auth.js";
 import { createErrorHandler, notFound } from "./middleware/error-handler.js";
 import { idempotency } from "./middleware/idempotency.js";
 import { authRoutes } from "./routes/auth.js";
+import { captureRoutes, mediaRoutes } from "./routes/captures.js";
 import { healthRoutes } from "./routes/health.js";
 import { itemRoutes } from "./routes/items.js";
 import { meRoutes } from "./routes/me.js";
@@ -27,7 +28,9 @@ export function createApp(deps: AppDeps) {
   v1.use(appAttest(deps.appAttest.mode, deps.appAttest.verifier, deps.logger));
   v1.use(idempotency(deps.idempotency, deps.logger, now));
   v1.route("/me", meRoutes(deps.repo, now));
-  v1.route("/items", itemRoutes(deps.repo));
+  v1.route("/items", itemRoutes(deps.repo, deps.media));
+  v1.route("/media", mediaRoutes(deps.repo, deps.media));
+  v1.route("/captures", captureRoutes(deps.repo, deps.media));
   app.route("/v1", v1);
 
   return app;

@@ -55,6 +55,7 @@ describe("ShelfItem", () => {
       condition_confidence: null,
       is_reserved: false,
       thumbnail_url: null,
+      follow_up: null,
       created_at: "2026-10-03T12:00:00.000Z",
       updated_at: "2026-10-03T12:00:00+00:00",
     });
