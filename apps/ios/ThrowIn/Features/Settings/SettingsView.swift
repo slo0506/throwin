@@ -18,13 +18,20 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: Space.sm) {
                         SectionHeader(title: "What your GM knows", trailing: "\(model.tasteFacts.count) facts")
                         PaperCard(padding: 0) {
-                            VStack(spacing: 0) {
-                                ForEach(Array(model.tasteFacts.enumerated()), id: \.element.id) { index, fact in
-                                    TasteFactRow(fact: fact) {
-                                        model.deleteTasteFact(fact.id)
-                                    }
-                                    if index < model.tasteFacts.count - 1 {
-                                        Divider().padding(.leading, Space.lg)
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(Array(factGroups.enumerated()), id: \.element.category) { groupIndex, group in
+                                    Text(group.category.label)
+                                        .sectionLabel()
+                                        .padding(.horizontal, Space.lg)
+                                        .padding(.top, groupIndex == 0 ? Space.md : Space.lg)
+                                        .padding(.bottom, Space.xxs)
+                                    ForEach(Array(group.facts.enumerated()), id: \.element.id) { index, fact in
+                                        TasteFactRow(fact: fact) {
+                                            model.deleteTasteFact(fact.id)
+                                        }
+                                        if index < group.facts.count - 1 {
+                                            Divider().padding(.leading, Space.lg)
+                                        }
                                     }
                                 }
                                 if model.tasteFacts.isEmpty {
@@ -32,8 +39,11 @@ struct SettingsView: View {
                                         .font(Typo.callout)
                                         .foregroundStyle(Palette.inkSecondary)
                                         .padding(Space.lg)
+                                } else {
+                                    Color.clear.frame(height: Space.xs)
                                 }
                             }
+                            .animation(Motion.snappy, value: model.tasteFacts)
                         }
                         Text("Tap the minus to forget something. Your GM won't use it again.")
                             .font(Typo.footnote)
@@ -117,6 +127,9 @@ struct SettingsView: View {
             }
             .scrollIndicators(.hidden)
             .background(Palette.canvas)
+            .task { await model.loadTasteFacts() }
+            .refreshable { await model.loadTasteFacts() }
+            .quietBanner()
             .confirmationDialog(
                 "Delete your account?",
                 isPresented: $confirmDelete,
@@ -126,6 +139,15 @@ struct SettingsView: View {
             } message: {
                 Text("This can't be undone.")
             }
+        }
+    }
+
+    /// Facts grouped by category, in a fixed order, skipping empty groups.
+    private var factGroups: [(category: TasteCategory, facts: [TasteFact])] {
+        let grouped = Dictionary(grouping: model.tasteFacts, by: \.group)
+        return TasteCategory.allCases.compactMap { category in
+            guard let facts = grouped[category], !facts.isEmpty else { return nil }
+            return (category, facts)
         }
     }
 
@@ -167,12 +189,15 @@ private struct TasteFactRow: View {
     var body: some View {
         HStack(spacing: Space.sm) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(fact.text)
+                Text(fact.value)
                     .font(Typo.callout)
                     .foregroundStyle(Palette.ink)
-                Text(fact.source)
-                    .font(Typo.caption)
-                    .foregroundStyle(Palette.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let source = fact.source, !source.isEmpty {
+                    Text("From \(source)")
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.inkTertiary)
+                }
             }
             Spacer()
             Button(action: onForget) {
@@ -182,7 +207,7 @@ private struct TasteFactRow: View {
                     .foregroundStyle(Palette.danger)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Forget \(fact.text)")
+            .accessibilityLabel("Forget \(fact.value)")
         }
         .padding(.horizontal, Space.lg)
         .padding(.vertical, Space.sm)
@@ -190,7 +215,7 @@ private struct TasteFactRow: View {
     }
 }
 
-private struct AutonomyOption: View {
+struct AutonomyOption: View {
     var level: AutonomyLevel
     var isSelected: Bool
     var onSelect: () -> Void

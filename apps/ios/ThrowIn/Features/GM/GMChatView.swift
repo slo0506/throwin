@@ -1,100 +1,75 @@
 import SwiftUI
 
-/// A turn in the GM conversation. GM responses render as cards, not walls of text
-/// (PRD: UI components are tools; the server fills in every price and photo).
-struct GMMessage: Identifiable {
-    enum Content {
-        case userText(String)
-        case gmText(StreamedText)
-        case item(ShelfItem)
-        case choices([String])
+/// Talk to your GM. Replies stream in with the bloom, tool progress shows as 1 soft line, and
+/// cards (Items, choices, a camera request, an Ask, the recap) render inline as native views.
+/// The same view runs the intake in onboarding ("Meet your GM") and the GM sheet.
+struct GMChatView: View {
+    enum Presentation {
+        case sheet
+        case intake
     }
 
-    let id = UUID()
-    var content: Content
-}
+    var presentation: Presentation = .sheet
+    /// Intake only: the skip link.
+    var onSkip: () -> Void = {}
+    /// Intake only: the conversation reported `mode: chat`.
+    var onIntakeComplete: () -> Void = {}
 
-/// Talk to your GM. In demo mode the GM follows a short script; in Milestone 2 this streams
-/// from `/v1/gm/stream/{id}` (text deltas, progress lines and UI component events).
-struct GMChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
-    @State private var messages: [GMMessage] = []
     @State private var draft = ""
-    @State private var mood: OrbMood = .idle
-    @State private var thinkingLine: String?
-    @State private var epoch = Date()
-    @State private var turn = 0
-    @State private var isBusy = false
     @State private var sendCount = 0
+    @State private var openAsk: AskRoute?
+    @State private var isCapturing = false
+    @State private var shelfBeforeCapture: Set<String> = []
+    @State private var shoot: ChatShootRoute?
     @FocusState private var composerFocused: Bool
 
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Space.lg) {
-                        ForEach(messages) { message in
-                            row(for: message)
-                                .id(message.id)
-                                .transition(
-                                    .asymmetric(
-                                        insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .bottomLeading)).combined(with: .offset(y: 12)),
-                                        removal: .opacity
-                                    )
-                                )
-                        }
-                        if let thinkingLine {
-                            HStack(spacing: Space.xs) {
-                                LoopIndicator(people: 3, size: 20)
-                                Text(thinkingLine)
-                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(Palette.inkSecondary)
-                                    .loopShimmer()
-                            }
-                            .transition(.opacity.combined(with: .offset(y: 6)))
-                        }
-                        Color.clear.frame(height: 1).id("bottom")
-                    }
-                    .padding(.horizontal, Space.gutter)
-                    .padding(.vertical, Space.md)
-                }
-                .scrollIndicators(.hidden)
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: scrollSignature) { _, _ in
-                    withAnimation(Motion.soft) { proxy.scrollTo("bottom", anchor: .bottom) }
-                }
-            }
-            composer
-        }
-        .background(Palette.canvas)
-        .task {
-            guard messages.isEmpty else { return }
-            epoch = Date()
-            try? await Task.sleep(for: .milliseconds(450))
-            await gmSays("Hey \(model.firstName). What are you hunting for? Say it any way, like the big LEGO Batmobile.")
-            appendAnimated(.choices(["The LEGO Batmobile", "A Switch game", "Something for my desk"]))
-        }
-    }
+    private var chat: GMChatModel { model.gm }
+    private var isIntake: Bool { presentation == .intake }
 
-    /// Changes whenever content grows, so the list follows the stream.
-    private var scrollSignature: Int {
-        var total = messages.count * 1000
-        if case let .gmText(streamed)? = messages.last?.content {
-            total += streamed.chunks.count
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                header
+                thread
+                composer
+            }
+            .background(Palette.canvas)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(item: $openAsk) { route in
+                AskDetailView(askID: route.id, fallback: route.ask)
+            }
         }
-        return total + (thinkingLine == nil ? 0 : 1)
+        .quietBanner()
+        .task {
+            await chat.load(intake: isIntake)
+            guard chat.wantsComposerFocus else { return }
+            chat.wantsComposerFocus = false
+            try? await Task.sleep(for: .milliseconds(350))
+            composerFocused = true
+        }
+        .onChange(of: chat.intakeDone, initial: true) { _, done in
+            if isIntake, done { onIntakeComplete() }
+        }
+        .sheet(isPresented: $isCapturing, onDismiss: captureClosed) {
+            CaptureSheet(onFinish: {})
+        }
+        .fullScreenCover(item: $shoot) { route in
+            ShowcaseShootView(itemID: route.itemID, angles: route.angles) { sent in
+                if sent { chat.send(text: "Sent the photos.") }
+            }
+        }
     }
 
     // MARK: Header
 
     private var header: some View {
         HStack(spacing: Space.sm) {
-            GMOrbView(mood: mood, size: 44)
+            GMOrbView(mood: orbMood, size: 44)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Your GM")
+                Text(isIntake ? "Meet your GM" : "Your GM")
                     .font(Typo.headline)
                     .foregroundStyle(Palette.ink)
                 Text(statusText)
@@ -104,37 +79,104 @@ struct GMChatView: View {
                     .animation(Motion.snappy, value: statusText)
             }
             Spacer()
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 40, height: 40)
+            if isIntake {
+                Button("Skip for now", action: onSkip)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Palette.inkSecondary)
+                    .buttonStyle(.plain)
+            } else {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Close")
             }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel("Close")
         }
         .padding(.horizontal, Space.gutter)
-        .padding(.top, Space.xl)
+        .padding(.top, isIntake ? Space.sm : Space.xl)
         .padding(.bottom, Space.sm)
     }
 
-    private var statusText: String {
-        switch mood {
-        case .idle: "Working on \(model.asks.count) Ask\(model.asks.count == 1 ? "" : "s")"
-        case .thinking: "Thinking"
-        case .speaking: "Typing"
+    private var orbMood: OrbMood {
+        switch chat.phase {
+        case .idle: .idle
+        case .waiting: .thinking
+        case .streaming: .speaking
         }
     }
 
-    // MARK: Rows
+    private var statusText: String {
+        switch chat.phase {
+        case .waiting: return "Thinking"
+        case .streaming: return "Typing"
+        case .idle:
+            if isIntake { return "A few quick questions" }
+            let count = model.asks.count
+            return "Working on \(count) Ask\(count == 1 ? "" : "s")"
+        }
+    }
+
+    // MARK: Thread
+
+    private var thread: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Space.lg) {
+                    ForEach(chat.rows) { row in
+                        rowView(row)
+                            .id(row.id)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .bottomLeading)).combined(with: .offset(y: 12)),
+                                    removal: .opacity
+                                )
+                            )
+                    }
+                    activity
+                    if chat.failed != nil, !chat.isBusy {
+                        retryRow
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
+                    if chat.loadFailed, chat.rows.isEmpty {
+                        loadFailedView
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.horizontal, Space.gutter)
+                .padding(.vertical, Space.md)
+            }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: scrollSignature) { _, _ in
+                withAnimation(Motion.soft) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onAppear {
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
+        }
+    }
+
+    /// Changes whenever the thread grows, so the list follows the stream.
+    private var scrollSignature: Int {
+        var total = chat.rows.count * 1000
+        if case let .gm(text)? = chat.rows.last?.kind {
+            total += text.chunks.count
+        }
+        if chat.progress != nil || chat.phase == .waiting { total += 1 }
+        if chat.failed != nil { total += 2 }
+        return total
+    }
 
     @ViewBuilder
-    private func row(for message: GMMessage) -> some View {
-        switch message.content {
-        case let .userText(text):
+    private func rowView(_ row: GMRow) -> some View {
+        switch row.kind {
+        case let .user(text):
             HStack {
                 Spacer(minLength: 60)
                 Text(text)
@@ -144,35 +186,109 @@ struct GMChatView: View {
                     .padding(.vertical, 11)
                     .background(Palette.ink, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
-        case let .gmText(streamed):
-            BloomingText(streamed: streamed, epoch: epoch)
+        case let .gm(text):
+            BloomingText(streamed: text, epoch: chat.epoch)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, Space.xl)
-        case let .item(item):
-            ChatItemCard(item: item)
-        case let .choices(options):
-            ChoiceChips(options: options, isEnabled: !isBusy) { choice in
-                send(choice)
+        case let .component(component):
+            componentView(component)
+        }
+    }
+
+    @ViewBuilder
+    private func componentView(_ component: GMComponent) -> some View {
+        let answer = chat.answers[component.id]
+        let canAct = !chat.isBusy
+        switch component.body {
+        case let .itemCards(data):
+            ItemCardsComponentView(data: data, answer: answer, isEnabled: canAct) { ids, echo in
+                chat.choose(component, optionIDs: ids, echo: echo)
+            }
+        case let .choices(data):
+            ChoicesComponentView(data: data, answer: answer, isEnabled: canAct) { ids, echo in
+                chat.choose(component, optionIDs: ids, echo: echo)
+            }
+        case let .cameraRequest(data):
+            CameraRequestCard(data: data, isEnabled: canAct) {
+                openCamera(for: data)
+            }
+            .padding(.trailing, Space.xxl)
+        case let .askCard(ask):
+            AskChatCard(ask: model.asks.first(where: { $0.id == ask.id }) ?? ask) {
+                openAsk = AskRoute(ask: ask)
+            }
+            .padding(.trailing, Space.xxl)
+        case let .recap(data):
+            RecapCard(data: data, answer: answer, isEnabled: canAct) { optionID, echo in
+                chat.choose(component, optionIDs: [optionID], echo: echo)
+            }
+        case .unknown:
+            EmptyView()
+        }
+    }
+
+    /// The orb thinking until the first token, then the latest progress line, which
+    /// cross-fades as the labels change.
+    @ViewBuilder
+    private var activity: some View {
+        if let progress = chat.progress {
+            HStack(spacing: Space.xs) {
+                LoopIndicator(people: 3, size: 20)
+                ZStack(alignment: .leading) {
+                    Text(progress)
+                        .id(progress)
+                        .transition(.opacity)
+                }
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(Palette.inkSecondary)
+                .loopShimmer()
+                .animation(Motion.soft, value: progress)
+            }
+            .transition(.opacity.combined(with: .offset(y: 6)))
+            .accessibilityElement(children: .combine)
+        } else if chat.phase == .waiting {
+            GMOrbView(mood: .thinking, size: 30, showsGlow: false)
+                .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .leading)))
+                .accessibilityLabel("Your GM is thinking")
+        }
+    }
+
+    private var retryRow: some View {
+        HStack(spacing: Space.sm) {
+            Text("That didn't go through.")
+                .font(Typo.callout)
+                .foregroundStyle(Palette.inkSecondary)
+            GMChip(label: "Try again") { chat.retry() }
+        }
+    }
+
+    private var loadFailedView: some View {
+        VStack(spacing: Space.md) {
+            Text("Couldn't reach your GM.")
+                .font(Typo.callout)
+                .foregroundStyle(Palette.inkSecondary)
+            GMChip(label: "Try again") {
+                Task { await chat.reload(intake: isIntake) }
             }
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, Space.huge)
     }
 
     // MARK: Composer
 
     private var composer: some View {
         HStack(spacing: Space.xs) {
-            TextField("Tell your GM what you want", text: $draft, axis: .vertical)
+            TextField(placeholder, text: $draft, axis: .vertical)
                 .font(Typo.body)
                 .lineLimit(1...4)
                 .focused($composerFocused)
                 .submitLabel(.send)
-                .onSubmit { send(draft) }
+                .onSubmit(send)
                 .padding(.leading, Space.md)
                 .padding(.vertical, 12)
 
-            Button {
-                send(draft)
-            } label: {
+            Button(action: send) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(canSend ? Palette.canvas : Palette.inkTertiary)
@@ -187,155 +303,65 @@ struct GMChatView: View {
             .accessibilityLabel("Send")
         }
         .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .opacity(chat.isBusy ? 0.7 : 1)
+        .animation(Motion.snappy, value: chat.isBusy)
         .padding(.horizontal, Space.md)
         .padding(.bottom, Space.xs)
         .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.6), trigger: sendCount)
     }
 
-    private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isBusy
+    private var placeholder: String {
+        if chat.isBusy { return "Your GM is replying" }
+        if chat.screen == "new_ask" { return "What do you want? Say it any way" }
+        return isIntake ? "Answer your GM" : "Tell your GM what you want"
     }
 
-    // MARK: Demo conversation
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chat.isBusy && chat.hasLoaded
+    }
 
-    private func send(_ raw: String) {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isBusy else { return }
+    private func send() {
+        guard canSend else { return }
+        let text = draft
         draft = ""
         sendCount += 1
-        isBusy = true
-        // Choice chips are answered once; remove them so the thread reads cleanly.
-        withAnimation(Motion.snappy) {
-            messages.removeAll { if case .choices = $0.content { return true } else { return false } }
+        chat.send(text: text)
+    }
+
+    // MARK: Camera
+
+    private func openCamera(for request: CameraRequestData) {
+        if let itemID = request.itemId, let item = model.shelf.first(where: { $0.id == itemID }) {
+            shoot = ChatShootRoute(itemID: itemID, angles: item.showcaseAngles)
+            return
         }
-        appendAnimated(.userText(text))
+        guard model.isLive else {
+            // Demo: the sample capture lands on the Shelf right away.
+            model.loadDemoShelf()
+            chat.send(text: "I snapped 3 things.")
+            return
+        }
+        shelfBeforeCapture = Set(model.shelf.map(\.id))
+        isCapturing = true
+    }
+
+    /// Tells the GM what the capture added, so it can carry on.
+    private func captureClosed() {
+        let before = shelfBeforeCapture
         Task {
-            await respond(to: text)
-            isBusy = false
-        }
-    }
-
-    private func respond(to text: String) async {
-        defer { turn += 1 }
-        switch turn {
-        case 0:
-            await think("Looking for it", for: 1.1)
-            await gmSays("That sounds like the classic TV Batmobile, set 76188. It usually trades for about $70 to $100 used.")
-            try? await Task.sleep(for: .milliseconds(250))
-            appendAnimated(.item(DemoData.batmobile))
-            try? await Task.sleep(for: .milliseconds(700))
-            await gmSays("Your Zelda and Mario Kart cover most of that. Want me to start looking?")
-            appendAnimated(.choices(["Start looking", "Use different items"]))
-        case 1:
-            await think("Checking 46 Shelves in 2 Circles", for: 1.4)
-            await gmSays("On it. I'll ping you when I find a deal. Usually that's within a day in a Circle this size.")
-        default:
-            await think("Thinking", for: 0.8)
-            await gmSays("Got it. The real me arrives with the GM harness in Milestone 2, so for now I'm running a short demo script.")
-        }
-    }
-
-    private func think(_ line: String, for seconds: Double) async {
-        withAnimation(Motion.snappy) {
-            mood = .thinking
-            thinkingLine = line
-        }
-        try? await Task.sleep(for: .seconds(seconds))
-        withAnimation(Motion.snappy) { thinkingLine = nil }
-    }
-
-    private func gmSays(_ text: String) async {
-        mood = .speaking
-        appendAnimated(.gmText(StreamedText()))
-        let index = messages.count - 1
-        await streamDemoText(text, epoch: epoch) { token, arrival in
-            guard messages.indices.contains(index), case var .gmText(streamed) = messages[index].content else { return }
-            streamed.append(token, at: arrival)
-            messages[index].content = .gmText(streamed)
-        }
-        mood = .idle
-    }
-
-    private func appendAnimated(_ content: GMMessage.Content) {
-        withAnimation(Motion.bouncy) {
-            messages.append(GMMessage(content: content))
+            await model.refreshShelf()
+            let added = model.shelf.filter { !before.contains($0.id) }.count
+            guard added > 0 else { return }
+            chat.send(text: added == 1 ? "I added 1 thing to my Shelf." : "I added \(added) things to my Shelf.")
         }
     }
 }
 
-// MARK: - Inline cards
+struct ChatShootRoute: Identifiable, Hashable {
+    var itemID: String
+    var angles: [String]
 
-/// An Item rendered inside the chat. Plays the appraisal scan as it lands.
-struct ChatItemCard: View {
-    var item: ShelfItem
-    @State private var scan = 0
-
-    var body: some View {
-        HStack(spacing: Space.md) {
-            ItemArtwork(item: item, cornerRadius: 18)
-                .frame(width: 84, height: 84)
-                .appraiseScan(trigger: scan, duration: 1.3)
-                .liquidRipple(at: CGPoint(x: 42, y: 42), trigger: scan, amplitude: 5)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.title)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Palette.ink)
-                if let value = item.value {
-                    Text(value.label)
-                        .font(Typo.value)
-                        .foregroundStyle(Palette.inkSecondary)
-                    ValueRangeBar(range: value, tint: Palette.receive, showsLabels: false)
-                }
-            }
-        }
-        .padding(Space.sm)
-        .background {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Palette.surface)
-                .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .strokeBorder(Palette.hairline, lineWidth: 1)
-        }
-        .padding(.trailing, Space.xxl)
-        .task {
-            try? await Task.sleep(for: .milliseconds(120))
-            scan += 1
-        }
-    }
-}
-
-/// Multiple-choice answers from `present_choices`. Chips cascade in.
-struct ChoiceChips: View {
-    var options: [String]
-    var isEnabled: Bool
-    var onPick: (String) -> Void
-
-    @State private var appeared = false
-
-    var body: some View {
-        FlowRow(spacing: Space.xs) {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                Button {
-                    onPick(option)
-                } label: {
-                    Text(option)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, Space.md)
-                        .frame(height: 40)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .disabled(!isEnabled)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .animation(Motion.bouncy.delay(Double(index) * 0.06), value: appeared)
-            }
-        }
-        .onAppear { appeared = true }
-    }
+    var id: String { itemID }
 }
 
 /// Wraps children onto new lines when they run out of room.

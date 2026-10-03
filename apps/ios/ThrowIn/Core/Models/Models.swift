@@ -352,24 +352,7 @@ nonisolated struct PatchMe: Encodable, Sendable {
     var notificationPrefs: NotificationPrefs?
 }
 
-// MARK: - Not yet on the API (Milestones 2 and 3). Used by demo mode.
-
-nonisolated enum AskStatus: String, Codable, Sendable {
-    case drafting, offering, prospecting, proposed, accepted, fulfilled, expired, cancelled
-}
-
-nonisolated struct Ask: Identifiable, Hashable, Sendable {
-    var id: String
-    var title: String
-    var detail: String
-    var status: AskStatus
-    var cashCeilingCents: Int
-    var anchor: ValueRange
-    var offerItemIDs: [String]
-    var shelvesChecked: Int
-    var circlesChecked: Int
-    var candidates: Int
-}
+// MARK: - Not yet on the API (Milestone 3). Used by demo mode.
 
 nonisolated struct Person: Identifiable, Hashable, Sendable {
     var id: String
@@ -402,10 +385,4 @@ nonisolated struct TradeCircle: Identifiable, Hashable, Sendable {
     var members: [Person]
     var defaultSpot: String
     var inviteURL: URL
-}
-
-nonisolated struct TasteFact: Identifiable, Hashable, Sendable {
-    var id: String
-    var text: String
-    var source: String
 }
