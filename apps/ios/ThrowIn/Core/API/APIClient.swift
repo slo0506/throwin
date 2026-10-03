@@ -236,6 +236,52 @@ final class APIClient {
         try await send("PATCH", "v1/asks/\(id)", body: patch)
     }
 
+    // MARK: Circles
+
+    /// Oldest membership first.
+    func circles() async throws -> [APICircle] {
+        let response: CirclesResponse = try await send("GET", "v1/circles")
+        return response.circles
+    }
+
+    func circle(_ id: String) async throws -> APICircleDetail {
+        try await send("GET", "v1/circles/\(id)")
+    }
+
+    func createCircle(name: String) async throws -> APICircle {
+        try await send("POST", "v1/circles", body: NewCircleRequest(name: name))
+    }
+
+    /// A fresh code with the defaults (25 uses, 14 days). Any member can make one.
+    func createInvite(circleID: String) async throws -> APIInvite {
+        try await send("POST", "v1/circles/\(circleID)/invites", body: EmptyBody())
+    }
+
+    func invitePreview(_ code: String) async throws -> InvitePreview {
+        try await send("GET", "v1/invites/\(code)")
+    }
+
+    /// Joins, or returns the Circle if already in it.
+    func acceptInvite(_ code: String) async throws -> APICircleDetail {
+        try await send("POST", "v1/invites/\(code)/accept", body: EmptyBody())
+    }
+
+    // MARK: Deals
+
+    /// Deals waiting on approvals or approved, newest first.
+    func deals() async throws -> [APIDealSheet] {
+        let response: DealSheetsResponse = try await send("GET", "v1/deals")
+        return response.deals
+    }
+
+    func approveDeal(_ id: String) async throws -> APIDealSheet {
+        try await send("POST", "v1/deals/\(id)/approve", body: EmptyBody())
+    }
+
+    func declineDeal(_ id: String, reason: String?) async throws -> APIDealSheet {
+        try await send("POST", "v1/deals/\(id)/decline", body: DeclineRequest(reason: reason))
+    }
+
     // MARK: Taste facts
 
     func tasteFacts() async throws -> [TasteFact] {

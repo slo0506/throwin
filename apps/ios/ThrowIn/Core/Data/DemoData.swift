@@ -158,7 +158,7 @@ enum DemoData {
         throwInCents: 1000,
         participants: [you, maya, dev],
         why: "You said you'd give up Zelda for any Batman set, and this one's complete with the minifigs.",
-        expiresInHours: 47
+        expiresAt: Date.now.addingTimeInterval(47 * 3600)
     )
 
     static let circles: [TradeCircle] = [
@@ -167,6 +167,7 @@ enum DemoData {
             name: "Thursday Lego Circle",
             focus: "LEGO",
             members: [jordan, maya, priya, dev, theo],
+            memberCount: 5,
             defaultSpot: "Sightglass Coffee, 7th St",
             inviteURL: URL(string: "https://throwin.app/i/THURSDAY-LEGO")!
         ),
@@ -175,6 +176,7 @@ enum DemoData {
             name: "Studio Office",
             focus: "Games and sneakers",
             members: [dev, theo, priya],
+            memberCount: 3,
             defaultSpot: "Office lobby, 3rd floor",
             inviteURL: URL(string: "https://throwin.app/i/STUDIO-OFFICE")!
         ),

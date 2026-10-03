@@ -15,6 +15,8 @@ struct DealSheetView: View {
     @State private var celebrate = 0
     @State private var approveCenter: CGPoint = .zero
     @State private var showCounter = false
+    @State private var confirmDecline = false
+    @State private var isDeclining = false
     @State private var errorText: String?
 
     private var scaleMax: Int {
@@ -34,7 +36,7 @@ struct DealSheetView: View {
                     fairness
                     side(title: "You get", items: deal.receive, tint: Palette.receive)
                     loopParticipants
-                    why
+                    if deal.why != nil { why }
                 }
                 .padding(.horizontal, Space.gutter)
                 .padding(.bottom, 200)
@@ -53,8 +55,13 @@ struct DealSheetView: View {
                 .presentationDetents([.medium])
                 .presentationCornerRadius(32)
         }
+        .confirmationDialog("Decline this Deal?", isPresented: $confirmDecline, titleVisibility: .visible) {
+            Button("Decline", role: .destructive) { decline() }
+        } message: {
+            Text("Everyone's Items go back on their Shelves, and your GM keeps looking. It won't offer you this Item again.")
+        }
         .onAppear {
-            if model.approvedDealIDs.contains(deal.id) { phase = .done }
+            if model.approvedDealIDs.contains(deal.id) || deal.myApproval == .approved { phase = .done }
         }
     }
 
@@ -90,7 +97,9 @@ struct DealSheetView: View {
                 .font(Typo.title)
                 .tracking(-0.4)
                 .foregroundStyle(Palette.ink)
-            Text("Expires in \(deal.expiresInHours) hours if not everyone approves.")
+            Text(deal.status == .approved
+                 ? "Everyone approved."
+                 : "Expires in \(deal.expiresInHours) hours if not everyone approves.")
                 .font(Typo.footnote)
                 .foregroundStyle(Palette.inkTertiary)
         }
@@ -168,16 +177,20 @@ struct DealSheetView: View {
                         Avatar(person: person, size: 44)
                         Text(person.name)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        HStack(spacing: 2) {
-                            Image(systemName: "star.fill").font(.system(size: 9))
-                            Text(person.rating.formatted(.number.precision(.fractionLength(1))))
+                        if let rating = person.rating {
+                            HStack(spacing: 2) {
+                                Image(systemName: "star.fill").font(.system(size: 9))
+                                Text(rating.formatted(.number.precision(.fractionLength(1))))
+                            }
+                            .font(Typo.caption)
+                            .foregroundStyle(Palette.inkSecondary)
                         }
-                        .font(Typo.caption)
-                        .foregroundStyle(Palette.inkSecondary)
-                        Text(person.circle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Palette.inkTertiary)
-                            .lineLimit(1)
+                        if let circle = person.circle {
+                            Text(circle)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Palette.inkTertiary)
+                                .lineLimit(1)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     if index < deal.participants.count - 1 {
@@ -198,7 +211,7 @@ struct DealSheetView: View {
             GMOrbView(mood: .idle, size: 32, showsGlow: false)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Why your GM likes it").sectionLabel()
-                Text(deal.why)
+                Text(deal.why ?? "")
                     .font(Typo.body)
                     .foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -228,23 +241,27 @@ struct DealSheetView: View {
             if phase != .done {
                 HStack(spacing: Space.sm) {
                     Button {
-                        dismiss()
+                        confirmDecline = true
                     } label: {
-                        Text("Decline").frame(maxWidth: .infinity).frame(height: 30)
+                        Text(isDeclining ? "Declining" : "Decline").frame(maxWidth: .infinity).frame(height: 30)
                     }
                     .buttonStyle(.glass)
-                    Button {
-                        showCounter = true
-                    } label: {
-                        Text("Counter").frame(maxWidth: .infinity).frame(height: 30)
+                    .disabled(isDeclining || phase == .confirming)
+                    // Counters aren't on the server yet; demo mode keeps the sketch.
+                    if !model.isLive {
+                        Button {
+                            showCounter = true
+                        } label: {
+                            Text("Counter").frame(maxWidth: .infinity).frame(height: 30)
+                        }
+                        .buttonStyle(.glass)
                     }
-                    .buttonStyle(.glass)
                 }
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(Palette.ink)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
-                Text("Your GM will find a time and place that works for all 3 of you.")
+                Text(doneLine)
                     .font(Typo.footnote)
                     .foregroundStyle(Palette.inkSecondary)
                     .multilineTextAlignment(.center)
@@ -261,21 +278,56 @@ struct DealSheetView: View {
         .animation(Motion.bouncy, value: phase)
     }
 
+    /// After approving: who it's still waiting on, or what happens next.
+    private var doneLine: String {
+        let others = deal.participants.count - 1
+        if deal.status == .approved {
+            return others == 1
+                ? "Your GM will find a time and place that works for you both."
+                : "Your GM will find a time and place that works for all \(deal.participants.count) of you."
+        }
+        return others == 1
+            ? "Approved. Waiting on the other person."
+            : "Approved. Waiting on the others."
+    }
+
     private func approve() {
         phase = .confirming
         errorText = nil
         Task {
+            // The server can't verify this yet (needs App Attest or passkeys), so the check is
+            // on device for now. The PRD requires it either way.
             let confirmed = await DeviceConfirmation.confirm(reason: "Approve this trade")
             guard confirmed else {
                 phase = .idle
                 errorText = "Approval needs Face ID or your passcode."
                 return
             }
+            do {
+                try await model.approve(deal)
+            } catch {
+                phase = .idle
+                errorText = (error as? APIError)?.message ?? "Couldn't approve. Try again."
+                return
+            }
             rippleOrigin = approveCenter
             rippleTrigger += 1
             celebrate += 1
             phase = .done
-            model.markApproved(deal)
+        }
+    }
+
+    private func decline() {
+        isDeclining = true
+        errorText = nil
+        Task {
+            do {
+                try await model.decline(deal, reason: nil)
+                dismiss()
+            } catch {
+                errorText = (error as? APIError)?.message ?? "Couldn't decline. Try again."
+            }
+            isDeclining = false
         }
     }
 }
