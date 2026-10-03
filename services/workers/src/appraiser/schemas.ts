@@ -33,10 +33,16 @@ export const Identification = z.object({
   brand: z.string().max(60).nullable(),
   model: z.string().max(80).nullable(),
   variant: z.string().max(80).nullable(),
-  attributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  attributes: z
+    .array(z.object({ name: z.string().max(60), value: z.string().max(200) }))
+    .max(20)
+    .transform((pairs) => Object.fromEntries(pairs.map((p) => [p.name, p.value]))),
   condition_grade: z.enum(["A", "B", "C", "D"]),
   defects: z.array(z.string().max(120)).max(10),
-  age_estimate_years: z.tuple([z.number(), z.number()]).nullable(),
+  age_estimate_years: z
+    .array(z.number())
+    .nullable()
+    .transform((v) => (v && v.length >= 2 ? ([v[0], v[1]] as [number, number]) : null)),
   identity_confidence: z.number().min(0).max(1),
   condition_confidence: z.number().min(0).max(1),
   follow_up: z.string().max(160).nullable(),
@@ -61,13 +67,20 @@ export const ValueEstimate = z
   });
 export type ValueEstimate = z.infer<typeof ValueEstimate>;
 
-/** JSON Schemas handed to Claude as forced tool inputs. Kept next to the zod parsers. */
-export const detectionToolSchema = {
+/**
+ * JSON Schemas for Claude's structured outputs (`output_config.format`). The API adds
+ * `additionalProperties: false` to every object and ignores numeric and length bounds, so
+ * free-form maps are arrays of name and value pairs and bounds live in descriptions.
+ * The zod parsers above enforce the real constraints.
+ */
+const nullable = (schema: object) => ({ anyOf: [schema, { type: "null" }] });
+
+export const detectionJsonSchema = {
   type: "object",
   properties: {
     objects: {
       type: "array",
-      maxItems: 20,
+      description: "At most 20 objects",
       items: {
         type: "object",
         properties: {
@@ -89,9 +102,8 @@ export const detectionToolSchema = {
                 box: {
                   type: "array",
                   items: { type: "number" },
-                  minItems: 4,
-                  maxItems: 4,
-                  description: "[x0, y0, x1, y1] normalized 0 to 1, tight around the object",
+                  description:
+                    "Exactly 4 numbers: [x0, y0, x1, y1], normalized 0 to 1, tight around the object",
                 },
               },
               required: ["frame", "box"],
@@ -105,7 +117,7 @@ export const detectionToolSchema = {
   required: ["objects"],
 } as const;
 
-export const identificationToolSchema = {
+export const identificationJsonSchema = {
   type: "object",
   properties: {
     is_tradeable_item: {
@@ -114,34 +126,40 @@ export const identificationToolSchema = {
     },
     title: {
       type: "string",
-      description: "What a collector would call it, e.g. 'LEGO Batmobile Tumbler 76240'",
+      description:
+        "What a collector would call it, e.g. 'LEGO Batmobile Tumbler 76240'. At most 120 characters.",
     },
     category: { type: "string" },
-    brand: { type: ["string", "null"] },
-    model: {
-      type: ["string", "null"],
+    brand: nullable({ type: "string" }),
+    model: nullable({
+      type: "string",
       description: "Set number, SKU or model name if visible or certain",
-    },
-    variant: { type: ["string", "null"] },
+    }),
+    variant: nullable({ type: "string" }),
     attributes: {
-      type: "object",
-      description: "Facts seen in the photos, e.g. {complete: 'unknown', box: true, size: '10'}",
+      type: "array",
+      description:
+        "Facts seen in the photos, e.g. {name: 'box', value: 'yes'}, {name: 'size', value: '10'}",
+      items: {
+        type: "object",
+        properties: { name: { type: "string" }, value: { type: "string" } },
+        required: ["name", "value"],
+      },
     },
     condition_grade: { type: "string", enum: ["A", "B", "C", "D"] },
     defects: { type: "array", items: { type: "string" } },
-    age_estimate_years: {
-      type: ["array", "null"],
+    age_estimate_years: nullable({
+      type: "array",
       items: { type: "number" },
-      minItems: 2,
-      maxItems: 2,
-    },
-    identity_confidence: { type: "number", minimum: 0, maximum: 1 },
-    condition_confidence: { type: "number", minimum: 0, maximum: 1 },
-    follow_up: {
-      type: ["string", "null"],
+      description: "[min, max] years",
+    }),
+    identity_confidence: { type: "number", description: "0 to 1" },
+    condition_confidence: { type: "number", description: "0 to 1" },
+    follow_up: nullable({
+      type: "string",
       description:
         "If either confidence is below 0.7, the 1 photo that would settle it, e.g. 'Photo of the size tag'",
-    },
+    }),
   },
   required: [
     "is_tradeable_item",
@@ -160,7 +178,7 @@ export const identificationToolSchema = {
   ],
 } as const;
 
-export const valueToolSchema = {
+export const valueJsonSchema = {
   type: "object",
   properties: {
     low_usd: { type: "number" },
@@ -171,7 +189,7 @@ export const valueToolSchema = {
       items: { type: "string" },
       description: "Each comparable used, e.g. 'eBay sold 2026-09: $210, box, complete'",
     },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
+    confidence: { type: "number", description: "0 to 1" },
   },
   required: ["low_usd", "mid_usd", "high_usd", "basis", "confidence"],
 } as const;

@@ -72,7 +72,7 @@ const identification = (overrides: Partial<Identification> = {}): Identification
   brand: "LEGO",
   model: "21327",
   variant: null,
-  attributes: { box: true },
+  attributes: { box: "yes" },
   condition_grade: "B",
   defects: [],
   age_estimate_years: [1, 3],

@@ -10,11 +10,11 @@ import {
 } from "./prompts.js";
 import {
   Detection,
-  detectionToolSchema,
+  detectionJsonSchema,
   Identification,
-  identificationToolSchema,
+  identificationJsonSchema,
   ValueEstimate,
-  valueToolSchema,
+  valueJsonSchema,
 } from "./schemas.js";
 
 export const MODELS = {
@@ -74,10 +74,8 @@ export class ClaudeVision implements Vision {
       type: "text",
       text: `${frames.length} images. Report every distinct tradeable object.`,
     });
-    return this.#forcedTool("appraiser.detect", MODELS.fast, DETECT_SYSTEM, content, {
-      name: "report_objects",
-      description: "Report the distinct objects found across the images.",
-      schema: detectionToolSchema,
+    return this.#structured("appraiser.detect", MODELS.fast, DETECT_SYSTEM, content, {
+      schema: detectionJsonSchema,
       parser: Detection,
       maxTokens: 4000,
     });
@@ -94,10 +92,8 @@ export class ClaudeVision implements Vision {
       { type: "text", text: "The wider frame it came from:" },
       imageBlock(context),
     ];
-    return this.#forcedTool("appraiser.identify", MODELS.smart, IDENTIFY_SYSTEM, content, {
-      name: "report_item",
-      description: "Report the identification and condition of the item.",
-      schema: identificationToolSchema,
+    return this.#structured("appraiser.identify", MODELS.smart, IDENTIFY_SYSTEM, content, {
+      schema: identificationJsonSchema,
       parser: Identification,
       maxTokens: 2000,
     });
@@ -126,15 +122,13 @@ export class ClaudeVision implements Vision {
     }
 
     try {
-      const value = await this.#forcedTool(
+      const value = await this.#structured(
         "appraiser.price.extract",
         MODELS.fast,
         VALUE_EXTRACT_SYSTEM,
         [{ type: "text", text: `Item:\n${description}\n\nResearch notes:\n${research}` }],
         {
-          name: "report_value",
-          description: "Report the value range in USD.",
-          schema: valueToolSchema,
+          schema: valueJsonSchema,
           parser: ValueEstimate,
           maxTokens: 800,
         },
@@ -187,26 +181,21 @@ export class ClaudeVision implements Vision {
     return text.slice(0, 6000);
   }
 
-  async #forcedTool<T extends z.ZodType>(
+  async #structured<T extends z.ZodType>(
     agent: string,
     model: string,
     system: string,
     content: (ImageBlock | TextBlock)[],
-    tool: { name: string; description: string; schema: object; parser: T; maxTokens: number },
+    spec: { schema: object; parser: T; maxTokens: number },
   ): Promise<z.output<T>> {
     const started = Date.now();
     const res = await this.client.messages.create({
       model,
-      max_tokens: tool.maxTokens,
+      max_tokens: spec.maxTokens,
       system: `${system}\n\n(${PROMPT_VERSION})`,
-      tools: [
-        {
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.schema as Anthropic.Tool.InputSchema,
-        },
-      ],
-      tool_choice: { type: "tool", name: tool.name },
+      output_config: {
+        format: { type: "json_schema", schema: spec.schema as Record<string, unknown> },
+      },
       messages: [{ role: "user", content }],
     });
     const usage = {
@@ -215,12 +204,21 @@ export class ClaudeVision implements Vision {
       cacheRead: res.usage.cache_read_input_tokens ?? 0,
       cacheWrite: res.usage.cache_creation_input_tokens ?? 0,
     };
-    const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    const parsed = tool.parser.safeParse(call?.input);
+    const text = res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = undefined;
+    }
+    const parsed = spec.parser.safeParse(json);
     this.#record(agent, model, usage, started, parsed.success ? "ok" : "invalid_output");
     if (!parsed.success) {
       throw new Error(
-        `${agent}: invalid tool output: ${parsed.error.issues[0]?.message ?? "unknown"}`,
+        `${agent}: invalid output (${res.stop_reason}): ${parsed.error.issues[0]?.message ?? "unknown"}`,
       );
     }
     return parsed.data;
