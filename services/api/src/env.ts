@@ -17,6 +17,11 @@ export const EnvSchema = z
     /** Enables /auth/dev-session. Development only; unset before launch. */
     DEV_AUTH_CODE: optionalString,
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+    /** Enables the GM routes. Without it /v1/gm/* answers 503. */
+    ANTHROPIC_API_KEY: optionalString,
+    ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
+    /** Folder holding system.md and skills/. Defaults to the nearest agents/gm above the cwd. */
+    GM_PROMPT_DIR: optionalString,
   })
   .refine((env) => env.SUPABASE_JWT_SECRET || env.SUPABASE_JWKS_URL, {
     message: "Set SUPABASE_JWT_SECRET, SUPABASE_JWKS_URL, or both",

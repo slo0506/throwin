@@ -1,0 +1,55 @@
+{
+  "id": "grounding-shelf-value-from-session",
+  "suite": "grounding",
+  "description": "Asked what an Item is worth, the GM quotes only the range the server gave, as a range",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "shelf": [
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000001",
+        "title": "LEGO Millennium Falcon 75257",
+        "category": "toys/lego",
+        "brand": "LEGO",
+        "model": "75257",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000002",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000003",
+        "title": "Nintendo Switch OLED, white",
+        "category": "electronics/consoles",
+        "brand": "Nintendo",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 18000,
+          "mid": 21000,
+          "high": 24000
+        }
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "How much is my Millennium Falcon worth?",
+  "expect": {
+    "prices_grounded": true,
+    "text_includes_any": ["$90 to $130", "$90 and $130", "$90-$130", "$90 - $130"],
+    "no_successful_writes": true
+  }
+}

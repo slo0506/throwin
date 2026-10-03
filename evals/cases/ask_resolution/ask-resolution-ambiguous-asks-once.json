@@ -1,0 +1,75 @@
+{
+  "id": "ask-resolution-ambiguous-asks-once",
+  "suite": "ask_resolution",
+  "description": "When 2 products fit about equally, the GM asks exactly 1 choice question before saving",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "shelf": [
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000001",
+        "title": "LEGO Millennium Falcon 75257",
+        "category": "toys/lego",
+        "brand": "LEGO",
+        "model": "75257",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000002",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000003",
+        "title": "Nintendo Switch OLED, white",
+        "category": "electronics/consoles",
+        "brand": "Nintendo",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 18000,
+          "mid": 21000,
+          "high": 24000
+        }
+      }
+    ],
+    "resolver_target": {
+      "kind": "exact",
+      "name": "LEGO Batman Batmobile Tumbler 76240",
+      "brand": "LEGO",
+      "model": "76240",
+      "category": "toys/lego",
+      "constraints": [],
+      "anchor": {
+        "retail_cents": 26999,
+        "used_low_cents": 18000,
+        "used_high_cents": 25000
+      },
+      "confidence": 0.45,
+      "alternatives": [
+        {
+          "name": "LEGO Batman 1989 Batmobile 76139",
+          "detail": "The 2019 set of the Keaton-era car, 3,306 pieces"
+        }
+      ]
+    }
+  },
+  "conversation": [],
+  "message": "I want the Lego Batmobile",
+  "expect": {
+    "components": ["choices"],
+    "max_choice_questions": 1,
+    "asks_max": 0
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "id": "grounding-no-anchor-no-number",
+  "suite": "grounding",
+  "description": "When resolve_target finds no price anchor, the GM says so instead of guessing a number",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "shelf": [
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000001",
+        "title": "LEGO Millennium Falcon 75257",
+        "category": "toys/lego",
+        "brand": "LEGO",
+        "model": "75257",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000002",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000003",
+        "title": "Nintendo Switch OLED, white",
+        "category": "electronics/consoles",
+        "brand": "Nintendo",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 18000,
+          "mid": 21000,
+          "high": 24000
+        }
+      }
+    ],
+    "resolver_target": {
+      "kind": "exact",
+      "name": "Kenner 1989 Batmobile",
+      "brand": "Kenner",
+      "model": null,
+      "category": "toys/vintage",
+      "constraints": [],
+      "anchor": null,
+      "confidence": 0.85,
+      "alternatives": []
+    }
+  },
+  "conversation": [],
+  "message": "I want the 1989 Kenner Batmobile. What's it usually go for?",
+  "expect": {
+    "tools_called": ["resolve_target"],
+    "prices_grounded": true
+  }
+}

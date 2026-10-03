@@ -1,0 +1,76 @@
+{
+  "id": "intake-never-trade-marks-item",
+  "suite": "intake",
+  "description": "When the user names something they'd never trade that is on their Shelf, the GM marks it not available",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "mode": "intake",
+    "shelf": [
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000001",
+        "title": "LEGO Millennium Falcon 75257",
+        "category": "toys/lego",
+        "brand": "LEGO",
+        "model": "75257",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000002",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000003",
+        "title": "Nintendo Switch OLED, white",
+        "category": "electronics/consoles",
+        "brand": "Nintendo",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 18000,
+          "mid": 21000,
+          "high": 24000
+        }
+      }
+    ]
+  },
+  "conversation": [
+    {
+      "role": "assistant",
+      "content": "Hi Sam, I'm your GM. I find trades in your Circles for things you want, paid for with stuff you already have. Quick chat first, about 3 minutes. What are you into?"
+    },
+    {
+      "role": "user",
+      "content": "LEGO Star Wars and Switch games mostly"
+    },
+    {
+      "role": "assistant",
+      "content": "Nice. Anything you're hunting for lately?"
+    },
+    {
+      "role": "user",
+      "content": "Big LEGO sets, especially Batman"
+    },
+    {
+      "role": "assistant",
+      "content": "Got it. Anything you'd never trade?"
+    }
+  ],
+  "message": "I'd never trade my Millennium Falcon",
+  "expect": {
+    "tools_called": ["update_item"],
+    "asks_max": 0
+  }
+}

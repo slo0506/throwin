@@ -1,3 +1,4 @@
+import type { GmService } from "@throwin/harness";
 import { ErrorBody } from "@throwin/shared";
 import { SignJWT } from "jose";
 import { createApp } from "../src/app.js";
@@ -46,6 +47,8 @@ export function makeHarness(
     appAttestMode?: AppAttestMode;
     appAttestVerifier?: AppAttestVerifier;
     devAuthCode?: string;
+    gm?: GmService;
+    gmKeepAliveMs?: number;
   } = {},
 ): Harness {
   const repo = new MemoryRepository();
@@ -68,6 +71,8 @@ export function makeHarness(
     },
     logger: silentLogger,
     now: () => NOW,
+    ...(options.gm && { gm: options.gm }),
+    ...(options.gmKeepAliveMs !== undefined && { gmKeepAliveMs: options.gmKeepAliveMs }),
   });
 
   const request = async (path: string, init: RequestInit & { as?: string } = {}) => {

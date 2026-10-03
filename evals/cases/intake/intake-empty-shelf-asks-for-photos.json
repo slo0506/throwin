@@ -1,0 +1,83 @@
+{
+  "id": "intake-empty-shelf-asks-for-photos",
+  "suite": "intake",
+  "description": "With an empty Shelf at the offer step, the GM opens the camera instead of inventing Items",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "mode": "intake",
+    "shelf": [],
+    "asks": [
+      {
+        "id": "dddddddd-1111-4000-8000-000000000001",
+        "raw_text": "the big Lego Batmobile",
+        "status": "offering",
+        "target": {
+          "kind": "exact",
+          "name": "LEGO Batman Batmobile Tumbler 76240",
+          "brand": "LEGO",
+          "model": "76240",
+          "category": "toys/lego",
+          "constraints": [],
+          "anchor": {
+            "retail_cents": 26999,
+            "used_low_cents": 18000,
+            "used_high_cents": 25000
+          }
+        }
+      }
+    ]
+  },
+  "conversation": [
+    {
+      "role": "assistant",
+      "content": "Hi Sam, I'm your GM. I find trades in your Circles for things you want, paid for with stuff you already have. Quick chat first, about 3 minutes. What are you into?"
+    },
+    {
+      "role": "user",
+      "content": "LEGO Star Wars and Switch games mostly"
+    },
+    {
+      "role": "assistant",
+      "content": "Nice. Anything you're hunting for lately?"
+    },
+    {
+      "role": "user",
+      "content": "Big LEGO sets, especially Batman"
+    },
+    {
+      "role": "assistant",
+      "content": "Got it. Anything you'd never trade?"
+    },
+    {
+      "role": "user",
+      "content": "Nothing really"
+    },
+    {
+      "role": "assistant",
+      "content": "How hands-off do you want me to be?"
+    },
+    {
+      "role": "user",
+      "content": "Bring me every deal"
+    },
+    {
+      "role": "assistant",
+      "content": "Love it. What's 1 thing you want right now?"
+    },
+    {
+      "role": "user",
+      "content": "The big Lego Batmobile"
+    },
+    {
+      "role": "assistant",
+      "content": "Saved your Ask for the LEGO Batmobile Tumbler. What would you offer for it?"
+    }
+  ],
+  "message": "Not sure, I haven't added anything yet",
+  "expect": {
+    "components": ["camera_request"],
+    "tools_not_called": ["set_offer_set"]
+  }
+}
