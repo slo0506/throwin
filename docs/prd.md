@@ -79,7 +79,7 @@ Everything in the product hangs off 4 objects: the Item on a Shelf, the Ask, the
 | Object | Owned by | What it holds | States |
 | --- | --- | --- | --- |
 | Circle | Its creator | Members, invite codes, radius, category focus. | active, paused |
-| Item | One user | Photos, identification, condition grade, value range, willingness ("would trade", "open to offers", "not available"). | draft, needs\_photos, on\_shelf, reserved, traded, removed |
+| Item | One user | Photos, identification, condition grade, value range, willingness ("would trade", "open to offers", "not available"), and readiness (logged, identified, showcase; see "Item readiness"). | draft, on\_shelf, reserved, traded, removed (`needs_photos` is retired: readiness carries what an Item still needs) |
 | Ask | One user | The want in plain words, the resolved target (exact item or a category with constraints), max cash Throw-In, deadline, autonomy level. | drafting, offering, prospecting, proposed, accepted, fulfilled, expired, cancelled |
 | Offer set | One Ask | The Shelf items the user is willing to give up for this Ask, plus a cash ceiling. | Edited until the Ask is fulfilled |
 | Deal | All participants | Legs (who gives what to whom), Throw-Ins, fairness summary, expiry. | staged, pending\_approvals, approved, scheduling, in\_handoff, completed, failed, cancelled |
@@ -91,6 +91,7 @@ Everything in the product hangs off 4 objects: the Item on a Shelf, the Ask, the
 - **An Item can be reserved by only 1 Deal at a time:** Reservation is a database lock, so 2 Loops can never promise the same Lego set.
 - **A Deal executes only when every participant approves:** Approval happens on the Deal Sheet in the app, never by typing "yes" in chat.
 - **Expiry is mandatory:** Deals expire after 48 hours without full approval, and their Items are released automatically.
+- **Nobody sees an inventory photo:** Other people only ever see an Item's photos once it is showcase-ready. Before that, they see a text teaser at most.
 
 &#91;embedded content: Ask lifecycle · 7 steps, 3 recovery paths\]
 
@@ -122,6 +123,8 @@ The user does 3 things: says what they want, shows what they have, and approves 
 
 The GM sends a notification such as "Maya is looking for a Switch game you have. Want me to see what she'd trade?" Tapping it opens a short card. The user can say yes, no, or "not that item," and the GM learns from the answer.
 
+If the Item is not showcase-ready yet, the same card asks for exactly what is missing, sized to the moment: "2 quick photos and Maya can see it: the front and the size tag." Demand is the best reason to do homework, so this is where most showcase shoots should happen.
+
 ### The Deal Sheet
 
 Every Deal reaches the user as a Deal Sheet, never as a chat message. It shows:
@@ -146,8 +149,11 @@ Every Deal reaches the user as a Deal Sheet, never as a chat message. It shows:
 | --- | --- |
 | Home | Active Asks with live status, Deal Sheets waiting for you, and 1 suggestion from the GM. |
 | GM chat | Conversation with your agent. Responses render as cards (items, Deal Sheets, comparisons), not walls of text. |
-| Shelf | Grid of your Items with value ranges and willingness toggles. Capture button opens camera. |
-| Capture | Photo, multi-photo and 15 to 60 second video modes, with live guidance ("Show the tag"). |
+| Shelf | Grid of your Items with value ranges, a readiness mark on each card, and filters for "Ready to show" and "Needs a look." Scrolls like any grid; a tap opens the product card, a long press lifts the card with quick actions. |
+| Capture | Photo, multi-photo and 15 to 60 second video modes, with live guidance ("Show the tag"). Built for logging a whole room fast. |
+| Product card | What a tap on any Item opens: the best photo (Studio when allowed), what the GM thinks it is in plain words, a 2 to 3 sentence description, key facts, the value range, the readiness steps, and 1 primary action (the next best step). Expands into full Item detail. |
+| Tune up | A card stack of quick questions across the Shelf ("Is this Nike?" Yes, No, Not sure), ordered by how much each answer narrows a value. About 1 minute per session. |
+| Showcase shoot | A guided camera for 1 Item: a ghost outline for each angle the category needs, live cues for light, framing and steadiness, auto-capture when sharp, then a Studio preview. |
 | Item detail | Photos, identification, condition notes, value history, edit and remove. |
 | Ask detail | Target, offer set, cash ceiling, status timeline, candidate deals. |
 | Deal Sheet | Approve, decline or counter. |
@@ -192,6 +198,7 @@ The GM and background agents call Claude, but only the matcher and server-side c
 | --- | --- | --- | --- | --- |
 | GM | The user's conversation: intake, Asks, offer sets, explaining Deals, answering questions. | User opens chat or taps a notification. | Our harness on the Messages API with streaming. | `claude-sonnet-5-5` |
 | Appraiser | Turns photos and video frames into structured Items with condition and value ranges. | Media upload. | Background job, 1 call per item plus 1 detection call per batch. | `claude-haiku-4-5` for detection and triage, `claude-sonnet-5-5` for identification and pricing |
+| Refiner | Narrows each Item toward an exact product (SKU) and a tighter value range: researches candidates, asks the owner the cheapest useful question, scores photo quality, and re-reads Items when new photos arrive. | Item created, owner answers a question, new photos, or a demand signal (another user's Ask matches the Item). | Background job, at most 1 research pass per Item per day unless the owner adds information. | `claude-haiku-4-5` for questions and photo scoring, `claude-sonnet-5-5` for SKU research and re-reads |
 | Prospector | Turns an Ask into ranked candidate Deals using the matcher plus the user's taste facts. | New Ask, Shelf change in the Circle, or every 6 hours. | Background job with a 2-minute budget per run. | `claude-sonnet-5-5` |
 | Liaison | Asks a counterparty's GM structured questions when a candidate Deal needs their input. | Prospector flags a Deal that needs confirmation. | Background job, structured messages only. | `claude-haiku-4-5` |
 | Handoff coordinator | Proposes times and places, sends reminders, handles reschedules. | Deal fully approved. | Background job, mostly deterministic. | `claude-haiku-4-5` |
@@ -273,7 +280,7 @@ Less than it used to be, but not zero. Quality now comes mostly from what the ag
 
 ## Item capture and appraisal
 
-A user films a shelf for 15 to 60 seconds and gets back priced Item cards; every estimate is a range with a confidence level, and low confidence triggers a specific follow-up photo request instead of a guess.
+A user films a shelf for 15 to 60 seconds and gets back priced Item cards; every estimate is a range with a confidence level. A room scan is the fastest way to log what someone owns, but it is not how anyone wants to present an item: frames are small, cluttered and badly lit, and many items can't be pinned to an exact product from 1 glance. So capture optimizes for coverage, and everything after it (the Refiner, Tune up, and the Showcase shoot) closes 3 separate gaps: what exactly it is, what it is worth, and whether the photo would make someone want it.
 
 ### Pipeline
 
@@ -283,8 +290,10 @@ A user films a shelf for 15 to 60 seconds and gets back priced Item cards; every
 4. **Deduplicate:** The same object seen in 5 frames becomes 1 candidate, using bounding-box overlap across frames and image embeddings.
 5. **Identify and grade:** Sonnet receives the crops for each candidate and returns the structured record below, using structured outputs so the JSON always validates.
 6. **Price:** The pricing step looks up comparable listings and recent sales, then produces a range. Sources in v1 are web search, eBay's public APIs for active listings, and our own completed trades. Sold-price feeds from marketplaces are usually restricted to approved partners, so treat them as a later partnership.
-7. **Ask for what is missing:** If confidence is below 0.7 on identity or condition, the item lands in `needs_photos` with a specific request, such as "Photo of the size tag" or "Photo of the soles."
-8. **User confirms:** Items appear as cards. The user can fix the name, mark condition, or remove anything. Corrections are stored as training signal for evals.
+7. **Score the photo:** Each Item's best photo gets a photo score (see "Photo quality and Studio"). A frame crop from a room scan usually lands below the showcase bar, and that is expected.
+8. **Log, don't block:** Every Item goes onto the Shelf as `logged`, even at low confidence, with a value range as wide as the evidence allows. Nothing waits on homework.
+9. **Refine:** The Refiner takes over from here (see "Refinement"), turning uncertainty into the cheapest useful question: a tap first, a typed detail second, a photo last.
+10. **User confirms:** The user can fix the name, mark condition, or remove anything from the product card. Corrections are stored as training signal for evals.
 
 ### Appraisal output (per Item)
 
@@ -302,7 +311,11 @@ A user films a shelf for 15 to 60 seconds and gets back priced Item cards; every
   "condition_confidence": 0.62,
   "value_usd": {"low": 180, "mid": 215, "high": 250},
   "value_basis": ["comp:ebay_active:3", "comp:web:2"],
-  "follow_up": "Photo of the inside of the box to confirm all bags are present"
+  "follow_up": "Photo of the inside of the box to confirm all bags are present",
+  "description": "The 2021 LEGO Batman Batmobile Tumbler, built, with box and manual. Light shelf wear on the box.",
+  "photo_score": 42,
+  "photo_issues": ["too_small", "cluttered_background"],
+  "readiness": "identified"
 }
 ```
 
@@ -315,6 +328,78 @@ A user films a shelf for 15 to 60 seconds and gets back priced Item cards; every
 | C | Used. | Clear wear, fully functional. |
 | D | Heavily used or flawed. | Damage, missing parts, or stains noted in defects. |
 
+### Item readiness
+
+Logging something and presenting it are different jobs with different quality bars, so every Item carries a readiness level alongside its status. It answers "what does this Item still need?" in 1 word, and the Shelf colors each card by it.
+
+| Readiness | Means | Who can see it | Shelf mark | Typical next step |
+| --- | --- | --- | --- | --- |
+| `logged` | We know roughly what it is. Value range may be wide. Photo is inventory quality. | Only the owner. Matching can still use it, and other people see at most a text teaser ("Sean might have white Nike high-tops, $40 to $90"). | Neutral ink dot, "Logged" | Answer 1 to 3 Tune up questions. |
+| `identified` | Exact product (or the variant that drives value) is confirmed by evidence or by the owner, and the range is narrow (high is at most about 1.6 times low). | Same as logged. | Iris dot, "Identified" | Showcase shoot, ideally when someone is interested. |
+| `showcase` | Identified, plus a photo set that passes the showcase bar for its category. | Anyone the Item is shown to: Deal Sheets, teasers, the GM's suggestions to others. | Mint dot, "Ready to show" | Nothing. |
+
+Any Item whose best photo is below the inventory floor also shows a tangerine "Inventory photo" tag on its card, so the owner can see at a glance which photos would never sell anything.
+
+**Rules:**
+
+- **Demand-driven homework:** The Prospector may match `logged` and `identified` Items, but a Deal Sheet is never sent while any Item in it is below `showcase`. The GM asks the owner for the missing photos just in time, with the reason ("Maya is interested"), and the Deal waits up to 24 hours for them.
+- **Never block logging:** Readiness never stops an Item from being saved, edited or used in an Ask's offer set.
+- **No raw scores in the UI:** People see the readiness steps and plain words ("Pretty sure", "Best guess"), never a number.
+
+### Photo quality and Studio
+
+The Refiner scores each Item's best photo from 0 to 100. Measurable parts are computed in code; judgment parts come from 1 cheap model call.
+
+| Factor | How it is measured | Typical failure |
+| --- | --- | --- |
+| Resolution | Pixels on the long edge of the Item's crop. Under 600 caps the score at 40. | A shoe that is 180 px wide in a room scan. |
+| Sharpness | Laplacian variance of the crop, normalized per device. | Motion blur from panning. |
+| Exposure | Histogram clipping and mean brightness. | A dark nightstand at night. |
+| Framing | Whether the whole Item is inside the crop with margin, and how much of the crop it fills. | Cut-off ear cups, a tiny item in a big crop. |
+| Background | Model judgment of clutter behind and around the Item. | Pill bottles and cables around headphones. |
+| Coverage | Which of the category's required angles exist (see the table below). | Only the top of a sneaker, no sole or tag. |
+
+| Photo score | Label | What it unlocks |
+| --- | --- | --- |
+| Under 50 | Inventory photo | Logging and matching only. |
+| 50 to 74 | Usable | Studio view (owner can preview it), but not showcase. |
+| 75 and up, with required angles | Showcase | Counts toward `showcase` readiness. |
+
+**Studio** lifts the Item out of the owner's own photo with on-device subject segmentation and places it on a soft canvas backdrop with a contact shadow, much like a marketplace's clean product shot. It never generates, repaints or replaces pixels of the Item itself, because in a trade the photo is a promise about condition. Studio is offered only at a photo score of 50 or more, since lifting a blurry 180 px crop only makes a blurry sticker. The original stays 1 tap away, and other people can always switch to it.
+
+**Reference images:** When the Refiner pins an exact product, the product card may show a small, clearly labeled "Matched product" reference (name, model number, and a catalog image only where licensing allows). It is never the Item's photo and never stands in for one.
+
+### Refinement
+
+The Refiner's job is to keep shrinking 2 uncertainties per Item, what exactly it is and what it is worth, at the lowest cost to the owner. Each value driver missing from an Item becomes a candidate question, scored by how much answering it would narrow the range divided by the effort it asks for.
+
+| Effort | Question form | Example |
+| --- | --- | --- |
+| 1 tap | Yes, No, Not sure | "Is this Nike?" |
+| 1 tap | Pick 1 of 2 to 4 candidates found by research | "Which of these is it? Air Force 1 '07, Air Force 1 Mid, Not sure" |
+| A few taps | Size, storage or count picker | "What size?" |
+| Typing | Short text | "Anything written on the tag?" |
+| A photo | Guided shot of 1 detail | "Photo of the size tag" |
+
+**How it runs:**
+
+1. **On create:** Research SKU candidates from what the photos show (text on the item, colorway, shape), write the top 3 questions, and score the photo.
+2. **On each answer:** Update identification, re-price only if a value driver changed, re-rank the remaining questions, and promote readiness when the bar is met.
+3. **On a demand signal:** Jump that Item's questions to the front of Tune up and ask for the showcase photos the category needs.
+4. **Stop:** No more questions once the Item is `identified` and the range is narrow, or after the owner skips the same question twice.
+
+**Confidence differs by category on purpose.** A PS5 Slim is distinctive enough to identify from 1 glance; sneakers, cards and LEGO are not. The Refiner uses a value-driver schema per category to decide what to ask and what the showcase shoot needs:
+
+| Category | Value drivers | Showcase angles |
+| --- | --- | --- |
+| Sneakers | Brand, model, colorway, size, sole wear, box | Side profile, both soles, size tag, toe box |
+| Consoles and electronics | Model and revision, storage, included accessories, cosmetic wear, battery health | Front, back with label, ports, accessories laid out |
+| LEGO | Set number, completeness, minifigures, box and manual, built or sealed | Front of box or built set, minifigures, contents |
+| Trading cards | Set, card number, edition, surface and corners, grading | Front, back, close-ups of corners |
+| Books and media | Edition, printing, dust jacket, signatures | Cover, spine, copyright page |
+| Bags and apparel | Brand, model, size, material, hardware wear | Front, back, label, hardware |
+| Everything else | Brand, model, completeness, wear | Front, back, any label |
+
 ### Rules
 
 - **Ranges, never single numbers:** The UI always shows low to high, which sets honest expectations for trades.
@@ -322,6 +407,7 @@ A user films a shelf for 15 to 60 seconds and gets back priced Item cards; every
 - **Embeddings for matching:** Each Item gets an image and text embedding for similarity search. Voyage's `voyage-multimodal-3.5` embeds text, images and video in a shared space, and Anthropic points to Voyage since it does not offer its own embedding model ([embeddings docs](https://platform.claude.com/docs/en/build-with-claude/embeddings)).
 - **Cost control:** Downscale crops to about 1000 by 1000 pixels. At that size an image costs about 1,296 visual tokens ([vision docs](https://platform.claude.com/docs/en/build-with-claude/vision)). Use the Files API so images are not resent on every turn.
 - **Safety screen on create:** The Safety screener checks every new Item against the prohibited list and recall data before it can appear on a Shelf.
+- **Privacy in room scans:** Room scans catch medication, documents and other personal things. The Appraiser never turns them into Items or repeats their label text, and wider crops used for identification never describe neighbors of the target Item.
 
 ## Matching, prospecting and multi-party deals
 
@@ -362,9 +448,10 @@ Each feasible cycle gets a score: the sum of utility gained by participants, min
 2. **Graph and cycles:** The matcher builds edges and searches cycles.
 3. **Prospector review:** The LLM checks each top candidate against the user's taste facts and never-trade list, removes anything odd, and writes the 1 or 2-sentence "why" for each participant.
 4. **Liaison inquiries:** Inferred edges get structured inquiries. Answers update edge confidence, and the matcher re-runs.
-5. **Stage:** The Deal is created in `pending_approvals` and every Item in it is reserved.
-6. **Deal Sheets:** Each participant gets their own Deal Sheet, written from their side.
-7. **Approvals:** Every participant approves in the app. A decline or a 48-hour timeout releases the Items and triggers a re-match for everyone else.
+5. **Showcase check:** Every Item in the candidate must be `showcase`. If one is not, its owner gets a just-in-time photo request, and the candidate waits up to 24 hours before the matcher moves on.
+6. **Stage:** The Deal is created in `pending_approvals` and every Item in it is reserved.
+7. **Deal Sheets:** Each participant gets their own Deal Sheet, written from their side.
+8. **Approvals:** Every participant approves in the app. A decline or a 48-hour timeout releases the Items and triggers a re-match for everyone else.
 
 ### Guardrails enforced in code
 
@@ -388,7 +475,8 @@ All product data lives in 1 Postgres database (Supabase) with pgvector for embed
 | `circles` | id, name, owner\_id, radius\_km, category\_focus, status |  |
 | `circle_members` | circle\_id, user\_id, role, joined\_at | Role is owner, member. |
 | `invites` | code, circle\_id, created\_by, max\_uses, uses, expires\_at | Universal link carries the code. |
-| `items` | id, owner\_id, status, category, brand, model, variant, attributes jsonb, condition\_grade, defects text\[\], value\_low, value\_mid, value\_high, identity\_conf, condition\_conf, willingness, reserved\_by\_deal\_id | `reserved_by_deal_id` with a unique partial index enforces 1 Deal per Item. |
+| `items` | id, owner\_id, status, readiness, category, brand, model, variant, attributes jsonb, description, condition\_grade, defects text\[\], value\_low, value\_mid, value\_high, identity\_conf, condition\_conf, photo\_score, photo\_issues text\[\], willingness, reserved\_by\_deal\_id | `reserved_by_deal_id` with a unique partial index enforces 1 Deal per Item. Readiness is recomputed by the Refiner, never set by the client. |
+| `item_questions` | id, item\_id, kind (yes\_no, choice, picker, text, photo), prompt, options jsonb, driver, impact, status (open, answered, skipped), answer jsonb, created\_at, answered\_at | The Refiner's questions. Owner-only by row-level security. |
 | `item_media` | id, item\_id, storage\_path, kind (photo, frame), width, height, sharpness, crop\_box |  |
 | `item_embeddings` | item\_id, model, embedding vector(1024) | HNSW index. |
 | `appraisals` | id, item\_id, model, input\_media\_ids, output jsonb, comps jsonb, created\_at | Full history for evals and disputes. |
@@ -441,6 +529,8 @@ The iOS app talks to 1 versioned REST API plus a streaming endpoint for the GM; 
 | POST | `/v1/items/{id}/media/uploads` | Signed upload URLs for up to 5 follow-up photos. |
 | POST | `/v1/items/{id}/media` | Submit follow-up photos; the Appraiser re-reads the Item in place. |
 | PATCH | `/v1/items/{id}` | Edit an Item (confirm, fix name, willingness). |
+| GET | `/v1/questions` | Open Refiner questions across the user's Shelf, best first (feeds Tune up). |
+| POST | `/v1/questions/{id}/answer` | Answer or skip a question. The Refiner updates the Item in place. |
 | DELETE | `/v1/items/{id}` | Remove from Shelf. |
 | POST | `/v1/asks` | Create an Ask from text, image or link. |
 | GET | `/v1/asks/{id}` | Ask detail, status timeline, candidate count. |
@@ -651,6 +741,9 @@ The north star is fulfilled Asks per active user per month: a user wanted someth
 | Loop rate | Completed Deals with 3 or more people. | Proof the product does something marketplaces cannot. | Above 20% |
 | Handoff completion | Approved Deals that finish with both confirmations. | Trust and logistics. | Above 85% |
 | Dispute rate | Handoffs ending in "not as described." | Appraisal honesty. | Under 3% |
+| Showcase rate | Share of Items in active Deal candidates that reach `showcase` within 24 hours of a photo request. | Whether just-in-time homework works. | Above 70% |
+| Range tightness | Median of high divided by low across Shelf Items, by category. | Whether refinement is narrowing value. | Under 1.6 for identified Items |
+| Questions answered | Tune up answers per active user per week. | Whether asking is cheap enough. | 5 or more |
 | Unprompted Shelf adds | Items added without a prompt, per user per month. | Retention signal. | 2 or more |
 | Invites per user | Invites sent that convert to a member. | Liquidity growth. | 1 or more |
 | Cost per fulfilled Ask | Model and infrastructure cost divided by fulfilled Asks. | Unit economics. | Measure first |
@@ -682,10 +775,12 @@ Build in 7 milestones, each ending in something a person can use on a phone, and
 - [ ] Capture flow with photo and video modes, frame sampling, blur filtering and resumable upload.
 - [ ] Appraiser worker: detection, deduplication, identification and grading with structured outputs, pricing with comps, follow-up photo requests.
 - [ ] Item cards with value ranges, edit, willingness toggles and remove.
+- [ ] Item readiness (logged, identified, showcase) with Shelf marks and filters, the product card, and photo scores.
+- [ ] Refiner with Tune up questions and the showcase shoot, plus Studio gated by photo score.
 - [ ] Item embeddings written on create.
 - [ ] Appraisal eval suite with 100 hand-labeled Items to start.
 
-**Done when:** Filming a shelf of 10 items produces at least 8 correct Items with ranges in under 60 seconds, measured on the eval set.
+**Done when:** Filming a shelf of 10 items produces at least 8 correct Items with ranges in under 60 seconds, measured on the eval set, and 3 Tune up answers move a typical sneaker from `logged` to `identified`.
 
 ### Milestone 2: GM and Asks
 
