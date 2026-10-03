@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import {
+  CLOSED_ASK_STATUSES,
   compareQuestions,
   computeReadiness,
   DEFAULT_NOTIFICATION_PREFS,
@@ -9,6 +11,10 @@ import {
   ACTIVE_ASK_STATUSES,
   type AnswerInput,
   type AnswerResult,
+  type AskInsert,
+  type AskRecord,
+  type AskUpdate,
+  type AskUpdateResult,
   type CaptureMediaInput,
   type CaptureRecord,
   type ItemRecord,
@@ -18,9 +24,13 @@ import {
   type QuestionRecord,
   type Repository,
   SHELF_STATUSES,
+  type TasteFactRecord,
 } from "./types.js";
 
 type StoredUser = Omit<MeRecord, "counts">;
+
+/** An Ask as the database holds it: the offer set is a list of Item IDs (offer_sets). */
+export type StoredAsk = Omit<AskRecord, "offerItems"> & { offerItemIds: string[] };
 
 /** A Refiner question as the database holds it. */
 export interface MemoryQuestion {
@@ -44,7 +54,8 @@ export class MemoryRepository implements Repository {
   readonly questions: MemoryQuestion[] = [];
   /** Items whose owner pinned the identity (items.identity_confirmed). */
   readonly confirmed = new Set<string>();
-  readonly asks: { userId: string; status: string }[] = [];
+  readonly asks: StoredAsk[] = [];
+  readonly tasteFacts: TasteFactRecord[] = [];
   readonly memberships: { userId: string; circleId: string }[] = [];
   readonly captures: CaptureRecord[] = [];
   readonly captureMedia: (CaptureMediaInput & { captureId: string })[] = [];
@@ -315,6 +326,137 @@ export class MemoryRepository implements Repository {
     return this.#shelf(userId)
       .filter((i) => i.captureId === captureId)
       .map((i) => this.#sync(i));
+  }
+
+  addAsk(ask: Partial<StoredAsk> & Pick<StoredAsk, "id" | "userId">): StoredAsk {
+    const stored: StoredAsk = {
+      rawText: "something",
+      title: null,
+      status: "drafting",
+      target: null,
+      offerItemIds: [],
+      cashCeilingCents: 0,
+      autonomy: "every_deal",
+      deadline: null,
+      createdAt: new Date("2026-10-03T00:00:00Z"),
+      updatedAt: new Date("2026-10-03T00:00:00Z"),
+      ...ask,
+    };
+    this.asks.push(stored);
+    return stored;
+  }
+
+  addTasteFact(
+    fact: Partial<TasteFactRecord> & Pick<TasteFactRecord, "id" | "userId">,
+  ): TasteFactRecord {
+    const stored: TasteFactRecord = {
+      key: "interests",
+      value: "LEGO",
+      category: "interests",
+      source: "chat",
+      alwaysOn: false,
+      status: "active",
+      createdAt: new Date("2026-10-03T00:00:00Z"),
+      ...fact,
+    };
+    this.tasteFacts.push(stored);
+    return stored;
+  }
+
+  async listAsks(userId: string): Promise<AskRecord[]> {
+    return this.asks
+      .filter((a) => a.userId === userId && a.status !== "cancelled")
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((a) => this.#askRecord(a));
+  }
+
+  async getAsk(userId: string, askId: string): Promise<AskRecord | null> {
+    const ask = this.asks.find((a) => a.id === askId && a.userId === userId);
+    return ask ? this.#askRecord(ask) : null;
+  }
+
+  async createAsk(userId: string, input: AskInsert): Promise<AskRecord> {
+    const at = new Date("2026-10-03T00:00:00Z");
+    // Later Asks sort first, as created_at does in the database.
+    at.setTime(at.getTime() + this.asks.length * 1000);
+    const ask = this.addAsk({
+      id: randomUUID(),
+      userId,
+      ...input,
+      deadline: null,
+      createdAt: at,
+      updatedAt: at,
+    });
+    return this.#askRecord(ask);
+  }
+
+  /** Mirrors public.patch_ask. */
+  async updateAsk(userId: string, askId: string, update: AskUpdate): Promise<AskUpdateResult> {
+    const ask = this.asks.find((a) => a.id === askId && a.userId === userId);
+    if (!ask) return "not_found";
+    if (CLOSED_ASK_STATUSES.includes(ask.status)) {
+      const onlyCancel = Object.keys(update).every((k) => k === "cancel");
+      return ask.status === "cancelled" && update.cancel && onlyCancel
+        ? this.#askRecord(ask)
+        : "ask_closed";
+    }
+    let status = ask.status;
+    if (update.offerItemIds) {
+      const ids = [...new Set(update.offerItemIds)];
+      const valid = ids.every((id) =>
+        this.items.some(
+          (i) =>
+            i.id === id &&
+            i.ownerId === userId &&
+            i.status === "on_shelf" &&
+            i.reservedByDealId === null,
+        ),
+      );
+      if (!valid) return "invalid_offer_item";
+      ask.offerItemIds = ids;
+      if (ids.length > 0 && (status === "drafting" || status === "offering"))
+        status = "prospecting";
+    }
+    if (update.target !== undefined && status === "drafting") status = "offering";
+    if (update.cancel) status = "cancelled";
+    if (update.rawText !== undefined) ask.rawText = update.rawText;
+    if (update.target !== undefined) ask.target = update.target;
+    if (update.title !== undefined) ask.title = update.title;
+    if (update.cashCeilingCents !== undefined) ask.cashCeilingCents = update.cashCeilingCents;
+    if (update.autonomy !== undefined) ask.autonomy = update.autonomy;
+    if (update.deadline !== undefined) ask.deadline = update.deadline;
+    ask.status = status;
+    return this.#askRecord(ask);
+  }
+
+  async listTasteFacts(userId: string): Promise<TasteFactRecord[]> {
+    return this.tasteFacts
+      .filter((f) => f.userId === userId && f.status === "active")
+      .sort(
+        (a, b) =>
+          Number(b.alwaysOn) - Number(a.alwaysOn) || b.createdAt.getTime() - a.createdAt.getTime(),
+      )
+      .map((f) => ({ ...f }));
+  }
+
+  async deleteTasteFact(userId: string, factId: string): Promise<boolean> {
+    const fact = this.tasteFacts.find((f) => f.id === factId && f.userId === userId);
+    if (!fact) return false;
+    fact.status = "deleted";
+    return true;
+  }
+
+  #askRecord(ask: StoredAsk): AskRecord {
+    const { offerItemIds, ...rest } = ask;
+    const offerItems = offerItemIds.flatMap((id) => {
+      const item = this.items.find(
+        (i) => i.id === id && i.ownerId === ask.userId && SHELF_STATUSES.includes(i.status),
+      );
+      return item
+        ? [{ id, valueLowCents: item.valueLowCents, valueHighCents: item.valueHighCents }]
+        : [];
+    });
+    return { ...rest, target: rest.target ? { ...rest.target } : null, offerItems };
   }
 
   /**

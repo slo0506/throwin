@@ -1,12 +1,65 @@
 import {
+  type Ask,
+  askStatusLine,
   type Capture,
   type Me,
   PhotoIssue,
   type Question,
   type ShelfItem,
   STUDIO_PHOTO_SCORE,
+  TASTE_FACT_SOURCE_LABELS,
+  type TasteFact,
 } from "@throwin/shared";
-import type { CaptureRecord, ItemRecord, MeRecord, QuestionRecord } from "../repo/types.js";
+import type {
+  AskRecord,
+  CaptureRecord,
+  ItemRecord,
+  MeRecord,
+  QuestionRecord,
+  TasteFactRecord,
+} from "../repo/types.js";
+
+/**
+ * The owner's view of an Ask. It carries cash_ceiling_cents, so only routes that already
+ * checked the caller owns the Ask may use it; network reads need their own shape.
+ */
+export function toOwnAsk(r: AskRecord): Ask {
+  // Unpriced Items add nothing until the Appraiser prices them.
+  const offerValue = r.offerItems.reduce(
+    (sum, i) => ({
+      low_cents: sum.low_cents + (i.valueLowCents ?? 0),
+      high_cents: sum.high_cents + (i.valueHighCents ?? 0),
+    }),
+    { low_cents: 0, high_cents: 0 },
+  );
+  return {
+    id: r.id,
+    raw_text: r.rawText,
+    title: r.title,
+    status: r.status,
+    status_line: askStatusLine(r.status, r.offerItems.length),
+    target: r.target,
+    offer_item_ids: r.offerItems.map((i) => i.id),
+    offer_value: offerValue,
+    cash_ceiling_cents: r.cashCeilingCents,
+    autonomy: r.autonomy,
+    deadline: r.deadline ? r.deadline.toISOString() : null,
+    created_at: r.createdAt.toISOString(),
+    updated_at: r.updatedAt.toISOString(),
+  };
+}
+
+export function toTasteFact(r: TasteFactRecord): TasteFact {
+  return {
+    id: r.id,
+    key: r.key,
+    value: r.value,
+    category: r.category,
+    source: TASTE_FACT_SOURCE_LABELS[r.source],
+    always_on: r.alwaysOn,
+    created_at: r.createdAt.toISOString(),
+  };
+}
 
 export function toMe(r: MeRecord): Me {
   return {
