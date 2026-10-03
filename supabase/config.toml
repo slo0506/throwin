@@ -1,0 +1,17 @@
+# Supabase CLI config. Run `supabase link --project-ref <ref>` then `supabase db push`.
+project_id = "throwin"
+
+[api]
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+
+[db]
+major_version = 17
+
+[auth]
+site_url = "https://throwin.app"
+enable_signup = true
+
+[auth.external.apple]
+enabled = false
+client_id = "app.throwin.ios"

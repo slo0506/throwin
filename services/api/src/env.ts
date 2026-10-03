@@ -1,0 +1,33 @@
+import { z } from "zod";
+
+const optionalString = z
+  .string()
+  .optional()
+  .transform((v) => (v && v.trim() !== "" ? v.trim() : undefined));
+
+export const EnvSchema = z
+  .object({
+    SUPABASE_URL: z.url(),
+    SUPABASE_ANON_KEY: z.string().min(1),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    SUPABASE_JWT_SECRET: optionalString,
+    SUPABASE_JWKS_URL: optionalString.pipe(z.url().optional()),
+    PORT: z.coerce.number().int().min(1).max(65535).default(8787),
+    APP_ATTEST_MODE: z.enum(["off", "log", "enforce"]).default("off"),
+    LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  })
+  .refine((env) => env.SUPABASE_JWT_SECRET || env.SUPABASE_JWKS_URL, {
+    message: "Set SUPABASE_JWT_SECRET, SUPABASE_JWKS_URL, or both",
+    path: ["SUPABASE_JWT_SECRET"],
+  });
+
+export type Env = z.infer<typeof EnvSchema>;
+
+export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
+  const result = EnvSchema.safeParse(source);
+  if (!result.success) {
+    const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    throw new Error(`Invalid environment: ${issues}`);
+  }
+  return result.data;
+}
