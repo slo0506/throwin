@@ -10,13 +10,32 @@ export const Box = z
     return [x0, y0, x1, y1] as [number, number, number, number];
   });
 
+/**
+ * Text the model writes. Structured outputs can't enforce lengths, so trim instead of
+ * rejecting: 1 character over a limit should never cost the user an Item.
+ */
+const text = (max: number) =>
+  z.string().transform((v) => {
+    // Drop a leaked JSON tail like `"}` that sometimes ends a field.
+    const clean = v.replace(/"\s*\}+\s*$/u, "").trim();
+    return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
+  });
+const optionalText = (max: number) =>
+  z
+    .string()
+    .nullable()
+    .transform((v) => {
+      const trimmed = v === null ? "" : text(max).parse(v);
+      return trimmed.length > 0 ? trimmed : null;
+    });
+
 /** Detection output: distinct physical objects, each with every frame it appears in. */
 export const Detection = z.object({
   objects: z
     .array(
       z.object({
-        label: z.string().min(1).max(120),
-        category: z.string().max(60),
+        label: text(120).pipe(z.string().min(1)),
+        category: text(60),
         appearances: z.array(z.object({ frame: z.number().int().min(0), box: Box })).min(1),
       }),
     )
@@ -28,24 +47,24 @@ export type DetectedObject = Detection["objects"][number];
 /** Identification and grading (PRD "Appraisal output", minus value). */
 export const Identification = z.object({
   is_tradeable_item: z.boolean(),
-  title: z.string().min(1).max(120),
-  category: z.string().max(60),
-  brand: z.string().max(60).nullable(),
-  model: z.string().max(80).nullable(),
-  variant: z.string().max(80).nullable(),
+  title: text(120).pipe(z.string().min(1)),
+  category: text(60),
+  brand: optionalText(60),
+  model: optionalText(80),
+  variant: optionalText(80),
   attributes: z
-    .array(z.object({ name: z.string().max(60), value: z.string().max(200) }))
-    .max(20)
+    .array(z.object({ name: text(60), value: text(200) }))
+    .transform((pairs) => pairs.slice(0, 20))
     .transform((pairs) => Object.fromEntries(pairs.map((p) => [p.name, p.value]))),
   condition_grade: z.enum(["A", "B", "C", "D"]),
-  defects: z.array(z.string().max(120)).max(10),
+  defects: z.array(text(120)).transform((d) => d.slice(0, 10)),
   age_estimate_years: z
     .array(z.number())
     .nullable()
     .transform((v) => (v && v.length >= 2 ? ([v[0], v[1]] as [number, number]) : null)),
   identity_confidence: z.number().min(0).max(1),
   condition_confidence: z.number().min(0).max(1),
-  follow_up: z.string().max(160).nullable(),
+  follow_up: optionalText(160),
 });
 export type Identification = z.infer<typeof Identification>;
 
@@ -168,7 +187,7 @@ export const identificationJsonSchema = strict({
     follow_up: nullable({
       type: "string",
       description:
-        "If either confidence is below 0.7, the 1 photo that would settle it, e.g. 'Photo of the size tag'",
+        "If either confidence is below 0.7, the 1 photo that would settle it, under 60 characters, e.g. 'Photo of the size tag'",
     }),
   },
   required: [
@@ -186,6 +205,23 @@ export const identificationJsonSchema = strict({
     "condition_confidence",
     "follow_up",
   ],
+} as const);
+
+/** Whether 2 identified objects are really 1 thing to trade. */
+export const SameItem = z.object({ same: z.boolean(), reason: z.string() });
+export type SameItem = z.infer<typeof SameItem>;
+
+export const sameItemJsonSchema = strict({
+  type: "object",
+  properties: {
+    same: {
+      type: "boolean",
+      description:
+        "True if A and B are the same physical thing, or parts of 1 thing someone would trade together",
+    },
+    reason: { type: "string", description: "1 short sentence" },
+  },
+  required: ["same", "reason"],
 } as const);
 
 export const valueJsonSchema = strict({

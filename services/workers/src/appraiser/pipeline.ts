@@ -130,6 +130,100 @@ export function mergeNested(objects: DetectedObject[]): DetectedObject[] {
   return kept;
 }
 
+interface Candidate {
+  index: number;
+  object: DetectedObject;
+  crops: PreparedImage[];
+  identification: Identification;
+}
+
+const words = (title: string) =>
+  new Set(
+    title
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w.length > 1),
+  );
+
+/** Share of title words 2 readings have in common (Jaccard). */
+export function titleOverlap(a: string, b: string) {
+  const [wa, wb] = [words(a), words(b)];
+  const shared = [...wa].filter((w) => wb.has(w)).length;
+  const union = wa.size + wb.size - shared;
+  return union > 0 ? shared / union : 0;
+}
+
+/** Cheap filter before asking the model: same model number, or similar titles. */
+export function looksAlike(a: Identification, b: Identification) {
+  const norm = (v: string | null) => v?.trim().toLowerCase() || null;
+  const modelA = norm(a.model);
+  if (modelA && modelA === norm(b.model)) return true;
+  const brandA = norm(a.brand);
+  const sameBrand = brandA !== null && brandA === norm(b.brand);
+  return titleOverlap(a.title, b.title) >= (sameBrand ? 0.4 : 0.6);
+}
+
+const MAX_SAME_ITEM_CHECKS = 8;
+
+/**
+ * Groups candidates the model says are 1 thing to trade and keeps the most confident
+ * reading of each group. Only look-alikes seen in the same frame are checked, so 2 copies
+ * on different shelves never cost a call. A failed check keeps both (never lose an Item).
+ */
+async function consolidate(
+  candidates: Candidate[],
+  frames: PreparedImage[],
+  vision: Vision,
+  logger: Logger,
+): Promise<Candidate[]> {
+  const parent = candidates.map((_, i) => i);
+  const root = (i: number): number => (parent[i] === i ? i : root(parent[i] as number));
+  let checks = 0;
+
+  for (let i = 0; i < candidates.length; i++) {
+    for (let j = i + 1; j < candidates.length; j++) {
+      const [a, b] = [candidates[i] as Candidate, candidates[j] as Candidate];
+      if (root(i) === root(j) || !looksAlike(a.identification, b.identification)) continue;
+      const shared = a.object.appearances.find((pa) =>
+        b.object.appearances.some((pb) => pb.frame === pa.frame),
+      );
+      if (!shared || checks >= MAX_SAME_ITEM_CHECKS) continue;
+      checks++;
+      try {
+        const same = await vision.sameItem(
+          frames[shared.frame] as PreparedImage,
+          { crop: a.crops[0] as PreparedImage, title: a.identification.title },
+          { crop: b.crops[0] as PreparedImage, title: b.identification.title },
+        );
+        if (same) parent[root(j)] = root(i);
+      } catch (err) {
+        logger.warn("appraiser_same_item_failed", { error: String(err) });
+      }
+    }
+  }
+
+  const best = new Map<number, Candidate>();
+  candidates.forEach((c, i) => {
+    const r = root(i);
+    const current = best.get(r);
+    if (
+      !current ||
+      c.identification.identity_confidence > current.identification.identity_confidence
+    ) {
+      best.set(r, c);
+    }
+  });
+  const kept = [...best.values()].sort((a, b) => a.index - b.index);
+  if (kept.length < candidates.length) {
+    logger.info("appraiser_consolidated", {
+      before: candidates.length,
+      after: kept.length,
+      checks,
+    });
+  }
+  return kept;
+}
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
@@ -175,20 +269,41 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
     found: objects.length,
   });
 
-  let saved = 0;
-  await mapLimit(objects, PARALLEL_ITEMS, async ({ object, best }, index) => {
+  // 1. Identify and grade every object.
+  const identified = await mapLimit(objects, PARALLEL_ITEMS, async ({ object, best }, index) => {
     try {
       const crops = await Promise.all(
         best.map((a) => crop(frames[a.frame] as PreparedImage, a.box)),
       );
-      const context = frames[best[0]?.frame ?? 0] as PreparedImage;
-      const identification = await vision.identify(crops, context, object.label);
-      if (!identification.is_tradeable_item) return;
+      const identification = await vision.identify(
+        crops,
+        frames[best[0]?.frame ?? 0] as PreparedImage,
+        object.label,
+      );
+      if (!identification.is_tradeable_item) return null;
+      return { index, object, crops, identification } satisfies Candidate;
+    } catch (err) {
+      logger.error("appraiser_item_failed", { capture_id: captureId, index, error: String(err) });
+      return null;
+    }
+  });
 
+  // 2. Fold double counts: look-alikes in the same frame that are really 1 thing to trade.
+  const kept = await consolidate(
+    identified.filter((c): c is Candidate => c !== null),
+    frames,
+    vision,
+    logger,
+  );
+
+  // 3. Price and save.
+  let saved = 0;
+  await mapLimit(kept, PARALLEL_ITEMS, async ({ index, crops, identification }) => {
+    try {
       await store.setProgress(captureId, {
         stage: "pricing",
         detail: `Pricing your ${identification.title}`,
-        found: objects.length,
+        found: kept.length,
       });
       const { value, research } = await vision.price(identification);
 

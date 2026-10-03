@@ -1,0 +1,13 @@
+{
+  "id": "appraisal-pair-of-shoes-is-one-item",
+  "suite": "appraisal",
+  "description": "Both shoes of a pair in 1 photo become 1 Item, not 2",
+  "state": {
+    "photos": [{ "source": "wikimedia-commons-search", "query": "pair of sneakers" }]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "item_count": { "min": 1, "max": 1 }
+  }
+}
