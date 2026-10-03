@@ -89,7 +89,7 @@ struct CaptureSheet: View {
                 summary: summary,
                 onDone: close,
                 onAgain: startOver,
-                onTuneUp: onTuneUp == nil ? nil : tuneUp
+                onTuneUp: tuneUpAction
             )
                 .transition(.blurReplace)
         case let .failed(message):
@@ -314,9 +314,13 @@ struct CaptureSheet: View {
         dismiss()
     }
 
-    private func tuneUp() {
-        onTuneUp?()
-        close()
+    /// Offered on the results only when the Shelf can open Tune up.
+    private var tuneUpAction: (() -> Void)? {
+        guard let onTuneUp else { return nil }
+        return {
+            onTuneUp()
+            close()
+        }
     }
 }
 
