@@ -37,6 +37,9 @@ function walk(node: unknown, path: string, problems: string[]) {
     if (key in obj) problems.push(`${path}.${key}`);
   }
   if (obj.type === "object" && !obj.properties) problems.push(`${path}: free-form object`);
+  if (obj.type === "object" && obj.additionalProperties !== false) {
+    problems.push(`${path}: additionalProperties must be false`);
+  }
   for (const [k, v] of Object.entries(obj)) walk(v, `${path}.${k}`, problems);
 }
 
