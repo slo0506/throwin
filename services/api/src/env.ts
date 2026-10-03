@@ -14,6 +14,8 @@ export const EnvSchema = z
     SUPABASE_JWKS_URL: optionalString.pipe(z.url().optional()),
     PORT: z.coerce.number().int().min(1).max(65535).default(8787),
     APP_ATTEST_MODE: z.enum(["off", "log", "enforce"]).default("off"),
+    /** Enables /auth/dev-session. Development only; unset before launch. */
+    DEV_AUTH_CODE: optionalString,
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   })
   .refine((env) => env.SUPABASE_JWT_SECRET || env.SUPABASE_JWKS_URL, {

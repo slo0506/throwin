@@ -11,6 +11,8 @@ struct OnboardingFlow: View {
     @Environment(AppModel.self) private var model
     @State private var step: Step = .invite
     @State private var firstName = ""
+    @State private var email = ""
+    @FocusState private var emailFocused: Bool
     @State private var consented = false
     @State private var isWorking = false
     @State private var errorText: String?
@@ -152,14 +154,35 @@ struct OnboardingFlow: View {
                     .textContentType(.givenName)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
-                    .submitLabel(.continue)
+                    .submitLabel(model.isLive ? .next : .continue)
                     .focused($nameFocused)
-                    .onSubmit(submitName)
+                    .onSubmit {
+                        if model.isLive { emailFocused = true } else { submitName() }
+                    }
                 Capsule()
                     .fill(Palette.loopGradient)
                     .frame(height: 3)
                     .frame(maxWidth: nameFocused ? .infinity : 80)
                     .animation(Motion.bouncy, value: nameFocused)
+
+                if model.isLive {
+                    TextField("", text: $email, prompt: Text("Email").foregroundStyle(Palette.inkTertiary))
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .multilineTextAlignment(.center)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.continue)
+                        .focused($emailFocused)
+                        .onSubmit(submitName)
+                        .padding(.top, Space.md)
+                    Capsule()
+                        .fill(Palette.ink.opacity(emailFocused ? 0.5 : 0.12))
+                        .frame(height: 2)
+                        .frame(maxWidth: 200)
+                        .animation(Motion.snappy, value: emailFocused)
+                }
             }
             .padding(.horizontal, Space.xl)
 
@@ -181,10 +204,10 @@ struct OnboardingFlow: View {
             }
             .buttonStyle(.glassProminent)
             .tint(Palette.ink)
-            .disabled(trimmedName.isEmpty || isWorking)
+            .disabled(!canSubmitName || isWorking)
 
             #if DEBUG
-            Text("Dev sign-in. Sign in with Apple replaces this once the Developer account is set up.")
+            Text(model.isLive ? "Dev sign-in with email. Sign in with Apple replaces this once the Developer account is set up." : "Demo mode. Nothing leaves this phone.")
                 .font(Typo.caption)
                 .foregroundStyle(Palette.inkTertiary)
                 .multilineTextAlignment(.center)
@@ -193,21 +216,29 @@ struct OnboardingFlow: View {
         .onAppear { nameFocused = true }
     }
 
+    private var canSubmitName: Bool {
+        guard !trimmedName.isEmpty else { return false }
+        guard model.isLive else { return true }
+        let value = email.trimmingCharacters(in: .whitespaces)
+        return value.contains("@") && value.contains(".")
+    }
+
     private var trimmedName: String {
         firstName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func submitName() {
-        guard !trimmedName.isEmpty, !isWorking else { return }
+        guard canSubmitName, !isWorking else { return }
         isWorking = true
         errorText = nil
         Task {
             do {
-                try await model.signIn(firstName: trimmedName)
+                try await model.signIn(firstName: trimmedName, email: model.isLive ? email : nil)
+                emailFocused = false
                 nameFocused = false
                 go(.consent)
             } catch {
-                errorText = "Couldn't sign in. Try again."
+                errorText = (error as? APIError)?.message ?? "Couldn't sign in. Check your connection and try again."
             }
             isWorking = false
         }
