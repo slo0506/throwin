@@ -14,6 +14,7 @@ def e(
     ceiling: int = 0,
     utility: float = 1.0,
     ask: str | None = None,
+    giver_ask: str | None = None,
     **kw,
 ) -> Edge:
     return Edge(
@@ -24,6 +25,7 @@ def e(
         cash_ceiling_cents=ceiling,
         utility=utility,
         ask_id=ask,
+        giver_ask_id=giver_ask,
         **kw,
     )
 
@@ -100,13 +102,44 @@ def test_an_ask_is_filled_once():
     req = MatchRequest(
         edges=[
             e("a", "b", "b1", 5000, ask="ask-a", utility=2),
-            e("b", "a", "a1", 5000),
+            e("b", "a", "a1", 5000, giver_ask="ask-a"),
             e("a", "c", "c1", 5000, ask="ask-a", utility=1),
-            e("c", "a", "a2", 5000),
+            e("c", "a", "a2", 5000, giver_ask="ask-a"),
         ]
     )
     res = match(req)
     assert [d.users for d in res.deals] == [["a", "b"]]
+
+
+def test_gives_only_from_the_offer_set_of_the_ask_it_fills():
+    # a has 2 Asks: the Batmobile (offering the Falcon) and a Switch game (offering Zelda).
+    # b has the Batmobile and wants Zelda, so a would give Zelda for the Batmobile, which a
+    # only offered for the Switch game. No Deal.
+    edges = [
+        e("a", "b", "bat", 5000, ask="a-bat", giver_ask="b-zelda"),
+        e("b", "a", "zelda", 5000, ask="b-zelda", giver_ask="a-switch"),
+    ]
+    assert match(MatchRequest(edges=edges)).deals == []
+    # Once a offers Zelda for the Batmobile too, the swap works.
+    edges.append(e("b", "a", "zelda", 5000, ask="b-zelda", giver_ask="a-bat"))
+    res = match(MatchRequest(edges=edges))
+    assert [d.users for d in res.deals] == [["a", "b"]]
+    assert {(leg.item_id, leg.giver_ask_id) for leg in res.deals[0].item_legs} == {
+        ("bat", "b-zelda"),
+        ("zelda", "a-bat"),
+    }
+
+
+def test_a_person_is_in_a_cycle_once_even_with_2_asks():
+    # a -> b -> a via a's 2 different Asks would be a 3-node path with a twice.
+    edges = [
+        e("a", "b", "b1", 5000, ask="a1", giver_ask="b1"),
+        e("b", "a", "a-x", 5000, ask="b1", giver_ask="a2"),
+        e("a", "c", "c1", 5000, ask="a2", giver_ask="c1"),
+        e("c", "a", "a-y", 5000, ask="c1", giver_ask="a1"),
+    ]
+    for d in match(MatchRequest(edges=edges)).deals:
+        assert len(set(d.users)) == len(d.users)
 
 
 def test_picks_2_small_deals_over_1_that_blocks_both():
@@ -163,7 +196,13 @@ def test_match_api():
                     "utility": 1,
                     "ask_id": "ask-a",
                 },
-                {"from_user": "b", "to_user": "a", "item_id": "set", "value_cents": 15000},
+                {
+                    "from_user": "b",
+                    "to_user": "a",
+                    "item_id": "set",
+                    "value_cents": 15000,
+                    "giver_ask_id": "ask-a",
+                },
             ],
         },
     )
@@ -176,5 +215,6 @@ def test_match_api():
         "item_id": "bat",
         "value_cents": 20000,
         "ask_id": "ask-a",
+        "giver_ask_id": None,
         "kind": "explicit",
     }

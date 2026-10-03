@@ -19,6 +19,7 @@ All JSON is snake_case. Money is integer cents. IDs are strings (UUIDs in practi
       "item_id": "uuid",
       "value_cents": 21500,
       "ask_id": "uuid or null",
+      "giver_ask_id": "uuid or null",
       "cash_ceiling_cents": 2000,
       "utility": 1.4,
       "confidence": 0.9,
@@ -35,7 +36,8 @@ All JSON is snake_case. Money is integer cents. IDs are strings (UUIDs in practi
 }
 ```
 
-- **Edges:** 1 per (wanter, Item) pair. `value_cents` is the Item's `value_mid_cents`. `cash_ceiling_cents` is the wanter's ceiling on `ask_id` (0 when the edge is not tied to an Ask). Only Items that are `on_shelf`, unreserved and in the giver's offer set belong in the graph.
+- **Edges:** 1 per (wanter's Ask, Item, giver's Ask). `ask_id` is the wanter's Ask the edge would fill; `giver_ask_id` is the giver's Ask whose offer set holds the Item, so an Item in 2 offer sets is 2 edges. `value_cents` is the Item's `value_mid_cents`. `cash_ceiling_cents` is the wanter's ceiling on `ask_id` (0 when the edge is not tied to an Ask). Only `on_shelf`, unreserved Items belong in the graph.
+- **Nodes are Asks:** the matcher treats each (person, Ask) as a node, so in any cycle a person gives only from the offer set of the Ask that cycle fills for them. Edges with no Ask meet at the person's Ask-less node. A person is still in a cycle at most once.
 - **Live mode:** set `anchor_user` to the asker; only cycles that include them come back. **Drop mode:** leave it null to search the whole Circle.
 - Everything but `edges` has the defaults shown.
 
@@ -47,8 +49,8 @@ All JSON is snake_case. Money is integer cents. IDs are strings (UUIDs in practi
     {
       "users": ["a", "b"],
       "item_legs": [
-        { "giver": "b", "receiver": "a", "item_id": "bat", "value_cents": 20000, "ask_id": "ask-a", "kind": "explicit" },
-        { "giver": "a", "receiver": "b", "item_id": "set", "value_cents": 15000, "ask_id": null, "kind": "explicit" }
+        { "giver": "b", "receiver": "a", "item_id": "bat", "value_cents": 20000, "ask_id": "ask-a", "giver_ask_id": "ask-b", "kind": "explicit" },
+        { "giver": "a", "receiver": "b", "item_id": "set", "value_cents": 15000, "ask_id": "ask-b", "giver_ask_id": "ask-a", "kind": "explicit" }
       ],
       "cash_legs": [{ "payer": "a", "payee": "b", "amount_cents": 2000 }],
       "fairness": [
@@ -79,6 +81,7 @@ These are property-tested in `services/matcher/tests/test_properties.py` on 200 
 4. **No double promises:** an Item appears in at most 1 returned Deal, and an Ask (`from_user`, `ask_id`) is filled at most once. Live mode therefore returns at most 1 Deal.
 5. **Only positive scores:** a cycle whose score is 0 or less is never proposed.
 6. **Real wants only:** every item leg is an input edge, and every participant gives exactly 1 Item and gets exactly 1.
+7. **Offer sets per Ask:** what a person gives has `giver_ask_id` equal to the `ask_id` of what they receive.
 
 ## Score
 

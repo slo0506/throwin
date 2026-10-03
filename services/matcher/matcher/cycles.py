@@ -3,6 +3,11 @@
 A cycle A -> B -> C -> A means A receives from B, B receives from C, and C receives from A.
 Like a kidney exchange, we only look at short cycles (2 to 4 people), because every extra
 person is another handoff and another approval that can fail.
+
+A node is 1 person's Ask, not the person: an offer set belongs to 1 Ask, so what someone
+gives in a cycle must come from the offer set of the Ask the cycle fills for them. An edge
+runs from the wanter's Ask (`ask_id`) to the giver's Ask whose offer set holds the Item
+(`giver_ask_id`). A person still appears at most once per cycle.
 """
 
 from __future__ import annotations
@@ -12,34 +17,47 @@ from collections.abc import Iterator
 
 from .models import Cycle, Edge, Leg, WantGraph
 
+# (user, ask_id or ""): edges with no Ask meet at the person's "" node.
+Node = tuple[str, str]
 
-def _best_edges(edges: list[Edge]) -> dict[str, dict[str, Edge]]:
-    """Collapse parallel edges: for each (wanter, giver) pair keep the most useful Item."""
-    best: dict[str, dict[str, Edge]] = defaultdict(dict)
+
+def _from(e: Edge) -> Node:
+    return (e.from_user, e.ask_id or "")
+
+
+def _to(e: Edge) -> Node:
+    return (e.to_user, e.giver_ask_id or "")
+
+
+def _best_edges(edges: list[Edge]) -> dict[Node, dict[Node, Edge]]:
+    """Collapse parallel edges: for each (wanter Ask, giver Ask) pair keep the most useful."""
+    best: dict[Node, dict[Node, Edge]] = defaultdict(dict)
     for e in edges:
         if e.from_user == e.to_user:
             continue
-        current = best[e.from_user].get(e.to_user)
+        a, b = _from(e), _to(e)
+        current = best[a].get(b)
         if current is None or (e.utility * e.confidence) > (current.utility * current.confidence):
-            best[e.from_user][e.to_user] = e
+            best[a][b] = e
     return best
 
 
-def _canonical(path: list[str]) -> tuple[str, ...]:
-    """Rotate a cycle so its smallest user ID comes first, so rotations dedupe."""
+def _canonical(path: list[Node]) -> tuple[Node, ...]:
+    """Rotate a cycle so its smallest node comes first, so rotations dedupe."""
     i = path.index(min(path))
     return tuple(path[i:] + path[:i])
 
 
-def iter_cycles(graph: WantGraph) -> Iterator[list[str]]:
+def iter_cycles(graph: WantGraph) -> Iterator[list[Node]]:
     adj = _best_edges(graph.edges)
-    starts = [graph.anchor_user] if graph.anchor_user else sorted(adj)
-    seen: set[tuple[str, ...]] = set()
+    if graph.anchor_user:
+        starts = sorted(n for n in adj if n[0] == graph.anchor_user)
+    else:
+        starts = sorted(adj)
+    seen: set[tuple[Node, ...]] = set()
 
     for start in starts:
-        if start not in adj:
-            continue
-        stack: list[tuple[str, list[str]]] = [(start, [start])]
+        stack: list[tuple[Node, list[Node]]] = [(start, [start])]
         while stack:
             node, path = stack.pop()
             for nxt in sorted(adj[node]):
@@ -49,24 +67,24 @@ def iter_cycles(graph: WantGraph) -> Iterator[list[str]]:
                         seen.add(key)
                         yield list(key)
                     continue
-                if nxt in path or len(path) >= graph.max_length:
+                if len(path) >= graph.max_length or any(nxt[0] == n[0] for n in path):
                     continue
-                # In drop mode, only extend through users "after" the start, which visits
-                # each cycle from its smallest member once and keeps the search bounded.
+                # In drop mode, only extend through nodes "after" the start, which visits
+                # each cycle from its smallest node once and keeps the search bounded.
                 if graph.anchor_user is None and nxt < start:
                     continue
                 stack.append((nxt, [*path, nxt]))
 
 
 def find_cycle_edges(graph: WantGraph) -> tuple[list[list[Edge]], bool]:
-    """Each cycle as its edges in user order: edge i is what users[i] receives."""
+    """Each cycle as its edges in order: edge i is what the i-th person receives."""
     adj = _best_edges(graph.edges)
     found: list[list[Edge]] = []
-    for users in iter_cycles(graph):
+    for nodes in iter_cycles(graph):
         if len(found) >= graph.max_cycles:
             return found, True
-        n = len(users)
-        found.append([adj[users[i]][users[(i + 1) % n]] for i in range(n)])
+        n = len(nodes)
+        found.append([adj[nodes[i]][nodes[(i + 1) % n]] for i in range(n)])
     return found, False
 
 
