@@ -63,4 +63,4 @@ jobs:
           set -o pipefail
           xcodebuild -project apps/ios/ThrowIn.xcodeproj -scheme ThrowIn \
             -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build | xcbeautify --renderer github-actions || exit ${PIPESTATUS[0]}
+            CODE_SIGNING_ALLOWED=NO build | xcbeautify || exit ${PIPESTATUS[0]}
