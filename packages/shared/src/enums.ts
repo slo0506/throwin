@@ -52,7 +52,7 @@ export const PaymentStatus = z.enum([
 ]);
 export const ReportStatus = z.enum(["open", "reviewing", "actioned", "dismissed"]);
 /** "Bring me every deal" vs "Only bring me deals I'm likely to accept". v1 never auto-executes. */
-export const AutonomyLevel = z.enum(["every_deal", "likely_accept"]);
+export const AutonomyLevel = z.enum(["every_deal", "likely_yes"]);
 
 export type CircleStatus = z.infer<typeof CircleStatus>;
 export type CircleRole = z.infer<typeof CircleRole>;
