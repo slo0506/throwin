@@ -1,0 +1,15 @@
+{
+  "id": "appraisal-lego-set-is-one-item",
+  "suite": "appraisal",
+  "description": "A LEGO set photographed with its minifigure, instructions and loose parts becomes 1 Item, not 1 per piece",
+  "state": {
+    "photos": [{ "source": "wikimedia-commons-search", "query": "LEGO set box" }]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "item_count": { "max": 1 },
+    "titles_include": ["LEGO"],
+    "value_is_range": true
+  }
+}
