@@ -176,10 +176,14 @@ export class SupabaseProspectorStore implements ProspectorStore {
     if (error) fail("replaceEdges.insert", error);
   }
 
-  async stageDeal(deal: MatchDeal, whys: Record<string, string>): Promise<StageResult> {
+  async stageDeal(
+    deal: MatchDeal,
+    whys: Record<string, string>,
+    mode: "live" | "drop",
+  ): Promise<StageResult> {
     const { data, error } = await this.db.rpc("stage_deal", {
       p_deal: { ...deal, whys },
-      p_mode: "live",
+      p_mode: mode,
     });
     if (error) fail("stageDeal", error);
     const row = StageRow.parse(data);
@@ -232,6 +236,29 @@ export class SupabaseProspectorStore implements ProspectorStore {
             },
           ]),
       ),
+    };
+  }
+
+  async markProspected(askIds: string[]) {
+    if (askIds.length === 0) return;
+    const at = new Date().toISOString();
+    const { error } = await this.db
+      .from("ask_prospect_runs")
+      .upsert(askIds.map((ask_id) => ({ ask_id, prospected_at: at })));
+    if (error) fail("markProspected", error);
+  }
+
+  /** public.enqueue_stale_prospects and public.enqueue_due_drops. Returns how many of each. */
+  async enqueueScheduled(): Promise<{ prospects: number; drops: number }> {
+    const [prospects, drops] = await Promise.all([
+      this.db.rpc("enqueue_stale_prospects"),
+      this.db.rpc("enqueue_due_drops"),
+    ]);
+    if (prospects.error) fail("enqueueStaleProspects", prospects.error);
+    if (drops.error) fail("enqueueDueDrops", drops.error);
+    return {
+      prospects: z.number().int().parse(prospects.data),
+      drops: z.number().int().parse(drops.data),
     };
   }
 

@@ -10,7 +10,7 @@ import { ExtractMemoryPayload, extractMemory } from "./memory/extract.js";
 import { ClaudeMemoryModel } from "./memory/model.js";
 import { SupabaseMemoryStore } from "./memory/store.js";
 import { HttpMatcher } from "./prospector/matcher.js";
-import { type ProspectorDeps, prospectAsk } from "./prospector/prospect.js";
+import { type ProspectorDeps, prospectAsk, prospectCircle } from "./prospector/prospect.js";
 import { ClaudeReviewModel } from "./prospector/review.js";
 import { SupabaseProspectorStore } from "./prospector/store.js";
 import { ClaudeRefinerModels } from "./refiner/models.js";
@@ -74,14 +74,14 @@ const KINDS = [
   "reappraise_item",
   "refine_item",
   "extract_memory",
-  // Without a matcher, prospect_ask jobs stay queued until one is configured.
-  ...(prospector ? ["prospect_ask"] : []),
+  // Without a matcher, these stay queued until one is configured.
+  ...(prospector ? ["prospect_ask", "drop_circle"] : []),
 ];
 const REASONS: readonly RefineReason[] = ["created", "answer", "photos"];
 let stopping = false;
 
-/** Records a job's model runs against its user and trigger. */
-function recorder(userId: string, trigger: string, runs: Promise<void>[]) {
+/** Records a job's model runs against its user (none for a whole-Circle drop) and trigger. */
+function recorder(userId: string | null, trigger: string, runs: Promise<void>[]) {
   return (run: ModelRun) => {
     runs.push(
       store
@@ -128,7 +128,25 @@ async function runJob(job: Job) {
   const runs: Promise<void>[] = [];
   const started = Date.now();
   try {
-    if (job.kind === "prospect_ask" && prospector) {
+    if (job.kind === "drop_circle" && prospector) {
+      const circleId = String(job.payload.circle_id ?? "");
+      const review = new ClaudeReviewModel(anthropic, recorder(null, "drop", runs));
+      const outcome = await prospectCircle(circleId, { ...prospector, review });
+      await queue.finish(job.id);
+      logger.info("job_done", {
+        job_id: job.id,
+        kind: job.kind,
+        circle_id: circleId,
+        outcome: outcome.status,
+        ...(outcome.status === "matched"
+          ? {
+              deals: outcome.deals.length,
+              staged: outcome.deals.filter((d) => d.staged.result === "ok").length,
+            }
+          : { reason: outcome.reason }),
+        ms: Date.now() - started,
+      });
+    } else if (job.kind === "prospect_ask" && prospector) {
       // The review's model runs are attributed to the asker whose job this is.
       const review = new ClaudeReviewModel(anthropic, recorder(userId, "prospect", runs));
       const outcome = await prospectAsk(String(job.payload.ask_id ?? ""), userId, {
@@ -288,6 +306,24 @@ async function checkMatcher() {
   }
 }
 
+/**
+ * Queues the Prospector's timed work: Asks not prospected for 6 hours, and each Circle's
+ * Sunday drop. The database decides what's due, so several workers can run this safely.
+ */
+const SCHEDULE_EVERY_MS = 10 * 60_000;
+
+async function scheduleLoop() {
+  while (!stopping) {
+    try {
+      const queued = await prospectorStore.enqueueScheduled();
+      if (queued.prospects > 0 || queued.drops > 0) logger.info("prospects_scheduled", queued);
+    } catch (err) {
+      logger.error("schedule_failed", { error: String(err) });
+    }
+    await new Promise((resolve) => setTimeout(resolve, SCHEDULE_EVERY_MS));
+  }
+}
+
 async function main() {
   if (!prospector) logger.warn("prospector_off", { reason: "MATCHER_URL is not set" });
   else void checkMatcher();
@@ -298,7 +334,12 @@ async function main() {
     refiner,
     concurrency: CONCURRENCY,
   });
-  await Promise.all([...Array.from({ length: CONCURRENCY }, () => lane()), expireLoop()]);
+  await Promise.all([
+    ...Array.from({ length: CONCURRENCY }, () => lane()),
+    expireLoop(),
+    // No point queueing prospects nothing will claim.
+    ...(prospector ? [scheduleLoop()] : []),
+  ]);
   logger.info("worker_stopped");
 }
 

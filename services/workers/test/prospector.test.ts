@@ -13,6 +13,7 @@ import {
   type ProspectorConfig,
   type ProspectorStore,
   prospectAsk,
+  prospectCircle,
   type ReviewContext,
   type StageResult,
   type StoredEdge,
@@ -99,6 +100,8 @@ class FakeStore implements ProspectorStore {
   replaced: { askIds: string[]; edges: StoredEdge[] } | null = null;
   staged: number[] = [];
   stagedWhys: Record<string, string>[] = [];
+  stagedModes: string[] = [];
+  prospected: string[][] = [];
   /** Results to return from stageDeal, in order; ok with a fresh ID once they run out. */
   stageResults: StageResult[] = [];
   facts = new Map<string, ReviewFact[]>();
@@ -122,10 +125,18 @@ class FakeStore implements ProspectorStore {
   async replaceEdges(askIds: string[], edges: StoredEdge[]) {
     this.replaced = { askIds, edges };
   }
-  async stageDeal(deal: MatchDeal, whys: Record<string, string>): Promise<StageResult> {
+  async stageDeal(
+    deal: MatchDeal,
+    whys: Record<string, string>,
+    mode: "live" | "drop",
+  ): Promise<StageResult> {
     this.staged.push(deal.score);
     this.stagedWhys.push(whys);
+    this.stagedModes.push(mode);
     return this.stageResults.shift() ?? { result: "ok", dealId: `deal-${this.staged.length}` };
+  }
+  async markProspected(askIds: string[]) {
+    this.prospected.push(askIds);
   }
   async reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext> {
     return {
@@ -414,6 +425,8 @@ describe("prospectAsk", () => {
       receivesCents: 0,
     });
     expect(w.store.staged).toEqual([0.8]);
+    expect(w.store.stagedModes).toEqual(["live"]);
+    expect(w.store.prospected).toEqual([["ask-jordan"]]);
     expect(w.store.stagedWhys).toEqual([
       {
         [JORDAN]: "You wanted a Batmobile, this is it.",
@@ -457,6 +470,58 @@ describe("prospectAsk", () => {
     w.store.candidatesByCircle.set("circle-1", [candidate({ model: null, brand: null })]);
     await prospectAsk("ask-jordan", JORDAN, w.deps);
     expect(w.store.staged).toEqual([]);
+  });
+});
+
+describe("prospectCircle (weekly drop)", () => {
+  it("matches the whole Circle without an anchor and stages in drop mode", async () => {
+    const w = world();
+    w.store.asks = [ask("ask-jordan", JORDAN), ask("ask-maya", MAYA)];
+    w.store.candidatesByCircle.set("circle-1", [
+      candidate({ model: null, brand: null }),
+      candidate({
+        askId: "ask-maya",
+        wanterId: MAYA,
+        giverId: JORDAN,
+        giverAskId: "ask-jordan",
+        itemId: "item-zelda",
+        similarity: 0.7,
+      }),
+    ]);
+    w.respond({
+      ...EMPTY_MATCH,
+      deals: [
+        {
+          users: [JORDAN, MAYA],
+          item_legs: [],
+          cash_legs: [],
+          fairness: [],
+          cash_moved_cents: 0,
+          score: 1.1,
+        },
+      ],
+    });
+    const outcome = await prospectCircle("circle-1", w.deps);
+    expect(outcome).toMatchObject({ status: "matched", edges: 2 });
+    expect(w.requests).toHaveLength(1);
+    expect(w.requests[0]).not.toHaveProperty("anchor_user");
+    expect(w.store.stagedModes).toEqual(["drop"]);
+    // Every Ask in the Circle counts as prospected, so the sweep leaves them for 6 hours.
+    expect(w.store.prospected).toEqual([["ask-jordan", "ask-maya"]]);
+  });
+
+  it("skips a Circle with nobody looking, and doesn't call the matcher without edges", async () => {
+    const w = world();
+    expect(await prospectCircle("circle-1", w.deps)).toEqual({
+      status: "skipped",
+      reason: "no_asks",
+    });
+    w.store.asks = [ask("ask-jordan", JORDAN)];
+    expect(await prospectCircle("circle-1", w.deps)).toMatchObject({
+      status: "matched",
+      deals: [],
+    });
+    expect(w.requests).toEqual([]);
   });
 });
 

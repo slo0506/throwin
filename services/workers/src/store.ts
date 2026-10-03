@@ -193,7 +193,7 @@ export class SupabaseAppraiserStore implements AppraiserStore {
     if (items.error) fail("failCapture.items", items.error);
   }
 
-  async recordRun(userId: string, run: ModelRun, trigger = "capture"): Promise<void> {
+  async recordRun(userId: string | null, run: ModelRun, trigger = "capture"): Promise<void> {
     const { error } = await this.db.from("agent_runs").insert({
       agent: run.agent,
       trigger,
