@@ -35,7 +35,7 @@ struct TuneUpView: View {
                         .transition(.blurReplace)
                 } else if deck.isEmpty {
                     summary
-                        .transition(.blurReplace.combined(with: .scale(scale: 0.96)))
+                        .transition(.blurReplace.combined(with: .scale(0.96)))
                 } else {
                     stack
                         .transition(.opacity)
