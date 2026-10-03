@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | GitHub | Repo, PRs, CI | Connect GitHub in claude.ai, then create the `throwin` repo |
 | Supabase | Postgres, auth, storage, realtime | `throwin-dev` is live (ref `uhxzajdmerqubbkqhlxe`, us-west-1, in the Crews org) with every migration applied. Create `throwin-staging` before Milestone 3. |
-| Railway | Hosts `api`, `harness`, `workers`, `matcher` | Needed from Milestone 1 |
+| Railway | Hosts `api`, `harness`, `workers`, `matcher` | `api` is live at https://throwinapi-production.up.railway.app (project `zesty-consideration`). Build and start come from `railway.json`; keep the service's custom build, start and pre-deploy commands empty in the dashboard or they override it. |
 | Anthropic | Claude API for the GM and workers | Needed from Milestone 1 |
 | Voyage AI | Item embeddings (`voyage-multimodal-3.5`) | Needed from Milestone 1 |
 | Stripe | Throw-Ins through Connect, test mode first | Needed in Milestone 4 |
