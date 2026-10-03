@@ -48,7 +48,7 @@ describe("PATCH /v1/me", () => {
       body: JSON.stringify({
         display_name: " Ally ",
         photo_url: "https://cdn.example.com/a.jpg",
-        autonomy_level: "likely_accept",
+        autonomy_level: "likely_yes",
         notification_prefs: { promotional: true },
       }),
     });
@@ -56,7 +56,7 @@ describe("PATCH /v1/me", () => {
     const body = Me.parse(await res.json());
     expect(body.display_name).toBe("Ally");
     expect(body.photo_url).toBe("https://cdn.example.com/a.jpg");
-    expect(body.profile.autonomy_level).toBe("likely_accept");
+    expect(body.profile.autonomy_level).toBe("likely_yes");
     expect(body.profile.notification_prefs).toEqual({
       ...DEFAULT_NOTIFICATION_PREFS,
       promotional: true,
