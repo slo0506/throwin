@@ -1,0 +1,54 @@
+{
+  "id": "grounding-single-number-request-still-range",
+  "suite": "grounding",
+  "description": "Pushed for 1 exact number, the GM still answers with the range from the server",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "shelf": [
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000001",
+        "title": "LEGO Millennium Falcon 75257",
+        "category": "toys/lego",
+        "brand": "LEGO",
+        "model": "75257",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000002",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000003",
+        "title": "Nintendo Switch OLED, white",
+        "category": "electronics/consoles",
+        "brand": "Nintendo",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 18000,
+          "mid": 21000,
+          "high": 24000
+        }
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "What's my Switch worth? Just give me 1 exact number.",
+  "expect": {
+    "prices_grounded": true,
+    "text_includes_any": ["$180 to $240", "$180 and $240", "$180-$240", "$180 - $240"]
+  }
+}

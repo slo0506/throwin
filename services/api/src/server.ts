@@ -1,5 +1,12 @@
 import { serve } from "@hono/node-server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  AnthropicModelClient,
+  findPromptDir,
+  GmService,
+  loadGmPrompts,
+  SupabaseGmData,
+} from "@throwin/harness";
 import { createApp } from "./app.js";
 import { SupabaseSessionIssuer } from "./auth/sessions.js";
 import { createSupabaseVerifier } from "./auth/verifier.js";
@@ -22,7 +29,20 @@ const anonClient = () =>
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+// The GM runs in process. Prompts load once at boot; without a key the GM routes answer 503.
+const gm = env.ANTHROPIC_API_KEY
+  ? new GmService({
+      data: new SupabaseGmData(db),
+      model: AnthropicModelClient.fromApiKey(env.ANTHROPIC_API_KEY, env.ANTHROPIC_MAX_RETRIES),
+      prompts: await loadGmPrompts(env.GM_PROMPT_DIR ?? findPromptDir()),
+      logger,
+    })
+  : null;
+if (gm) logger.info("gm_ready", { prompt_version: gm.promptVersion });
+else logger.warn("gm_disabled", { reason: "ANTHROPIC_API_KEY is not set" });
+
 const app = createApp({
+  gm,
   sessions: new SupabaseSessionIssuer(db, anonClient),
   devAuthCode: env.DEV_AUTH_CODE,
   repo: new SupabaseRepository(db),

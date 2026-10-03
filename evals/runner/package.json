@@ -8,9 +8,12 @@
     "lint": "biome check .",
     "test": "vitest run",
     "eval:appraisal": "tsx --conditions=@throwin/source src/cli.ts appraisal",
-    "eval:label": "tsx --conditions=@throwin/source src/cli.ts label"
+    "eval:label": "tsx --conditions=@throwin/source src/cli.ts label",
+    "eval:gm": "tsx --conditions=@throwin/source src/cli.ts gm"
   },
   "dependencies": {
+    "@throwin/harness": "workspace:*",
+    "@throwin/shared": "workspace:*",
     "@throwin/workers": "workspace:*",
     "sharp": "^0.35.5",
     "zod": "4.6.5"

@@ -1,3 +1,4 @@
+import type { GmService } from "@throwin/harness";
 import type { SessionIssuer } from "./auth/sessions.js";
 import type { TokenVerifier } from "./auth/verifier.js";
 import type { Logger } from "./lib/logger.js";
@@ -17,6 +18,10 @@ export interface AppDeps {
   appAttest: { mode: AppAttestMode; verifier: AppAttestVerifier };
   logger: Logger;
   now?: () => Date;
+  /** The GM, run in process. Omitted when no Anthropic key is set: /v1/gm/* answers 503. */
+  gm?: GmService | null;
+  /** SSE keep-alive interval for /v1/gm/stream, 15 s by default. Tests shorten it. */
+  gmKeepAliveMs?: number;
 }
 
 export interface AuthUser {

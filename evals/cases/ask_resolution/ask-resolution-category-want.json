@@ -1,0 +1,71 @@
+{
+  "id": "ask-resolution-category-want",
+  "suite": "ask_resolution",
+  "description": "A category want is saved as a category target, not forced into 1 product",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "shelf": [
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000001",
+        "title": "LEGO Millennium Falcon 75257",
+        "category": "toys/lego",
+        "brand": "LEGO",
+        "model": "75257",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000002",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000003",
+        "title": "Nintendo Switch OLED, white",
+        "category": "electronics/consoles",
+        "brand": "Nintendo",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 18000,
+          "mid": 21000,
+          "high": 24000
+        }
+      }
+    ],
+    "resolver_target": {
+      "kind": "category",
+      "name": "Switch racing game",
+      "brand": null,
+      "model": null,
+      "category": "games/switch",
+      "constraints": ["any racing game"],
+      "anchor": {
+        "retail_cents": null,
+        "used_low_cents": 2000,
+        "used_high_cents": 4500
+      },
+      "confidence": 0.8,
+      "alternatives": []
+    }
+  },
+  "conversation": [],
+  "message": "Any Switch racing game, I'm not picky",
+  "expect": {
+    "tools_called": ["resolve_target", "upsert_ask"],
+    "max_choice_questions": 0,
+    "asks_min": 1,
+    "prices_grounded": true
+  }
+}

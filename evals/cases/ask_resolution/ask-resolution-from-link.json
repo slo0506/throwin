@@ -1,0 +1,70 @@
+{
+  "id": "ask-resolution-from-link",
+  "suite": "ask_resolution",
+  "description": "A pasted product link is resolved through resolve_target with the url",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "shelf": [
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000001",
+        "title": "LEGO Millennium Falcon 75257",
+        "category": "toys/lego",
+        "brand": "LEGO",
+        "model": "75257",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000002",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        }
+      },
+      {
+        "id": "aaaaaaaa-1111-4000-8000-000000000003",
+        "title": "Nintendo Switch OLED, white",
+        "category": "electronics/consoles",
+        "brand": "Nintendo",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 18000,
+          "mid": 21000,
+          "high": 24000
+        }
+      }
+    ],
+    "resolver_target": {
+      "kind": "exact",
+      "name": "LEGO Batman Batmobile Tumbler 76240",
+      "brand": "LEGO",
+      "model": "76240",
+      "category": "toys/lego",
+      "constraints": [],
+      "anchor": {
+        "retail_cents": 26999,
+        "used_low_cents": 18000,
+        "used_high_cents": 25000
+      },
+      "confidence": 0.92,
+      "alternatives": []
+    }
+  },
+  "conversation": [],
+  "message": "This one: https://www.lego.com/en-us/product/batmobile-tumbler-76240",
+  "expect": {
+    "tools_called": ["resolve_target", "upsert_ask"],
+    "asks_min": 1,
+    "ask_title_includes": "76240"
+  }
+}

@@ -11,6 +11,10 @@ export default defineConfig({
         ),
       },
       {
+        find: /^@throwin\/harness$/,
+        replacement: fileURLToPath(new URL("../../services/harness/src/index.ts", import.meta.url)),
+      },
+      {
         find: /^@throwin\/shared$/,
         replacement: fileURLToPath(new URL("../../packages/shared/src/index.ts", import.meta.url)),
       },
