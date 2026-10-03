@@ -49,6 +49,23 @@ export {
 export { looksPrivate } from "./appraiser/privacy.js";
 export type { Detection, Identification, ValueEstimate } from "./appraiser/schemas.js";
 export { createLogger, type Logger, silentLogger } from "./log.js";
+export {
+  type ExtractMemoryPayload,
+  type ExtractOutcome,
+  extractMemory,
+  type MemoryDeps,
+  type MemoryEvent,
+  type MemoryStore,
+  type NewFact,
+} from "./memory/extract.js";
+export { ClaudeMemoryModel, type MemoryModel, proposalText } from "./memory/model.js";
+export { MEMORY_PROMPT_VERSION } from "./memory/prompts.js";
+export { messageText, type StoredMessage, turnLines } from "./memory/text.js";
+export {
+  type ExistingFact,
+  sensitiveCategory,
+  validateOperations,
+} from "./memory/validator.js";
 export { CATEGORIES, type CategorySpec, categoryOf } from "./refiner/categories.js";
 export {
   ClaudeRefinerModels,

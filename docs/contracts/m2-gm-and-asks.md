@@ -41,6 +41,9 @@ All JSON is snake_case. Money is integer cents. Values are ranges. IDs are UUIDs
 - `cash_ceiling_cents` is returned only to the Ask's owner and never leaves through network functions.
 - `status_line` is plain words computed by the server ("Waiting for what you'd offer", "Checking 46 Shelves in 2 Circles").
 - `title` is a new column on `asks` (nullable, set from the resolved target).
+- `target` is null and `status` is `drafting` until the target resolves; creating or patching with a `target` moves a drafting Ask to `offering`. Target fields other than `kind` and `name` default to null (`constraints` to `[]`).
+- `offer_value` is `{ "low_cents": 0, "high_cents": 0 }` when nothing is offered. Unpriced Items add nothing; removed and traded Items drop out of `offer_item_ids`.
+- Errors: someone else's or a missing Ask is 404 `not_found`; a bad offer Item is 400 `invalid_offer_item`; any edit to a fulfilled, expired or cancelled Ask is 409 `ask_closed` (cancelling a cancelled Ask is a no-op 200).
 
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
@@ -63,6 +66,8 @@ Setting a non-empty offer set on a `drafting` or `offering` Ask moves it to `pro
 | DELETE | `/v1/me/taste-facts/{id}` | 204. Marks it `deleted`; the GM never uses it again. |
 
 Categories: `interests`, `hunting`, `limits` (never trade), `preferences` (handoff spot, autonomy), `style`. The write validator rejects anything about health, religion, politics, sexuality, ethnicity, finances beyond trade budgets, and anything about another person.
+
+`source` is 1 of "Intake chat", "Chat" or "Shelf edits". The `extract_memory` job payload is `{ "user_id", "conversation_id", "message_ids": [uuid], "mode"?: "intake" | "chat" }`; without `mode` the worker reads `conversations.mode` if that column exists, else assumes chat.
 
 ## GM conversation
 

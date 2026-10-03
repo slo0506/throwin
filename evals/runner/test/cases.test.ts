@@ -26,6 +26,17 @@ describe("loadCases", () => {
     expect(cases.every((c) => !isCaptureCase(c) && c.suite === "refinement")).toBe(true);
   });
 
+  it("loads the memory cases, each with a twin that exists", async () => {
+    const dir = fileURLToPath(new URL("../../cases/memory", import.meta.url));
+    const cases = await loadCases(dir);
+    expect(cases.length).toBeGreaterThanOrEqual(4);
+    const ids = new Set(cases.map((c) => c.id));
+    for (const c of cases) {
+      expect(!isCaptureCase(c) && c.suite === "memory").toBe(true);
+      if (!isCaptureCase(c)) expect(ids.has(c.twin ?? ""), c.id).toBe(true);
+    }
+  });
+
   it("validates case files", async () => {
     const dir = await mkdtemp(join(tmpdir(), "evals-"));
     const good = {

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 export const EVAL_SUITES = [
   "intake",
+  "memory",
   "ask_resolution",
   "appraisal",
   "refinement",

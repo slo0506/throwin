@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  AskStatus,
+  AskTarget,
   AutonomyLevel,
   ConditionGrade,
   compareQuestions,
@@ -9,12 +11,18 @@ import {
   ItemWillingness,
   NotificationPrefs,
   QuestionKind,
+  TasteFactCategory,
+  TasteFactSource,
 } from "@throwin/shared";
 import { z } from "zod";
 import {
   ACTIVE_ASK_STATUSES,
   type AnswerInput,
   type AnswerResult,
+  type AskInsert,
+  type AskRecord,
+  type AskUpdate,
+  type AskUpdateResult,
   type CaptureMediaInput,
   type CaptureRecord,
   type CaptureStatus,
@@ -25,6 +33,7 @@ import {
   type QuestionRecord,
   type Repository,
   SHELF_STATUSES,
+  type TasteFactRecord,
 } from "./types.js";
 
 const ts = z.string().transform((s) => new Date(s));
@@ -195,6 +204,86 @@ function toItem(r: z.infer<typeof ItemRow>): ItemRecord {
     updatedAt: r.updated_at,
   };
 }
+
+const OfferItemRow = z.object({
+  status: ItemStatus,
+  value_low_cents: z.number().int().nullable(),
+  value_high_cents: z.number().int().nullable(),
+});
+
+const AskRow = z.object({
+  id: z.string(),
+  user_id: z.string(),
+  raw_text: z.string(),
+  title: z.string().nullable(),
+  status: AskStatus,
+  target: z.unknown(),
+  cash_ceiling_cents: z.number().int(),
+  autonomy: AutonomyLevel,
+  deadline: ts.nullable(),
+  created_at: ts,
+  updated_at: ts,
+  offer_sets: z
+    .array(
+      z.object({
+        item_id: z.string(),
+        // Many-to-one embed: an object, or an array on older PostgREST versions.
+        items: z.union([OfferItemRow, z.array(OfferItemRow)]).nullable(),
+      }),
+    )
+    .nullable(),
+});
+
+/** A stored target that no longer parses (or the `{}` default) reads as unresolved. */
+function parseTarget(raw: unknown): AskTarget | null {
+  const parsed = AskTarget.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+function toAsk(r: z.infer<typeof AskRow>): AskRecord {
+  const offerItems = (r.offer_sets ?? []).flatMap((o) => {
+    const item = Array.isArray(o.items) ? o.items[0] : o.items;
+    if (!item || !SHELF_STATUSES.includes(item.status)) return [];
+    return [
+      { id: o.item_id, valueLowCents: item.value_low_cents, valueHighCents: item.value_high_cents },
+    ];
+  });
+  return {
+    id: r.id,
+    userId: r.user_id,
+    rawText: r.raw_text,
+    title: r.title,
+    status: r.status,
+    target: parseTarget(r.target),
+    offerItems,
+    cashCeilingCents: r.cash_ceiling_cents,
+    autonomy: r.autonomy,
+    deadline: r.deadline,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+const TasteFactRow = z.object({
+  id: z.string(),
+  user_id: z.string(),
+  key: z.string(),
+  value: z.string(),
+  category: TasteFactCategory,
+  source: TasteFactSource,
+  always_on: z.boolean(),
+  status: z.enum(["active", "superseded", "deleted"]),
+  created_at: ts,
+});
+
+const PatchAskRow = z.object({
+  result: z.enum(["ok", "not_found", "invalid_offer_item", "ask_closed", "invalid_status"]),
+});
+
+const ASK_SELECT =
+  "id, user_id, raw_text, title, status, target, cash_ceiling_cents, autonomy, deadline, created_at, updated_at, offer_sets(item_id, items(status, value_low_cents, value_high_cents))";
+const TASTE_FACT_SELECT =
+  "id, user_id, key, value, category, source, always_on, status, created_at";
 
 const USER_SELECT =
   "id, display_name, photo_url, created_at, deleted_at, profiles(autonomy_level, notification_prefs, home_area, default_handoff_place_id)";
@@ -493,6 +582,114 @@ export class SupabaseRepository implements Repository {
       .array(ItemRow)
       .parse(data ?? [])
       .map(toItem);
+  }
+
+  async listAsks(userId: string): Promise<AskRecord[]> {
+    const { data, error } = await this.db
+      .from("asks")
+      .select(ASK_SELECT)
+      .eq("user_id", userId)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) throw new RepositoryError("listAsks", error);
+    return z
+      .array(AskRow)
+      .parse(data ?? [])
+      .map(toAsk);
+  }
+
+  async getAsk(userId: string, askId: string): Promise<AskRecord | null> {
+    const { data, error } = await this.db
+      .from("asks")
+      .select(ASK_SELECT)
+      .eq("id", askId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new RepositoryError("getAsk", error);
+    return data ? toAsk(AskRow.parse(data)) : null;
+  }
+
+  async createAsk(userId: string, input: AskInsert): Promise<AskRecord> {
+    const { data, error } = await this.db
+      .from("asks")
+      .insert({
+        user_id: userId,
+        raw_text: input.rawText,
+        target: input.target ?? {},
+        title: input.title,
+        status: input.status,
+        cash_ceiling_cents: input.cashCeilingCents,
+        autonomy: input.autonomy,
+      })
+      .select(ASK_SELECT)
+      .single();
+    if (error) throw new RepositoryError("createAsk", error);
+    return toAsk(AskRow.parse(data));
+  }
+
+  async updateAsk(userId: string, askId: string, update: AskUpdate): Promise<AskUpdateResult> {
+    const patch: Record<string, unknown> = {};
+    if (update.rawText !== undefined) patch.raw_text = update.rawText;
+    if (update.target !== undefined) patch.target = update.target;
+    if (update.title !== undefined) patch.title = update.title;
+    if (update.offerItemIds !== undefined) patch.offer_item_ids = update.offerItemIds;
+    if (update.cashCeilingCents !== undefined) patch.cash_ceiling_cents = update.cashCeilingCents;
+    if (update.autonomy !== undefined) patch.autonomy = update.autonomy;
+    if (update.deadline !== undefined) patch.deadline = update.deadline?.toISOString() ?? null;
+    if (update.cancel) patch.status = "cancelled";
+    const { data, error } = await this.db.rpc("patch_ask", {
+      p_user_id: userId,
+      p_ask_id: askId,
+      p_patch: patch,
+    });
+    if (error) throw new RepositoryError("updateAsk", error);
+    const { result } = PatchAskRow.parse(data);
+    if (result === "not_found" || result === "invalid_offer_item" || result === "ask_closed") {
+      return result;
+    }
+    // The route only ever sends status "cancelled", so invalid_status means a bug here.
+    if (result === "invalid_status") {
+      throw new RepositoryError("updateAsk", { message: "invalid_status" });
+    }
+    return (await this.getAsk(userId, askId)) ?? "not_found";
+  }
+
+  async listTasteFacts(userId: string): Promise<TasteFactRecord[]> {
+    const { data, error } = await this.db
+      .from("taste_facts")
+      .select(TASTE_FACT_SELECT)
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .order("always_on", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw new RepositoryError("listTasteFacts", error);
+    return z
+      .array(TasteFactRow)
+      .parse(data ?? [])
+      .map((r) => ({
+        id: r.id,
+        userId: r.user_id,
+        key: r.key,
+        value: r.value,
+        category: r.category,
+        source: r.source,
+        alwaysOn: r.always_on,
+        status: r.status,
+        createdAt: r.created_at,
+      }));
+  }
+
+  async deleteTasteFact(userId: string, factId: string): Promise<boolean> {
+    const { data, error } = await this.db
+      .from("taste_facts")
+      .update({ status: "deleted" })
+      .eq("id", factId)
+      .eq("user_id", userId)
+      .select("id");
+    if (error) throw new RepositoryError("deleteTasteFact", error);
+    return (data ?? []).length > 0;
   }
 
   async #getItem(userId: string, itemId: string): Promise<ItemRecord | null> {

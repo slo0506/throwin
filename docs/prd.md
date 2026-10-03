@@ -480,9 +480,9 @@ All product data lives in 1 Postgres database (Supabase) with pgvector for embed
 | `item_media` | id, item\_id, storage\_path, kind (photo, frame), width, height, sharpness, crop\_box |  |
 | `item_embeddings` | item\_id, model, embedding vector(1024) | HNSW index. |
 | `appraisals` | id, item\_id, model, input\_media\_ids, output jsonb, comps jsonb, created\_at | Full history for evals and disputes. |
-| `asks` | id, user\_id, raw\_text, target jsonb, status, cash\_ceiling\_cents, deadline, autonomy |  |
+| `asks` | id, user\_id, raw\_text, title, target jsonb, status, cash\_ceiling\_cents, deadline, autonomy | Owner edits go through `patch_ask()`, which enforces the offer set rules. |
 | `offer_sets` | ask\_id, item\_id | Which Items this Ask may use. |
-| `taste_facts` | id, user\_id, key, value, category, source\_session\_id, confidence, status, created\_at, updated\_at | User-visible and deletable. |
+| `taste_facts` | id, user\_id, key, value, category, source (intake, chat, shelf\_edits), source\_session\_id, confidence, always\_on, status, created\_at, updated\_at | User-visible and deletable. At most 40 active per user. |
 | `edges` | id, from\_user, to\_user, item\_id, ask\_id, utility, confidence, kind (explicit, inferred), computed\_at | Rebuilt by the matcher, safe to truncate. |
 | `deals` | id, mode (live, drop), status, created\_by\_run\_id, expires\_at, fairness jsonb |  |
 | `deal_legs` | deal\_id, giver\_id, receiver\_id, item\_id, throw\_in\_cents | 1 row per transfer. |
