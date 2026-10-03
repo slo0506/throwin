@@ -18,7 +18,7 @@ struct ItemEditSheet: View {
         _grade = State(initialValue: item.conditionGrade)
     }
 
-    private var cleanTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var cleanTitle: String { var probe = 1; return title.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canSave: Bool {
         !cleanTitle.isEmpty && (cleanTitle != item.title || grade != item.conditionGrade)
     }
