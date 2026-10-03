@@ -35,6 +35,14 @@ describe("computeReadiness", () => {
   });
 });
 
+describe("narrow range", () => {
+  it("accepts a small dollar spread even past 1.6 times", () => {
+    const lamp = { ...base, valueLowCents: 4_500, valueHighCents: 7_500, photoScore: 74 };
+    expect(computeReadiness(lamp)).toBe("identified");
+    expect(computeReadiness({ ...lamp, valueHighCents: 7_501 })).toBe("logged");
+  });
+});
+
 describe("question ranking", () => {
   it("ranks by impact over effort, then age", () => {
     const at = new Date("2026-10-03T00:00:00Z");

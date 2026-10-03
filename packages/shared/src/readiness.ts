@@ -26,8 +26,10 @@ export type QuestionStatus = z.infer<typeof QuestionStatus>;
 
 /** Identity is confirmed at or above this identity confidence. */
 export const IDENTIFIED_CONFIDENCE = 0.85;
-/** A range is narrow when high is at most this many times low. */
+/** A range is narrow when high is at most this many times low... */
 export const NARROW_RANGE_RATIO = 1.6;
+/** ...or when the spread is this small in dollars. A $45 to $75 lamp is narrow enough. */
+export const NARROW_RANGE_SPREAD_CENTS = 3000;
 /** Photo score needed (with every showcase angle) for showcase. */
 export const SHOWCASE_PHOTO_SCORE = 75;
 /** Photo score at which Studio is offered. */
@@ -61,7 +63,9 @@ export interface ReadinessInput {
 
 export function isNarrowRange(lowCents: number | null, highCents: number | null) {
   if (lowCents === null || highCents === null) return false;
-  return highCents <= NARROW_RANGE_RATIO * lowCents;
+  return (
+    highCents <= NARROW_RANGE_RATIO * lowCents || highCents - lowCents <= NARROW_RANGE_SPREAD_CENTS
+  );
 }
 
 /**
