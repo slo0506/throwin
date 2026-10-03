@@ -172,6 +172,10 @@ struct CaptureSheet: View {
                 symbol: "photo.stack.fill",
                 tint: Palette.iris
             ) { isPickerPresented = true }
+
+            #if DEBUG && targetEnvironment(simulator)
+            DebugMediaButton(capture: capture)
+            #endif
         }
     }
 
