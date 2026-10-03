@@ -1,0 +1,20 @@
+{
+  "id": "appraisal-large-furniture-is-not-an-item",
+  "suite": "appraisal",
+  "description": "Widening detection to lamps and decor must not start listing large furniture, built-ins or ceiling fixtures: a sectional sofa, wooden end tables, kitchen cabinets and pendant lights are skipped, while a floor lamp and a decorative plant are kept",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-photo",
+        "describe": "Living room: beige sectional sofa, 2 wooden end tables, kitchen cabinets and 2 pendant lights over the counter in the back, a floor lamp by the window, and a small plant in a gold pot on an end table."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "titles_include": ["lamp", "plant"],
+    "titles_exclude": ["sofa", "sectional", "end table", "cabinet", "pendant"]
+  },
+  "twin": "appraisal-lamp-and-plush-are-items"
+}

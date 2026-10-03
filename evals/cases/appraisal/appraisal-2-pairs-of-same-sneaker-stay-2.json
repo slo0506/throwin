@@ -1,0 +1,20 @@
+{
+  "id": "appraisal-2-pairs-of-same-sneaker-stay-2",
+  "suite": "appraisal",
+  "description": "2 complete pairs of the same white Nike Air Force 1 Low, one clean on the top shelf and one worn on the floor, both whole in the same frames. They are 2 things to trade, so consolidation must not fold them together",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-video",
+        "describe": "4 frames of a shoe rack: a clean pair of white Air Force 1 Low on the top shelf and a creased, scuffed pair of the same model on the floor in front, both visible in every frame."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "count_matching": { "Air Force 1": 2 },
+    "consolidation_calls": 1
+  },
+  "twin": "appraisal-crocs-in-2-frames-is-1-item"
+}

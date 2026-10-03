@@ -1,0 +1,64 @@
+{
+  "version": 2,
+  "id": "appraisal-home-shoe-rack",
+  "suite": "appraisal",
+  "description": "6 frames circling an entryway shoe rack: forearm crutches leaning on the wall, a potted plant and swim goggles on top, sneakers on the shelves, and shoes on the floor: 1 pair of yellow Crocs with Jibbitz charms whose 2 clogs sit apart, white and gray Nike sneakers, gray running shoes, beige sneakers, black leather dress shoes and black slip-on clogs. The v2 Appraiser listed the yellow Crocs twice under different titles.",
+  "media": ["home-shoe-rack"],
+  "items": [
+    {
+      "title": "Yellow Crocs Classic Clog with Jibbitz",
+      "aliases": ["Crocs Classic Clog", "yellow Crocs", "yellow clogs with charms"],
+      "category": "shoes",
+      "brand": "Crocs",
+      "condition_grade": "C",
+      "value_cents_low": 1000,
+      "value_cents_high": 3500,
+      "should_ask_for_photo": true,
+      "reviewed": false,
+      "notes": "1 pair, 1 Item: the 2 clogs are apart on the floor. Size is not visible."
+    },
+    {
+      "title": "White and gray Nike sneakers",
+      "aliases": ["Nike sneakers", "Nike basketball shoes"],
+      "category": "sneakers",
+      "brand": "Nike",
+      "condition_grade": "C",
+      "value_cents_low": 3000,
+      "value_cents_high": 9000,
+      "should_ask_for_photo": true,
+      "reviewed": false
+    },
+    {
+      "title": "Gray running shoes",
+      "aliases": ["running sneakers", "gray sneakers"],
+      "category": "sneakers",
+      "condition_grade": "C",
+      "value_cents_low": 1500,
+      "value_cents_high": 6000,
+      "should_ask_for_photo": true,
+      "reviewed": false
+    },
+    {
+      "title": "Black leather dress shoes",
+      "aliases": ["dress shoes", "oxford shoes"],
+      "category": "shoes",
+      "condition_grade": "C",
+      "value_cents_low": 1500,
+      "value_cents_high": 8000,
+      "should_ask_for_photo": true,
+      "reviewed": false
+    },
+    {
+      "title": "Pink and teal Nike sneakers",
+      "aliases": ["Nike sneakers pink"],
+      "category": "sneakers",
+      "brand": "Nike",
+      "condition_grade": "B",
+      "value_cents_low": 3000,
+      "value_cents_high": 10000,
+      "should_ask_for_photo": true,
+      "reviewed": false
+    }
+  ],
+  "forbidden": ["crutch", "crutches", "shoe rack", "shoe shelf"]
+}

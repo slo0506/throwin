@@ -3,16 +3,24 @@
  * only: nothing here changes how the worker behaves. Imported as `@throwin/workers/eval`.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { ClaudeVision, DEFAULT_PRICING, type ModelRun } from "./appraiser/claude.js";
+import {
+  ClaudeVision,
+  DEFAULT_PRICING,
+  DEFAULT_VISION,
+  type ModelRun,
+} from "./appraiser/claude.js";
 
 export {
   ClaudeVision,
   DEFAULT_PRICING,
+  DEFAULT_VISION,
+  type GroupCandidate,
   MODELS,
   type ModelRun,
   type PriceResult,
   type PricingConfig,
   type Vision,
+  type VisionOptions,
 } from "./appraiser/claude.js";
 export { type Embedder, VoyageEmbedder } from "./appraiser/embeddings.js";
 export { MAX_EDGE, type PreparedImage, prepare } from "./appraiser/images.js";
@@ -24,6 +32,7 @@ export {
   CONFIDENCE_THRESHOLD,
   DEFAULT_PIPELINE,
   type ItemMedia,
+  type Located,
   type NewItem,
   type PipelineConfig,
   type PricedItem,
@@ -53,5 +62,6 @@ export function createClaudeVision(apiKey: string, onRun: (run: ModelRun) => voi
     new Anthropic({ apiKey, maxRetries: MAX_RETRIES }),
     onRun,
     DEFAULT_PRICING,
+    DEFAULT_VISION,
   );
 }

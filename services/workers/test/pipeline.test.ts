@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Embedder } from "../src/appraiser/embeddings.js";
+import type { Box } from "../src/appraiser/images.js";
 import {
   appraiseCapture,
   bestAppearances,
+  consolidate,
   DEFAULT_PIPELINE,
-  looksAlike,
-  titleOverlap,
 } from "../src/appraiser/pipeline.js";
+import { GROUP_SYSTEM } from "../src/appraiser/prompts.js";
 import type { Detection } from "../src/appraiser/schemas.js";
 import { silentLogger } from "../src/log.js";
 import { CAPTURE, embedder, fakeVision, identification, priceResult, setup } from "./support.js";
@@ -258,81 +259,129 @@ describe("privacy", () => {
 });
 
 describe("consolidation", () => {
-  const twoInOneFrame: Detection = {
+  // The shoe rack: 1 pair of yellow Crocs read twice, from 2 different video frames.
+  const crocsTwice: Detection = {
     objects: [
       {
-        label: "LEGO parts",
-        category: "toys/lego",
-        appearances: [{ frame: 0, box: [0, 0.2, 0.45, 0.8] }],
+        label: "yellow clogs",
+        category: "shoes",
+        appearances: [{ frame: 0, box: [0.1, 0.5, 0.3, 0.7] }],
       },
       {
-        label: "LEGO sheet",
-        category: "toys/lego",
-        appearances: [{ frame: 0, box: [0.5, 0.2, 0.95, 0.8] }],
+        label: "yellow clog with charms",
+        category: "shoes",
+        appearances: [{ frame: 1, box: [0.5, 0.4, 0.8, 0.8] }],
       },
     ],
   };
-  const lookAlikes = [
-    identification({
-      title: "LEGO Classic Space Moon Rover Polybag (1980s)",
-      model: null,
-      identity_confidence: 0.5,
-    }),
-    identification({
-      title: "Vintage LEGO Classic Space Moon Rover Polybag",
-      model: null,
-      identity_confidence: 0.6,
-    }),
-  ];
+  const vague = identification({
+    title: "Yellow clog slip-on shoes with charms",
+    brand: null,
+    model: null,
+    identity_confidence: 0.6,
+  });
+  const crocs = identification({
+    title: "Yellow Crocs Classic Clog with Jibbitz",
+    brand: "Crocs",
+    model: "Classic Clog",
+    identity_confidence: 0.85,
+  });
 
-  it("folds look-alikes the model calls 1 thing and keeps the more confident reading", async () => {
+  it("folds 1 object read under different titles in different frames, in 1 call", async () => {
     const store = await setup();
-    const vision = fakeVision(twoInOneFrame, lookAlikes, true);
+    const vision = fakeVision(crocsTwice, []);
+    vision.identify = async (_c, _f, hint) => (hint === "yellow clogs" ? vague : crocs);
+    vision.groupImpl = async () => [[0, 1]];
     expect(await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger })).toBe(
       1,
     );
-    expect(vision.sameCalls).toBe(1);
-    expect(store.items[0]?.title).toBe("Vintage LEGO Classic Space Moon Rover Polybag");
+    expect(vision.groupCalls).toBe(1);
+    expect(store.items[0]?.title).toBe("Yellow Crocs Classic Clog with Jibbitz");
+    // The contact sheet carries each candidate's title and frames.
+    const sheet = vision.groupInputs[0] ?? [];
+    expect(sheet.map((c) => [c.title, c.frames]).sort()).toEqual([
+      ["Yellow Crocs Classic Clog with Jibbitz", [1]],
+      ["Yellow clog slip-on shoes with charms", [0]],
+    ]);
+    for (const c of sheet) expect(c.crop.width).toBeGreaterThan(0);
   });
 
-  it("keeps both when the model says they are separate", async () => {
+  it("keeps 2 separate pairs of the same model apart when the model says so", async () => {
     const store = await setup();
-    const vision = fakeVision(twoInOneFrame, lookAlikes, false);
-    expect(await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger })).toBe(
-      2,
-    );
-  });
-
-  it("does not spend a check on things that look different", async () => {
-    const store = await setup();
-    const vision = fakeVision(
-      twoInOneFrame,
-      [
-        identification({ title: "Mario Kart 8", brand: "Nintendo", model: null }),
-        identification({ title: "Air Jordan 4", brand: "Nike", model: null }),
+    const twoPairs: Detection = {
+      objects: [
+        {
+          label: "white sneakers",
+          category: "shoes",
+          appearances: [{ frame: 0, box: [0.05, 0.5, 0.35, 0.9] }],
+        },
+        {
+          label: "white sneakers",
+          category: "shoes",
+          appearances: [{ frame: 0, box: [0.6, 0.5, 0.95, 0.9] }],
+        },
       ],
-      true,
-    );
+    };
+    const af1 = identification({
+      title: "Nike Air Force 1 Low White",
+      brand: "Nike",
+      model: "CW2288-111",
+    });
+    const vision = fakeVision(twoPairs, [af1, af1]);
     expect(await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger })).toBe(
       2,
     );
-    expect(vision.sameCalls).toBe(0);
+    expect(vision.groupCalls).toBe(1);
+    expect(GROUP_SYSTEM).toMatch(/2 pairs of the same sneaker model/);
   });
 
-  it("matches on model number or similar titles", () => {
-    expect(
-      looksAlike(
-        identification({ title: "a", model: "6823" }),
-        identification({ title: "b", model: "6823 " }),
-      ),
-    ).toBe(true);
-    expect(titleOverlap("LEGO Moon Rover", "lego moon rover set")).toBeCloseTo(0.75);
-    expect(
-      looksAlike(
-        identification({ title: "Zelda", model: null }),
-        identification({ title: "Mario", model: null }),
-      ),
-    ).toBe(false);
+  it("keeps every candidate when the call fails", async () => {
+    const store = await setup();
+    const vision = fakeVision(crocsTwice, [vague, crocs]);
+    vision.groupImpl = async () => {
+      throw new Error("overloaded");
+    };
+    expect(await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger })).toBe(
+      2,
+    );
+  });
+
+  it("skips the call for a single candidate", async () => {
+    const store = await setup();
+    const vision = fakeVision({ objects: crocsTwice.objects.slice(0, 1) }, [crocs]);
+    await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger });
+    expect(vision.groupCalls).toBe(0);
+  });
+
+  it("sends at most 30 candidates, merges overlapping groups and unions appearances", async () => {
+    const image = { jpeg: Buffer.alloc(0), width: 10, height: 10 };
+    const candidates = Array.from({ length: 35 }, (_, index) => ({
+      index,
+      object: {
+        label: `thing ${index}`,
+        category: "other",
+        appearances: [{ frame: index, box: [0, 0, 0.5, 0.5] as Box }],
+      },
+      identification: identification({
+        title: `Thing ${index}`,
+        identity_confidence: index === 2 ? 0.95 : 0.5,
+      }),
+      located: [{ frame: index, box: [0, 0, 0.5, 0.5] as Box, source: "refined" as const }],
+      hero: { image },
+    }));
+    const vision = fakeVision({ objects: [] }, []);
+    vision.groupImpl = async () => [
+      [0, 1],
+      [1, 2],
+      [40, 3],
+    ];
+    const kept = await consolidate(candidates, vision, silentLogger);
+    expect(vision.groupInputs[0]).toHaveLength(30);
+    expect(kept).toHaveLength(33);
+    const merged = kept.find((c) => c.identification.title === "Thing 2");
+    expect(merged?.object.appearances.map((a) => a.frame).sort()).toEqual([0, 1, 2]);
+    expect(merged?.located).toHaveLength(3);
+    expect(kept.some((c) => c.index === 34)).toBe(true);
   });
 });
 

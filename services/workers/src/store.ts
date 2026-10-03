@@ -145,6 +145,8 @@ export class SupabaseAppraiserStore implements AppraiserStore {
       width: item.crop.width,
       height: item.crop.height,
       position: 0,
+      // Frame position, box normalized to that frame, and "refined" or "detector".
+      crop_box: item.cropBox,
     });
     if (media.error) fail("insertItem.media", media.error);
     return itemId;

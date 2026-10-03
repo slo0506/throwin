@@ -171,6 +171,8 @@ describe("looksPrivate", () => {
       "A/C remote",
       "TV remote",
       "light switch",
+      "forearm crutches",
+      "walking cane",
     ]) {
       expect(looksPrivate(label), label).toBe(true);
     }
@@ -186,6 +188,10 @@ describe("looksPrivate", () => {
       "Sony WH-1000XM4 headphones",
       "Catan board game (sealed)",
       "Beats Pill+ speaker",
+      "Candy cane ornament",
+      "Johnnie Walker Blue Label decanter",
+      "Table lamp with gold geometric base",
+      "Chelsea FC plush toy",
     ]) {
       expect(looksPrivate(label), label).toBe(false);
     }

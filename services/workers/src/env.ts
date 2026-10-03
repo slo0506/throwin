@@ -33,6 +33,11 @@ const EnvSchema = z.object({
   PRICE_CACHE_TTL_DAYS: z.coerce.number().min(0).max(90).default(7),
   /** Only estimates at least this confident are written to the cache. */
   PRICE_CACHE_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.5),
+  /** Draw a light labeled coordinate grid on detection images ("false" turns it off). */
+  DETECT_GRID: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
   /** SDK retries per Anthropic call (429 and 5xx, with backoff). */
   ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(4),
 });

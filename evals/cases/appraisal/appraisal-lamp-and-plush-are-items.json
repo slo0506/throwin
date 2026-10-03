@@ -1,0 +1,20 @@
+{
+  "id": "appraisal-lamp-and-plush-are-items",
+  "suite": "appraisal",
+  "description": "A table lamp and a small soccer club plush on a nightstand are things people trade and must be reported; only large furniture and fixtures are skipped",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-photo",
+        "describe": "Nightstand with a white-shade table lamp on a gold geometric wire base, a blue Chelsea FC plush about the size of a hand, and over-ear headphones. The nightstand itself fills the bottom of the frame."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "titles_include": ["lamp", "Chelsea", "headphones"],
+    "titles_exclude": ["nightstand"]
+  },
+  "twin": "appraisal-large-furniture-is-not-an-item"
+}

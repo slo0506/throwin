@@ -1,0 +1,21 @@
+{
+  "id": "appraisal-crop-shows-console-not-cable",
+  "suite": "appraisal",
+  "description": "In a video pan, a white PS5 Slim stands on the floor below a wall-mounted TV whose black cable runs down the wall to an outlet. The PS5's photo shows the console, not the cable; the monitor across the room shows the monitor, not a desk corner",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-video",
+        "describe": "6 frames panning a living room. Frames 4 and 5: a wall-mounted TV, its power cable down the wall to an outlet near the floor, a PS5 Slim standing upright beside the outlet, an open cardboard box in front. Frame 3, blurred: a desk with a monitor and a desk lamp."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "titles_include": ["PlayStation 5", "monitor"],
+    "crop_shows": { "PlayStation 5": "the console body", "monitor": "the screen" },
+    "crop_not_shows": { "PlayStation 5": "only the cable or outlet", "monitor": "only the desk" },
+    "titles_exclude": ["cable", "outlet"]
+  }
+}

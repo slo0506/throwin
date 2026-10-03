@@ -44,6 +44,7 @@ function depsFor(userId: string, trigger: string, runs: Promise<void>[]): Apprai
       );
     },
     pricing,
+    { detectGrid: env.DETECT_GRID },
   );
   const pricer = new CachedPricer(
     vision,

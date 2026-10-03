@@ -37,6 +37,7 @@ async function itemWithNewPhotos(photo?: Buffer) {
     identification: sneaker,
     cropPath,
     crop: { jpeg: Buffer.alloc(0), width: 400, height: 300 },
+    cropBox: { frame: 0, box: [0.2, 0.2, 0.6, 0.6], source: "refined" },
   });
   await store.finishItem(itemId, {
     identification: sneaker,

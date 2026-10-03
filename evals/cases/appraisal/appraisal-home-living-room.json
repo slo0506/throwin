@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "id": "appraisal-home-living-room",
+  "suite": "appraisal",
+  "description": "6 frames from a quick pan of a living room: kitchen counter with an orange pill bottle, beige sectional sofa with clothes on it, wooden end tables, a desk with a monitor and a desk lamp by the balcony door, a wall-mounted TV with its power cable running down to an outlet, and a white PlayStation 5 Slim standing on the floor under it next to an open cardboard box. The v2 Appraiser cropped the PS5 as the cable on the wall and the monitor as a desk corner.",
+  "media": ["home-living-room"],
+  "items": [
+    {
+      "title": "Sony PlayStation 5 Slim",
+      "aliases": ["PS5 Slim", "PlayStation 5", "PS5 console"],
+      "category": "video_games/consoles",
+      "brand": "Sony",
+      "condition_grade": "B",
+      "value_cents_low": 28000,
+      "value_cents_high": 42000,
+      "should_ask_for_photo": true,
+      "reviewed": false,
+      "notes": "Disc or digital edition is not clear at this distance. The crop must show the console, not the cable or outlet beside it."
+    },
+    {
+      "title": "Computer monitor",
+      "aliases": ["desktop monitor", "PC monitor", "display"],
+      "category": "electronics",
+      "condition_grade": "B",
+      "value_cents_low": 3000,
+      "value_cents_high": 20000,
+      "should_ask_for_photo": true,
+      "reviewed": false,
+      "notes": "Blurred frame; brand and size need a closer photo. The crop must show the monitor, not the desk corner."
+    },
+    {
+      "title": "Wall-mounted flat-screen TV",
+      "aliases": ["TV", "television", "flat screen TV"],
+      "category": "electronics",
+      "condition_grade": "B",
+      "value_cents_low": 8000,
+      "value_cents_high": 40000,
+      "should_ask_for_photo": true,
+      "reviewed": false,
+      "notes": "Brand and size are not visible."
+    }
+  ],
+  "forbidden": [
+    "prescription bottle",
+    "pill bottle",
+    "medication",
+    "sofa",
+    "sectional",
+    "couch",
+    "power cable",
+    "outlet",
+    "kitchen cabinet"
+  ]
+}

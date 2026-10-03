@@ -1,0 +1,21 @@
+{
+  "id": "appraisal-crocs-in-2-frames-is-1-item",
+  "suite": "appraisal",
+  "description": "1 pair of yellow Crocs with charms, its 2 clogs a little apart on the floor, seen in different video frames and read once as 'Yellow clog slip-on shoes with charms' and once as 'Yellow Crocs Classic Clog with Jibbitz'. Capture-level consolidation makes it 1 Item with the more confident reading",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-video",
+        "describe": "6 frames circling a shoe rack. The 2 yellow Crocs with matching charms sit about 30 cm apart in front of the rack; frames 0 to 2 show 1 clog clearly, frames 3 to 5 the other."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "count_matching": { "Crocs": 1, "clog": 1 },
+    "titles_include": ["Crocs"],
+    "consolidation_calls": 1
+  },
+  "twin": "appraisal-2-pairs-of-same-sneaker-stay-2"
+}

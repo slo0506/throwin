@@ -1,0 +1,77 @@
+{
+  "version": 2,
+  "id": "appraisal-home-nightstand",
+  "suite": "appraisal",
+  "description": "1 dim photo of a nightstand: a white-shade table lamp on a gold geometric wire base, space gray over-ear headphones lying on a black box with a white USB-C cable, a tall lavender insulated water bottle with a flex cap, a blue Chelsea FC plush, and a gray fabric tablet folio. Also 2 orange prescription bottles, a green supplement bottle, a white retainer case and a white Fujitsu air conditioner remote. The headphones and water bottle crops landed on the lamp base and a sliver of the bottle in the v2 Appraiser; the lamp and plush were missed.",
+  "media": ["home-nightstand"],
+  "items": [
+    {
+      "title": "Apple AirPods Max",
+      "aliases": ["AirPods Max", "Apple over-ear headphones"],
+      "category": "electronics",
+      "brand": "Apple",
+      "condition_grade": "B",
+      "value_cents_low": 22000,
+      "value_cents_high": 36000,
+      "should_ask_for_photo": false,
+      "reviewed": false,
+      "notes": "The crop must show the headphones, not the lamp base above them."
+    },
+    {
+      "title": "Hydro Flask water bottle with Flex Straw cap",
+      "aliases": ["Hydro Flask", "insulated water bottle", "lavender water bottle"],
+      "category": "accessories",
+      "brand": "Hydro Flask",
+      "condition_grade": "B",
+      "value_cents_low": 1500,
+      "value_cents_high": 4000,
+      "should_ask_for_photo": false,
+      "reviewed": false,
+      "notes": "The crop must show the whole bottle from cap to base."
+    },
+    {
+      "title": "Table lamp with gold geometric wire base",
+      "aliases": ["table lamp", "geometric lamp", "bedside lamp"],
+      "category": "home/decor",
+      "condition_grade": "B",
+      "value_cents_low": 1000,
+      "value_cents_high": 4000,
+      "should_ask_for_photo": false,
+      "reviewed": false
+    },
+    {
+      "title": "Chelsea FC plush toy",
+      "aliases": ["Chelsea plush", "Chelsea mascot plush", "blue Chelsea soft toy"],
+      "category": "toys/plush",
+      "brand": "Chelsea FC",
+      "condition_grade": "B",
+      "value_cents_low": 500,
+      "value_cents_high": 2500,
+      "should_ask_for_photo": false,
+      "reviewed": false
+    },
+    {
+      "title": "Gray fabric tablet folio case",
+      "aliases": ["tablet case", "tablet keyboard folio", "iPad folio case"],
+      "category": "accessories",
+      "condition_grade": "B",
+      "value_cents_low": 1000,
+      "value_cents_high": 6000,
+      "should_ask_for_photo": true,
+      "reviewed": false,
+      "notes": "Brand and model are not readable; a photo of the inside or the logo would settle it."
+    }
+  ],
+  "forbidden": [
+    "prescription bottle",
+    "pill bottle",
+    "medication",
+    "supplement",
+    "vitamin",
+    "retainer",
+    "retainer case",
+    "AC remote",
+    "air conditioner remote",
+    "Fujitsu remote"
+  ]
+}
