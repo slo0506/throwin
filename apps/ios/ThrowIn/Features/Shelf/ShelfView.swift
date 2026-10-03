@@ -1,13 +1,19 @@
 import SwiftUI
 
-/// The Shelf: everything you'd trade, priced as ranges. Capture opens the camera and photo
-/// picker; in demo mode it plays a sample capture instead.
+/// The Shelf: everything you'd trade, priced as ranges, each card marked with how ready it
+/// is. A tap opens the product card, a long press lifts the card with quick actions, and the
+/// grid scrolls like any grid. Capture opens the camera and photo picker; in demo mode it
+/// plays a sample capture instead.
 struct ShelfView: View {
     @Environment(AppModel.self) private var model
     @Namespace private var itemNamespace
     @State private var isCapturing = false
     @State private var scanGeneration = 0
     @State private var isCaptureSheetPresented = false
+    @State private var tuneUpAfterCapture = false
+    @State private var filter: ShelfFilter = .all
+    @State private var openItem: ItemRoute?
+    @State private var tuneUp: TuneUpRoute?
 
     private let columns = [
         GridItem(.flexible(), spacing: Space.md),
@@ -27,89 +33,166 @@ struct ShelfView: View {
                 }
             }
             .animation(Motion.soft, value: model.shelf.isEmpty)
-            .task { await model.refreshShelf() }
-            .sheet(isPresented: $isCaptureSheetPresented) {
-                CaptureSheet {
-                    Task {
-                        await model.refreshShelf()
-                        scanGeneration += 1
-                    }
-                }
+            .task {
+                await model.refreshShelf()
+                await model.loadQuestions()
             }
-            .overlay(alignment: .top) {
-                if let message = model.shelfError {
-                    Text(message)
-                        .font(Typo.callout)
-                        .padding(.horizontal, Space.md)
-                        .padding(.vertical, Space.sm)
-                        .glassEffect(.regular, in: .capsule)
-                        .padding(.top, Space.xs)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .task {
-                            try? await Task.sleep(for: .seconds(3))
-                            withAnimation(Motion.soft) { model.shelfError = nil }
+            .sheet(isPresented: $isCaptureSheetPresented, onDismiss: {
+                guard tuneUpAfterCapture else { return }
+                tuneUpAfterCapture = false
+                tuneUp = TuneUpRoute(itemID: nil)
+            }) {
+                CaptureSheet(
+                    onFinish: {
+                        Task {
+                            await model.refreshShelf()
+                            scanGeneration += 1
                         }
-                }
+                    },
+                    onTuneUp: { tuneUpAfterCapture = true }
+                )
             }
-            .animation(Motion.bouncy, value: model.shelfError)
-            .navigationDestination(for: ShelfItem.self) { item in
-                ItemDetailView(itemID: item.id)
-                    .navigationTransition(.zoom(sourceID: item.id, in: itemNamespace))
+            .sheet(item: $openItem) { route in
+                ProductCardSheet(itemID: route.id)
+                    .navigationTransition(.zoom(sourceID: route.id, in: itemNamespace))
             }
+            .fullScreenCover(item: $tuneUp) { route in
+                TuneUpView(itemID: route.itemID)
+            }
+            .quietBanner()
         }
+    }
+
+    private var visibleItems: [ShelfItem] {
+        model.shelf.filter { filter.includes($0) }
     }
 
     private var grid: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.lg) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Shelf")
-                            .font(Typo.title)
-                            .tracking(-0.4)
-                        Text(shelfSummary)
-                            .font(Typo.callout)
-                            .foregroundStyle(Palette.inkSecondary)
-                            .contentTransition(.numericText())
-                    }
-                    Spacer()
-                    Button(action: capture) {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Palette.ink)
-                            .frame(width: 48, height: 48)
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .accessibilityLabel("Add to Shelf")
+                header
+
+                ShelfFilterBar(selection: $filter)
+
+                if visibleItems.isEmpty {
+                    Text(filter == .ready
+                         ? "Nothing ready to show yet. A quick Tune up gets you there."
+                         : "Everything here is ready to show.")
+                        .font(Typo.callout)
+                        .foregroundStyle(Palette.inkSecondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Space.xxl)
+                        .transition(.opacity)
                 }
 
                 LazyVGrid(columns: columns, spacing: Space.md) {
-                    ForEach(Array(model.shelf.enumerated()), id: \.element.id) { index, item in
-                        NavigationLink(value: item) {
+                    ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
+                        // A plain Button, so a tap opens the card and a drag scrolls the grid.
+                        // The long press belongs to the system context menu, which lifts the card.
+                        Button {
+                            openItem = ItemRoute(id: item.id)
+                        } label: {
                             ItemCard(item: item, scanTrigger: scanGeneration, scanDelay: Double(index) * 0.12)
                         }
                         .buttonStyle(.pressable)
                         .matchedTransitionSource(id: item.id, in: itemNamespace)
+                        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                        .contextMenu {
+                            quickActions(for: item)
+                        } preview: {
+                            ItemCard(item: item)
+                                .frame(width: 220)
+                        }
+                        .accessibilityHint("Opens the product card")
                     }
                 }
+                .animation(Motion.snappy, value: filter)
             }
             .padding(.horizontal, Space.gutter)
             .padding(.top, Space.xs)
             .padding(.bottom, Space.tabBarClearance)
         }
         .scrollIndicators(.hidden)
-        .refreshable { await model.refreshShelf() }
+        .refreshable {
+            await model.refreshShelf()
+            await model.loadQuestions()
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: Space.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Shelf")
+                    .font(Typo.title)
+                    .tracking(-0.4)
+                Text(countLine)
+                    .font(Typo.callout)
+                    .foregroundStyle(Palette.inkSecondary)
+                    .contentTransition(.numericText())
+                if let worth = worthLine {
+                    Text(worth)
+                        .font(Typo.footnote.monospacedDigit())
+                        .foregroundStyle(Palette.inkTertiary)
+                        .contentTransition(.numericText())
+                }
+            }
+            .animation(Motion.snappy, value: countLine)
+            Spacer(minLength: 0)
+            TuneUpButton(count: model.tuneUpCount) {
+                tuneUp = TuneUpRoute(itemID: nil)
+            }
+            Button(action: capture) {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 48, height: 48)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Add to Shelf")
+        }
+    }
+
+    @ViewBuilder
+    private func quickActions(for item: ShelfItem) -> some View {
+        Picker("Would you trade it?", selection: willingnessBinding(for: item)) {
+            ForEach(Willingness.allCases, id: \.self) { option in
+                Text(option.label).tag(option)
+            }
+        }
+        .pickerStyle(.inline)
+        Button("Tune up this item", systemImage: "wand.and.stars") {
+            tuneUp = TuneUpRoute(itemID: item.id)
+        }
+        if !item.isReserved {
+            Button("Remove", systemImage: "trash", role: .destructive) {
+                model.removeItem(item.id)
+            }
+        }
+    }
+
+    private func willingnessBinding(for item: ShelfItem) -> Binding<Willingness> {
+        Binding(
+            get: { model.shelf.first { $0.id == item.id }?.willingness ?? item.willingness },
+            set: { model.setWillingness($0, for: item.id) }
+        )
+    }
+
+    /// "13 items, 2 ready to show"
+    private var countLine: String {
+        let count = model.shelf.count
+        let ready = model.shelf.filter { $0.readiness == .showcase }.count
+        return "\(count) \(count == 1 ? "item" : "items"), \(ready) ready to show"
     }
 
     /// Values are always ranges, so the total is too.
-    private var shelfSummary: String {
-        let count = "\(model.shelf.count) \(model.shelf.count == 1 ? "item" : "items")"
+    private var worthLine: String? {
         let values = model.shelf.compactMap(\.value)
-        guard !values.isEmpty else { return count }
+        guard !values.isEmpty else { return nil }
         let low = values.map(\.lowCents).reduce(0, +)
         let high = values.map(\.highCents).reduce(0, +)
-        return "\(count), worth \(Money.range(low: low, high: high))"
+        return "Worth \(Money.range(low: low, high: high))"
     }
 
     private func capture() {
@@ -128,38 +211,146 @@ struct ShelfView: View {
     }
 }
 
+/// Which Item's product card is open.
+struct ItemRoute: Identifiable, Hashable {
+    let id: String
+}
+
+/// Tune up for the whole Shelf (nil) or 1 Item.
+struct TuneUpRoute: Identifiable, Hashable {
+    let id = UUID()
+    var itemID: String?
+}
+
+// MARK: - Filters
+
+enum ShelfFilter: String, CaseIterable, Identifiable {
+    case all, ready, needsLook
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: "All"
+        case .ready: "Ready to show"
+        case .needsLook: "Needs a look"
+        }
+    }
+
+    func includes(_ item: ShelfItem) -> Bool {
+        switch self {
+        case .all: true
+        case .ready: item.readiness == .showcase
+        case .needsLook: item.readiness != .showcase
+        }
+    }
+}
+
+private struct ShelfFilterBar: View {
+    @Binding var selection: ShelfFilter
+    @Namespace private var thumb
+
+    var body: some View {
+        HStack(spacing: Space.xs) {
+            ForEach(ShelfFilter.allCases) { option in
+                let isSelected = option == selection
+                Button {
+                    withAnimation(Motion.snappy) { selection = option }
+                } label: {
+                    Text(option.label)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(isSelected ? Palette.canvas : Palette.ink)
+                        .lineLimit(1)
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                        .background {
+                            if isSelected {
+                                Capsule()
+                                    .fill(Palette.ink)
+                                    .matchedGeometryEffect(id: "filter", in: thumb)
+                            } else {
+                                Capsule().strokeBorder(Palette.hairline, lineWidth: 1)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+}
+
+// MARK: - Tune up button
+
+/// A glass "Tune up" capsule with a badge for every open question on the Shelf.
+private struct TuneUpButton: View {
+    var count: Int
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Tune up", systemImage: "wand.and.stars")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(Palette.ink)
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .frame(height: 48)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .overlay(alignment: .topTrailing) {
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .frame(minWidth: 20, minHeight: 20)
+                    .background(Palette.iris, in: Capsule())
+                    .offset(x: 4, y: -4)
+                    .contentTransition(.numericText())
+                    .transition(.scale.combined(with: .opacity))
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(Motion.bouncy, value: count)
+        .accessibilityLabel(count > 0 ? "Tune up, \(count) questions" : "Tune up")
+    }
+}
+
 // MARK: - Item card
 
+/// A Shelf card: photo, readiness mark, at most 1 tag, title, condition and range. Taps and
+/// long presses belong to the Button and context menu around it, never to the card, so
+/// nothing here competes with the ScrollView for touches.
 struct ItemCard: View {
     var item: ShelfItem
     var scanTrigger: Int = 0
     var scanDelay: Double = 0
 
-    @State private var lifted = false
-    @State private var touch: CGPoint?
-    @State private var size: CGSize = .zero
     @State private var localScan = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
-            ItemArtwork(item: item, studio: .ifReady)
+            ItemArtwork(item: item, studio: item.studioAllowed ? .ifReady : .off)
                 .aspectRatio(1, contentMode: .fit)
                 .appraiseScan(trigger: localScan, duration: 1.5)
+                .overlay(alignment: .topLeading) {
+                    if item.hasInventoryPhoto {
+                        InventoryPhotoTag()
+                            .padding(8)
+                            .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    }
+                }
                 .overlay(alignment: .topTrailing) {
                     WillingnessDot(willingness: item.willingness)
                         .padding(10)
                 }
                 .overlay(alignment: .bottomLeading) {
-                    if item.status == .needsPhotos {
-                        Label(item.isAppraising ? "Taking another look" : "1 more photo",
-                              systemImage: item.isAppraising ? "sparkles" : "camera.viewfinder")
-                            .font(Typo.caption)
-                            .foregroundStyle(Palette.ink)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .glassEffect(.regular, in: .capsule)
-                            .padding(8)
-                    }
+                    ReadinessMark(readiness: item.readiness, isWorking: item.isAppraising)
+                        .padding(8)
                 }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -185,82 +376,20 @@ struct ItemCard: View {
         .background {
             RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
                 .fill(Palette.surface)
-                .shadow(color: .black.opacity(lifted ? 0.16 : 0.06), radius: lifted ? 30 : 18, y: lifted ? 18 : 6)
-        }
-        .overlay {
-            specular
+                .shadow(color: .black.opacity(0.06), radius: 18, y: 6)
         }
         .overlay {
             RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         }
-        .onGeometryChange(for: CGSize.self) { proxy in
-            proxy.size
-        } action: { newSize in
-            size = newSize
-        }
-        .rotation3DEffect(.degrees(tilt.x), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
-        .rotation3DEffect(.degrees(tilt.y), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
-        .scaleEffect(lifted ? 1.04 : 1)
-        .zIndex(lifted ? 1 : 0)
-        .animation(Motion.bouncy, value: lifted)
-        .animation(.interactiveSpring(response: 0.25, dampingFraction: 0.7), value: touch)
-        .gesture(liftGesture)
-        .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: lifted) { _, isLifted in isLifted }
+        .animation(Motion.bouncy, value: item.readiness)
+        .animation(Motion.bouncy, value: item.hasInventoryPhoto)
         .task(id: scanTrigger) {
             guard scanTrigger > 0 else { return }
             try? await Task.sleep(for: .seconds(scanDelay))
             localScan += 1
         }
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens item details")
-    }
-
-    /// Tilt toward the finger, up to 10 degrees.
-    private var tilt: (x: Double, y: Double) {
-        guard lifted, let touch, size.width > 0, size.height > 0 else { return (0, 0) }
-        let nx = Double((touch.x / size.width - 0.5) * 2)
-        let ny = Double((touch.y / size.height - 0.5) * 2)
-        return (x: -ny * 10, y: nx * 10)
-    }
-
-    private var specular: some View {
-        let point = touch ?? CGPoint(x: size.width * 0.3, y: size.height * 0.2)
-        return RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-            .fill(
-                RadialGradient(
-                    colors: [.white.opacity(0.55), .white.opacity(0)],
-                    center: UnitPoint(
-                        x: size.width > 0 ? point.x / size.width : 0.3,
-                        y: size.height > 0 ? point.y / size.height : 0.2
-                    ),
-                    startRadius: 0,
-                    endRadius: max(size.width, 1) * 0.7
-                )
-            )
-            .blendMode(.overlay)
-            .opacity(lifted ? 1 : 0)
-            .allowsHitTesting(false)
-    }
-
-    private var liftGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.28)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                switch value {
-                case .first(true):
-                    lifted = true
-                case .second(true, let drag):
-                    lifted = true
-                    touch = drag?.location
-                default:
-                    break
-                }
-            }
-            .onEnded { _ in
-                lifted = false
-                touch = nil
-            }
     }
 }
 

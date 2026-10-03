@@ -13,7 +13,35 @@ nonisolated struct ValueRange: Codable, Hashable, Sendable {
 }
 
 nonisolated enum ItemStatus: String, Codable, Sendable {
+    /// `needs_photos` is retired by the server. Still decoded so older rows don't fail, but
+    /// read as `onShelf` (see `ShelfItem.init(from:)`).
     case draft, needsPhotos = "needs_photos", onShelf = "on_shelf", reserved, traded, removed
+}
+
+/// What an Item still needs, in 1 word. See "Item readiness" in the PRD.
+nonisolated enum ItemReadiness: String, Codable, CaseIterable, Sendable {
+    case logged, identified, showcase
+
+    var label: String {
+        switch self {
+        case .logged: "Logged"
+        case .identified: "Identified"
+        case .showcase: "Ready to show"
+        }
+    }
+
+    /// How sure the GM is, in plain words. Never a number.
+    var confidencePhrase: String {
+        self == .logged ? "Best guess" : "Pretty sure"
+    }
+
+    var step: Int {
+        switch self {
+        case .logged: 0
+        case .identified: 1
+        case .showcase: 2
+        }
+    }
 }
 
 nonisolated enum Willingness: String, Codable, CaseIterable, Sendable {
@@ -82,6 +110,27 @@ nonisolated struct ShelfItem: Codable, Identifiable, Hashable, Sendable {
     var followUp: String?
     /// True while the Appraiser is still pricing or re-reading the Item. `value` may be nil then.
     var isAppraising: Bool = false
+    var readiness: ItemReadiness = .logged
+    /// 0 to 100. Only ever compared against thresholds, never shown.
+    var photoScore: Int?
+    /// Codes: too_small, blurry, dark, cut_off, cluttered_background, missing_angles.
+    var photoIssues: [String] = []
+    /// Human labels for the showcase angles still missing, like "Both soles".
+    var missingAngles: [String] = []
+    /// The photo is good enough (score 50 or more) to lift into Studio.
+    var studioAllowed: Bool = false
+    /// 2 to 3 plain sentences from the GM.
+    var itemDescription: String?
+    var openQuestions: Int = 0
+
+    /// Below the inventory floor: the card gets the tangerine "Inventory photo" tag.
+    var hasInventoryPhoto: Bool { (photoScore ?? 100) < 50 }
+
+    /// The angles the Showcase shoot walks through, capped at what 1 upload takes.
+    var showcaseAngles: [String] {
+        let angles = missingAngles.isEmpty ? ["Front", "Back"] : missingAngles
+        return Array(angles.prefix(5))
+    }
 
     /// Still being priced: show the Pricing placeholder instead of a range.
     var isPricing: Bool { isAppraising && value == nil }
@@ -101,13 +150,17 @@ nonisolated extension ShelfItem {
     enum CodingKeys: String, CodingKey {
         case id, status, title, willingness, category, brand, model, variant, conditionGrade, defects, value
         case identityConfidence, conditionConfidence, isReserved, thumbnailUrl, followUp, isAppraising
+        case readiness, photoScore, photoIssues, missingAngles, studioAllowed, openQuestions
+        case itemDescription = "description"
     }
 
-    /// Hand-written so a missing `is_appraising` (older servers) decodes as false.
+    /// Hand-written so fields older servers don't send (`is_appraising`, readiness and the
+    /// photo fields) decode with safe defaults.
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
-        status = try c.decode(ItemStatus.self, forKey: .status)
+        let decodedStatus = try c.decode(ItemStatus.self, forKey: .status)
+        status = decodedStatus == .needsPhotos ? .onShelf : decodedStatus
         title = try c.decode(String.self, forKey: .title)
         willingness = try c.decode(Willingness.self, forKey: .willingness)
         category = try c.decodeIfPresent(String.self, forKey: .category)
@@ -123,11 +176,73 @@ nonisolated extension ShelfItem {
         thumbnailUrl = try c.decodeIfPresent(String.self, forKey: .thumbnailUrl)
         followUp = try c.decodeIfPresent(String.self, forKey: .followUp)
         isAppraising = try c.decodeIfPresent(Bool.self, forKey: .isAppraising) ?? false
+        readiness = (try? c.decodeIfPresent(ItemReadiness.self, forKey: .readiness)) ?? .logged
+        photoScore = try? c.decodeIfPresent(Int.self, forKey: .photoScore)
+        photoIssues = (try? c.decodeIfPresent([String].self, forKey: .photoIssues)) ?? []
+        missingAngles = (try? c.decodeIfPresent([String].self, forKey: .missingAngles)) ?? []
+        studioAllowed = (try? c.decodeIfPresent(Bool.self, forKey: .studioAllowed)) ?? false
+        itemDescription = try? c.decodeIfPresent(String.self, forKey: .itemDescription)
+        openQuestions = (try? c.decodeIfPresent(Int.self, forKey: .openQuestions)) ?? 0
     }
 }
 
 nonisolated struct ShelfResponse: Codable, Sendable {
     var items: [ShelfItem]
+}
+
+// MARK: - Refinement
+
+nonisolated enum QuestionKind: String, Codable, Sendable {
+    case yesNo = "yes_no", choice, picker, text, photo
+}
+
+/// 1 Tune up question from the Refiner: the cheapest useful thing to ask about an Item.
+nonisolated struct Question: Codable, Identifiable, Hashable, Sendable {
+    var id: String
+    var itemId: String
+    var itemTitle: String
+    var thumbnailUrl: String?
+    var kind: QuestionKind
+    var prompt: String
+    var options: [String]
+    var createdAt: String?
+
+    /// The angle a photo question asks for, as the Showcase shoot labels it.
+    var photoAngle: String { options.first ?? prompt }
+}
+
+nonisolated extension Question {
+    enum CodingKeys: String, CodingKey {
+        case id, itemId, itemTitle, thumbnailUrl, kind, prompt, options, createdAt
+    }
+
+    /// An unknown kind reads as a short text answer, so a newer server never breaks Tune up.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        itemId = try c.decode(String.self, forKey: .itemId)
+        itemTitle = (try? c.decodeIfPresent(String.self, forKey: .itemTitle)) ?? ""
+        thumbnailUrl = try? c.decodeIfPresent(String.self, forKey: .thumbnailUrl)
+        let rawKind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? ""
+        kind = QuestionKind(rawValue: rawKind) ?? .text
+        prompt = try c.decode(String.self, forKey: .prompt)
+        options = (try? c.decodeIfPresent([String].self, forKey: .options)) ?? []
+        createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+}
+
+nonisolated struct QuestionsResponse: Decodable, Sendable {
+    var questions: [Question]
+}
+
+/// `POST /v1/questions/:id/answer`: `{ "answer": "Yes" }` or `{ "skip": true }`.
+nonisolated struct AnswerRequest: Encodable, Sendable {
+    var answer: String?
+    var skip: Bool?
+}
+
+nonisolated struct AnswerResponse: Decodable, Sendable {
+    var item: ShelfItem
 }
 
 nonisolated struct ItemPatch: Encodable, Sendable {
