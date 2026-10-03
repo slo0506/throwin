@@ -163,8 +163,11 @@ async function runJob(job: Job) {
   }
 }
 
-async function main() {
-  logger.info("worker_started", { kinds: KINDS, pricing, pipeline, refiner });
+/** Jobs run at once. Refiner passes are short and independent, so 1 capture must not queue them. */
+const CONCURRENCY = Math.max(1, Number(process.env.WORKER_CONCURRENCY ?? 4));
+
+/** 1 lane: claim a job, run it, repeat. claim_job uses SKIP LOCKED, so lanes never collide. */
+async function lane() {
   while (!stopping) {
     try {
       const job = await queue.claim(KINDS);
@@ -177,6 +180,17 @@ async function main() {
     }
     await new Promise((resolve) => setTimeout(resolve, env.POLL_INTERVAL_MS));
   }
+}
+
+async function main() {
+  logger.info("worker_started", {
+    kinds: KINDS,
+    pricing,
+    pipeline,
+    refiner,
+    concurrency: CONCURRENCY,
+  });
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => lane()));
   logger.info("worker_stopped");
 }
 

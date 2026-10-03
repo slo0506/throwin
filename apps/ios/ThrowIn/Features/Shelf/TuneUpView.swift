@@ -19,6 +19,8 @@ struct TuneUpView: View {
     @State private var isAdvancing = false
     @State private var tick = 0
     @State private var shootFor: Question?
+    /// Height of the front card, so the cards peeking behind it match it exactly.
+    @State private var frontHeight: CGFloat = 0
 
     private static let swipeDistance: CGFloat = 110
     private static let visibleCards = 3
@@ -103,33 +105,41 @@ struct TuneUpView: View {
     }
 
     private var stack: some View {
-        ZStack {
-            ForEach(Array(deck.prefix(Self.visibleCards).enumerated()), id: \.element.id) { depth, question in
-                let isTop = depth == 0
+        ZStack(alignment: .top) {
+            // Cards behind are plain outlines the size of the front card, so a taller
+            // question waiting in the deck never pokes out under a shorter one.
+            ForEach(1..<max(1, min(deck.count, Self.visibleCards)), id: \.self) { depth in
+                RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                    .fill(Palette.surface)
+                    .shadow(color: .black.opacity(0.05), radius: 12, y: 4)
+                    .frame(height: frontHeight)
+                    .scaleEffect(x: 1 - CGFloat(depth) * 0.05, y: 1, anchor: .bottom)
+                    .offset(y: CGFloat(depth) * 12)
+                    .opacity(1 - Double(depth) * 0.3)
+                    .zIndex(-Double(depth))
+                    .allowsHitTesting(false)
+            }
+            if let question = deck.first {
                 QuestionCard(
                     question: question,
                     item: model.shelf.first { $0.id == question.itemId },
-                    skipHint: isTop ? min(1, max(0, -drag.width / Self.swipeDistance)) : 0,
+                    skipHint: min(1, max(0, -drag.width / Self.swipeDistance)),
                     onAnswer: { answer($0, to: question) },
                     onPhoto: { shootFor = question }
                 )
-                .scaleEffect(1 - CGFloat(depth) * 0.05, anchor: .top)
-                .offset(y: CGFloat(depth) * 16)
-                .offset(
-                    x: isTop ? drag.width + flyOut.width : 0,
-                    y: isTop ? drag.height + flyOut.height : 0
-                )
-                .rotationEffect(.degrees(isTop ? Double(drag.width) / 20 + flyTilt : 0))
-                .opacity(depth < Self.visibleCards - 1 ? 1 : 0.6)
-                .zIndex(Double(Self.visibleCards - depth))
-                .allowsHitTesting(isTop && !isAdvancing)
-                .gesture(swipe, including: isTop ? .all : .subviews)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { frontHeight = $0 }
+                .offset(x: drag.width + flyOut.width, y: drag.height + flyOut.height)
+                .rotationEffect(.degrees(Double(drag.width) / 20 + flyTilt))
+                .allowsHitTesting(!isAdvancing)
+                .gesture(swipe)
+                .id(question.id)
                 .transition(.asymmetric(
                     insertion: .move(edge: .bottom).combined(with: .opacity),
                     removal: .opacity
                 ))
             }
         }
+        .animation(Motion.soft, value: frontHeight)
         .frame(maxWidth: .infinity)
     }
 

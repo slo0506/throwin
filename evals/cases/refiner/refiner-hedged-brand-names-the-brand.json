@@ -1,0 +1,32 @@
+{
+  "id": "refiner-hedged-brand-names-the-brand",
+  "suite": "refinement",
+  "description": "A reading that hedges with a likely brand asks whether it is that brand, never whether a logo exists",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "title": "Hydro Flask-style insulated water bottle with flex cap, lavender",
+      "category": "other",
+      "brand": null,
+      "model": null,
+      "identity_confidence": 0.55,
+      "condition_confidence": 0.6,
+      "value_cents": { "low": 1000, "mid": 1700, "high": 2400 },
+      "photos": [
+        {
+          "source": "wikimedia-commons-search",
+          "query": "lavender insulated water bottle flex cap"
+        }
+      ]
+    },
+    "reason": "created"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "first_question_kind_in": ["yes_no", "choice"],
+    "first_question_mentions": ["Hydro Flask"],
+    "no_question_mentions": ["logo", "is there"],
+    "no_em_dashes": true
+  }
+}

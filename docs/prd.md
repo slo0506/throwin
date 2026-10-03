@@ -335,7 +335,7 @@ Logging something and presenting it are different jobs with different quality ba
 | Readiness | Means | Who can see it | Shelf mark | Typical next step |
 | --- | --- | --- | --- | --- |
 | `logged` | We know roughly what it is. Value range may be wide. Photo is inventory quality. | Only the owner. Matching can still use it, and other people see at most a text teaser ("Sean might have white Nike high-tops, $40 to $90"). | Neutral ink dot, "Logged" | Answer 1 to 3 Tune up questions. |
-| `identified` | Exact product (or the variant that drives value) is confirmed by evidence or by the owner, and the range is narrow (high is at most about 1.6 times low). | Same as logged. | Iris dot, "Identified" | Showcase shoot, ideally when someone is interested. |
+| `identified` | Exact product (or the variant that drives value) is confirmed by evidence or by the owner, and the range is narrow (high is at most 1.6 times low, or the spread is $30 or less, so cheap items aren't held to a ratio they can't meet). | Same as logged. | Iris dot, "Identified" | Showcase shoot, ideally when someone is interested. |
 | `showcase` | Identified, plus a photo set that passes the showcase bar for its category. | Anyone the Item is shown to: Deal Sheets, teasers, the GM's suggestions to others. | Mint dot, "Ready to show" | Nothing. |
 
 Any Item whose best photo is below the inventory floor also shows a tangerine "Inventory photo" tag on its card, so the owner can see at a glance which photos would never sell anything.
