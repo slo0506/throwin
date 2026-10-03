@@ -9,6 +9,9 @@ import { createLogger } from "./log.js";
 import { ExtractMemoryPayload, extractMemory } from "./memory/extract.js";
 import { ClaudeMemoryModel } from "./memory/model.js";
 import { SupabaseMemoryStore } from "./memory/store.js";
+import { HttpMatcher } from "./prospector/matcher.js";
+import { type ProspectorDeps, prospectAsk } from "./prospector/prospect.js";
+import { SupabaseProspectorStore } from "./prospector/store.js";
 import { ClaudeRefinerModels } from "./refiner/models.js";
 import {
   type RefineReason,
@@ -49,7 +52,29 @@ const refiner: RefinerConfig = {
   photo: { sharpnessLow: env.REFINER_SHARPNESS_LOW, sharpnessHigh: env.REFINER_SHARPNESS_HIGH },
 };
 
-const KINDS = ["appraise_capture", "reappraise_item", "refine_item", "extract_memory"];
+const prospector: ProspectorDeps | null = env.MATCHER_URL
+  ? {
+      store: new SupabaseProspectorStore(db),
+      embedder,
+      matcher: new HttpMatcher(env.MATCHER_URL),
+      config: {
+        minSimilarity: env.PROSPECT_MIN_SIMILARITY,
+        candidatesPerAsk: env.PROSPECT_CANDIDATES_PER_ASK,
+        maxEmbedsPerRun: env.PROSPECT_MAX_EMBEDS,
+        matcherTimeLimitSeconds: env.MATCHER_TIME_LIMIT_SECONDS,
+      },
+      logger,
+    }
+  : null;
+
+const KINDS = [
+  "appraise_capture",
+  "reappraise_item",
+  "refine_item",
+  "extract_memory",
+  // Without a matcher, prospect_ask jobs stay queued until one is configured.
+  ...(prospector ? ["prospect_ask"] : []),
+];
 const REASONS: readonly RefineReason[] = ["created", "answer", "photos"];
 let stopping = false;
 
@@ -101,7 +126,20 @@ async function runJob(job: Job) {
   const runs: Promise<void>[] = [];
   const started = Date.now();
   try {
-    if (job.kind === "extract_memory") {
+    if (job.kind === "prospect_ask" && prospector) {
+      const outcome = await prospectAsk(String(job.payload.ask_id ?? ""), userId, prospector);
+      await queue.finish(job.id);
+      logger.info("job_done", {
+        job_id: job.id,
+        kind: job.kind,
+        ask_id: job.payload.ask_id,
+        outcome: outcome.status,
+        ...(outcome.status === "matched"
+          ? { edges: outcome.edges, deals: outcome.deals.length }
+          : { reason: outcome.reason }),
+        ms: Date.now() - started,
+      });
+    } else if (job.kind === "extract_memory") {
       const payload = ExtractMemoryPayload.parse(job.payload);
       const outcome = await extractMemory(payload, {
         store: memoryStore,
@@ -177,6 +215,7 @@ async function runJob(job: Job) {
         await store.failCapture(captureId, "Something went wrong reading these photos. Try again.");
       }
       // extract_memory: nothing to undo. A missed turn only means nothing was noted from it.
+      // prospect_ask: nothing to undo either. The next change to the Ask queues a new run.
     }
   } finally {
     await Promise.all(runs);
@@ -203,6 +242,7 @@ async function lane() {
 }
 
 async function main() {
+  if (!prospector) logger.warn("prospector_off", { reason: "MATCHER_URL is not set" });
   logger.info("worker_started", {
     kinds: KINDS,
     pricing,
