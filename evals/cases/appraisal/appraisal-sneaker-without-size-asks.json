@@ -1,7 +1,7 @@
 {
   "id": "appraisal-sneaker-without-size-asks",
   "suite": "appraisal",
-  "description": "A sneaker photographed without its size tag asks for 1 more photo instead of guessing the size",
+  "description": "A sneaker photographed without its size tag still goes on the Shelf as logged, with no guessed size, and the Refiner asks about size instead of blocking on a photo",
   "state": {
     "photos": [{ "source": "wikimedia-commons-search", "query": "Air Jordan 1 sneaker" }]
   },
@@ -9,7 +9,10 @@
   "message": "",
   "expect": {
     "item_count": { "min": 1, "max": 1 },
-    "statuses": ["needs_photos"],
-    "follow_up_mentions": ["size"]
+    "statuses": ["on_shelf"],
+    "readiness": ["logged"],
+    "attributes_exclude": ["size"],
+    "open_question_drivers_include": ["size"],
+    "first_question_kind_not": "photo"
   }
 }

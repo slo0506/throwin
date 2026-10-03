@@ -1,0 +1,32 @@
+{
+  "id": "refiner-ps5-slim-identified-without-questions",
+  "suite": "refinement",
+  "description": "A PS5 Slim in a clear, close photo is distinctive enough to be identified on the first pass: no questions, no research, and a 2 to 3 sentence description",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "title": "PlayStation 5 Slim",
+      "category": "electronics",
+      "brand": "Sony",
+      "model": "PlayStation 5 Slim",
+      "variant": "Disc edition",
+      "identity_confidence": 0.93,
+      "condition_confidence": 0.85,
+      "value_cents": { "low": 30000, "mid": 34000, "high": 38000 },
+      "photos": [{ "source": "wikimedia-commons-search", "query": "PlayStation 5 Slim console" }]
+    },
+    "reason": "created"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "readiness": "identified",
+    "open_questions": { "min": 0, "max": 0 },
+    "research_calls": { "max": 0 },
+    "description_sentences": { "min": 2, "max": 3 },
+    "no_em_dashes": true,
+    "no_authenticity_claims": true,
+    "cost_cents": { "max": 2 }
+  },
+  "twin": "refiner-sneaker-unknown-brand-asks-a-tap-first"
+}

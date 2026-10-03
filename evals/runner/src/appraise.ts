@@ -147,7 +147,6 @@ export function toPredicted(stored: StoredEvalItem): PredictedItem {
     brand: id.brand,
     model: id.model,
     condition_grade: id.condition_grade,
-    status: stored.item.status,
     follow_up: id.follow_up,
     value: value
       ? { low: toCents(value.low_usd), mid: toCents(value.mid_usd), high: toCents(value.high_usd) }

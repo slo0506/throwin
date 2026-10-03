@@ -19,6 +19,13 @@ describe("loadCases", () => {
     expect(cases.some((c) => !isCaptureCase(c) && "photos" in c.state)).toBe(true);
   });
 
+  it("loads the refinement cases as snapshot cases", async () => {
+    const dir = fileURLToPath(new URL("../../cases/refiner", import.meta.url));
+    const cases = await loadCases(dir);
+    expect(cases.length).toBeGreaterThanOrEqual(4);
+    expect(cases.every((c) => !isCaptureCase(c) && c.suite === "refinement")).toBe(true);
+  });
+
   it("validates case files", async () => {
     const dir = await mkdtemp(join(tmpdir(), "evals-"));
     const good = {

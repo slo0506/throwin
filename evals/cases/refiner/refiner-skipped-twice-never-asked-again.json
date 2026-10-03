@@ -1,0 +1,51 @@
+{
+  "id": "refiner-skipped-twice-never-asked-again",
+  "suite": "refinement",
+  "description": "A size question the owner skipped twice is never asked again, and Not sure answers change nothing about the Item",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "title": "Nike Air Force 1 '07",
+      "category": "sneakers",
+      "brand": "Nike",
+      "model": "Air Force 1 '07",
+      "identity_confidence": 0.8,
+      "condition_confidence": 0.7,
+      "value_cents": { "low": 4000, "mid": 6000, "high": 9000 },
+      "questions": [
+        {
+          "kind": "picker",
+          "driver": "size",
+          "prompt": "What size?",
+          "status": "skipped",
+          "skip_count": 1,
+          "answered_hours_ago": 100
+        },
+        {
+          "kind": "picker",
+          "driver": "size",
+          "prompt": "What size are they?",
+          "status": "skipped",
+          "skip_count": 1,
+          "answered_hours_ago": 1
+        },
+        {
+          "kind": "yes_no",
+          "driver": "box",
+          "prompt": "Do you have the original box?",
+          "status": "answered",
+          "answer": "Not sure"
+        }
+      ],
+      "photos": [{ "source": "wikimedia-commons-search", "query": "Nike Air Force 1 white" }]
+    },
+    "reason": "answer"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "open_question_drivers_exclude": ["size", "box"],
+    "identification_unchanged": true,
+    "agent_runs_exclude": ["refiner.answer"]
+  }
+}

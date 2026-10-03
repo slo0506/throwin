@@ -1,15 +1,18 @@
 {
   "id": "appraisal-follow-up-photo-settles-size",
   "suite": "appraisal",
-  "description": "A sneaker waiting on 'Photo of the size tag' moves to on_shelf once the owner sends a clear size tag photo, keeping the same product",
+  "description": "A sneaker with an open photo question for its size tag gets the size once the owner sends a clear tag photo: the photo question is answered, the product stays the same, and the Refiner does not ask about size again",
   "state": {
     "item": {
-      "status": "needs_photos",
+      "status": "on_shelf",
+      "readiness": "logged",
       "title": "Air Jordan 1 Mid",
       "brand": "Nike",
       "identity_confidence": 0.6,
       "condition_confidence": 0.8,
-      "follow_up": "Photo of the size tag",
+      "questions": [
+        { "kind": "photo", "driver": "size", "prompt": "Photo of the size tag", "status": "open" }
+      ],
       "photos": [{ "source": "wikimedia-commons-search", "query": "Air Jordan 1 sneaker" }]
     },
     "new_photos": [
@@ -24,8 +27,9 @@
   "expect": {
     "statuses": ["on_shelf"],
     "titles_include": ["Jordan 1"],
-    "follow_up": null,
-    "attributes_include": { "size": "10" }
+    "attributes_include": { "size": "10" },
+    "question_statuses": { "size": "answered" },
+    "open_question_drivers_exclude": ["size"]
   },
   "twin": "appraisal-follow-up-photo-of-pills-changes-nothing"
 }

@@ -5,6 +5,7 @@ import { z } from "zod";
 
 export const CircleStatus = z.enum(["active", "paused"]);
 export const CircleRole = z.enum(["owner", "member"]);
+/** needs_photos is retired (readiness carries what an Item needs) but stays so old rows parse. */
 export const ItemStatus = z.enum([
   "draft",
   "needs_photos",

@@ -24,7 +24,7 @@ const sneaker = identification({
   follow_up: "Photo of the size tag",
 });
 
-/** A needs_photos Item from an earlier capture, priced, with 1 new photo waiting. */
+/** A low-confidence Item from an earlier capture, priced, with 1 new photo waiting. */
 async function itemWithNewPhotos(photo?: Buffer) {
   const store = new MemoryStore();
   const cropPath = `${USER}/c1/crops/0.jpg`;
@@ -32,7 +32,7 @@ async function itemWithNewPhotos(photo?: Buffer) {
   const itemId = await store.insertItem({
     userId: USER,
     captureId: "c1",
-    status: "needs_photos",
+    status: "on_shelf",
     title: sneaker.title,
     identification: sneaker,
     cropPath,
@@ -95,7 +95,7 @@ describe("reappraiseItem", () => {
     const item = store.item(itemId);
     expect(vision.priceCalls).toBe(1);
     expect(item.priced?.value?.mid_usd).toBe(400);
-    expect(item.status).toBe("needs_photos");
+    expect(item.status).toBe("on_shelf");
     expect(item.identification.follow_up).toBe("Photo of the soles");
     expect(store.embeddings).toHaveLength(1);
   });
@@ -159,7 +159,7 @@ describe("reappraiseItem", () => {
     ).toBe("skipped");
     const item = store.item(itemId);
     expect(item.title).toBe("Air Jordan 1 Mid");
-    expect(item.status).toBe("needs_photos");
+    expect(item.status).toBe("on_shelf");
     expect(item.appraising).toBe(false);
   });
 

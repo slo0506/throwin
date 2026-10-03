@@ -1,5 +1,12 @@
-import type { Capture, Me, ShelfItem } from "@throwin/shared";
-import type { CaptureRecord, ItemRecord, MeRecord } from "../repo/types.js";
+import {
+  type Capture,
+  type Me,
+  PhotoIssue,
+  type Question,
+  type ShelfItem,
+  STUDIO_PHOTO_SCORE,
+} from "@throwin/shared";
+import type { CaptureRecord, ItemRecord, MeRecord, QuestionRecord } from "../repo/types.js";
 
 export function toMe(r: MeRecord): Me {
   return {
@@ -49,8 +56,30 @@ export function toShelfItem(r: ItemRecord, urls?: Map<string, string | null>): S
     thumbnail_url: r.thumbnailPath ? (urls?.get(r.thumbnailPath) ?? null) : null,
     follow_up: r.followUp,
     is_appraising: r.appraising,
+    readiness: r.readiness,
+    photo_score: r.photoScore,
+    photo_issues: r.photoIssues.filter((i): i is PhotoIssue => PHOTO_ISSUES.has(i)),
+    missing_angles: r.missingAngles,
+    studio_allowed: r.photoScore !== null && r.photoScore >= STUDIO_PHOTO_SCORE,
+    description: r.description,
+    open_questions: r.openQuestions,
     created_at: r.createdAt.toISOString(),
     updated_at: r.updatedAt.toISOString(),
+  };
+}
+
+const PHOTO_ISSUES = new Set<string>(PhotoIssue.options);
+
+export function toQuestion(r: QuestionRecord, urls?: Map<string, string | null>): Question {
+  return {
+    id: r.id,
+    item_id: r.itemId,
+    item_title: r.itemTitle,
+    thumbnail_url: r.thumbnailPath ? (urls?.get(r.thumbnailPath) ?? null) : null,
+    kind: r.kind,
+    prompt: r.prompt,
+    options: r.options,
+    created_at: r.createdAt.toISOString(),
   };
 }
 

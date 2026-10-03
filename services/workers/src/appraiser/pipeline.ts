@@ -45,7 +45,8 @@ export interface CaptureMedia {
 export interface NewItem {
   userId: string;
   captureId: string;
-  status: "on_shelf" | "needs_photos";
+  /** Always on_shelf: readiness, not status, carries what an Item still needs. */
+  status: "on_shelf";
   title: string;
   identification: Identification;
   cropPath: string;
@@ -81,7 +82,8 @@ export interface StoredItem {
 
 export interface ReappraisedItem {
   identification: Identification;
-  status: "on_shelf" | "needs_photos";
+  /** Always on_shelf: readiness, not status, carries what an Item still needs. */
+  status: "on_shelf";
   /** Present only when the Item was priced again. */
   priced?: PricedItem;
   inputMediaIds: string[];
@@ -128,6 +130,8 @@ export interface AppraiserDeps {
   /** Defaults to pricing through the store's cache with default settings. */
   pricer?: Pick<CachedPricer, "price">;
   config?: PipelineConfig;
+  /** Called once a capture's Item is priced, to hand it to the Refiner. Errors are logged. */
+  onItemFinished?: (itemId: string, userId: string) => Promise<void>;
 }
 
 /** Runs async work over items with a concurrency limit, keeping input order. */
@@ -147,11 +151,15 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number
 const isConfident = (id: Identification) =>
   id.identity_confidence >= CONFIDENCE_THRESHOLD && id.condition_confidence >= CONFIDENCE_THRESHOLD;
 
-/** Status and follow-up from the confidences: either on the Shelf, or 1 specific photo away. */
+/**
+ * Every Item goes on the Shelf (PRD "Log, don't block"). A low-confidence reading keeps the
+ * 1 photo that would settle it as a hint for the Refiner, which asks the cheapest useful
+ * question first and a photo last.
+ */
 function settle(id: Identification) {
   const confident = isConfident(id);
   return {
-    status: confident ? ("on_shelf" as const) : ("needs_photos" as const),
+    status: "on_shelf" as const,
     identification: { ...id, follow_up: confident ? null : (id.follow_up ?? DEFAULT_FOLLOW_UP) },
   };
 }
@@ -411,7 +419,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
  * detector), crop each from its best frames, identify and grade, then save every Item right
  * away with appraising = true so the Shelf fills in while pricing runs. Each Item is then
  * priced (through the shared cache) and embedded in place. The capture is done only when
- * every Item is finished. Low confidence lands in needs_photos with a specific follow-up.
+ * every Item is finished. Every Item lands on_shelf; the Refiner takes over from there.
  */
 export async function appraiseCapture(captureId: string, deps: AppraiserDeps): Promise<number> {
   const { store, vision, logger } = deps;
@@ -566,6 +574,13 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
     }
     try {
       await store.finishItem(itemId, result);
+      if (deps.onItemFinished) {
+        await deps
+          .onItemFinished(itemId, userId)
+          .catch((err) =>
+            logger.warn("appraiser_refine_handoff_failed", { item_id: itemId, error: String(err) }),
+          );
+      }
     } catch (err) {
       logger.error("appraiser_finish_item_failed", { item_id: itemId, error: String(err) });
       await store.setAppraising(itemId, false).catch(() => {});

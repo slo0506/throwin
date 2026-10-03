@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  AnswerRequest,
   ErrorBody,
   ItemMediaRequest,
   ItemMediaUploadRequest,
   PatchMe,
+  Question,
   ShelfItem,
   ValueRange,
 } from "../src/api.js";
@@ -64,11 +66,51 @@ describe("ShelfItem", () => {
       thumbnail_url: null,
       follow_up: null,
       is_appraising: true,
+      readiness: "logged",
+      photo_score: null,
+      photo_issues: [],
+      missing_angles: [],
+      studio_allowed: false,
+      description: null,
+      open_questions: 0,
       created_at: "2026-10-03T12:00:00.000Z",
       updated_at: "2026-10-03T12:00:00+00:00",
     });
     expect(item.status).toBe("draft");
     expect(item.is_appraising).toBe(true);
+  });
+
+  it("rejects unknown readiness and photo issue codes", () => {
+    const base = ShelfItem.shape;
+    expect(base.readiness.safeParse("ready").success).toBe(false);
+    expect(base.photo_issues.safeParse(["too_small", "ugly"]).success).toBe(false);
+    expect(base.photo_score.safeParse(101).success).toBe(false);
+  });
+});
+
+describe("questions", () => {
+  it("accepts an answer or a skip, never both or neither", () => {
+    expect(AnswerRequest.safeParse({ answer: "Yes" }).success).toBe(true);
+    expect(AnswerRequest.safeParse({ skip: true }).success).toBe(true);
+    expect(AnswerRequest.safeParse({ answer: "Yes", skip: true }).success).toBe(false);
+    expect(AnswerRequest.safeParse({ skip: false }).success).toBe(false);
+    expect(AnswerRequest.safeParse({}).success).toBe(false);
+    expect(AnswerRequest.safeParse({ answer: "x".repeat(201) }).success).toBe(false);
+  });
+
+  it("validates the question shape", () => {
+    const q = {
+      id: "6f1c1c5e-6a8a-4b7a-9f0e-2a0d1c3b4e5f",
+      item_id: "6f1c1c5e-6a8a-4b7a-9f0e-2a0d1c3b4e50",
+      item_title: "White high-top sneakers",
+      thumbnail_url: null,
+      kind: "yes_no",
+      prompt: "Is this Nike?",
+      options: ["Yes", "No", "Not sure"],
+      created_at: "2026-10-03T12:00:00.000Z",
+    };
+    expect(Question.safeParse(q).success).toBe(true);
+    expect(Question.safeParse({ ...q, kind: "essay" }).success).toBe(false);
   });
 });
 

@@ -49,6 +49,22 @@ export {
 export { looksPrivate } from "./appraiser/privacy.js";
 export type { Detection, Identification, ValueEstimate } from "./appraiser/schemas.js";
 export { createLogger, type Logger, silentLogger } from "./log.js";
+export { CATEGORIES, type CategorySpec, categoryOf } from "./refiner/categories.js";
+export {
+  ClaudeRefinerModels,
+  DEFAULT_REFINER_MODELS,
+  type RefinerModels,
+} from "./refiner/models.js";
+export { combine as combinePhotoScore, measure as measurePhoto } from "./refiner/photo-score.js";
+export {
+  DEFAULT_REFINER,
+  type RefineItem,
+  type RefinementUpdate,
+  type RefineReason,
+  type RefinerConfig,
+  type RefinerStore,
+  refineItem,
+} from "./refiner/refine.js";
 
 /** SDK retries per call, the worker's ANTHROPIC_MAX_RETRIES default. */
 const MAX_RETRIES = 4;

@@ -84,7 +84,8 @@ describe("scoreTrial", () => {
 
   it("checks condition grade and follow-up photo agreement on matches", () => {
     const l = capture({ items: [label({ should_ask_for_photo: true, condition_grade: "A" })] });
-    const s = scoreTrial(l, { ...result([predicted({ status: "needs_photos" })]), caseId: l.id });
+    const asks = predicted({ follow_up: "Photo of the box" });
+    const s = scoreTrial(l, { ...result([asks]), caseId: l.id });
     expect(s.pairs[0]).toMatchObject({ conditionAgrees: false, followUpAgrees: true });
   });
 });

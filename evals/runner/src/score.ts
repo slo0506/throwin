@@ -69,7 +69,7 @@ export function scoreTrial(c: CaptureCase, r: TrialResult): TrialScore {
       predictedRange: p.value ? [p.value.low, p.value.high] : null,
       rangeOverlaps: p.value !== null && rangesOverlap(p.value, labelRange),
       conditionAgrees: p.condition_grade === l.condition_grade,
-      followUpAgrees: (p.status === "needs_photos") === l.should_ask_for_photo,
+      followUpAgrees: (p.follow_up !== null) === l.should_ask_for_photo,
     };
   });
   const forbiddenHits: TrialScore["forbiddenHits"] = [];

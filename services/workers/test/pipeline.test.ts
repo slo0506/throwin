@@ -43,11 +43,24 @@ describe("appraiseCapture", () => {
       ],
     );
 
-    const saved = await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger });
+    const handedOff: string[] = [];
+    const saved = await appraiseCapture(CAPTURE, {
+      store,
+      vision,
+      embedder,
+      logger: silentLogger,
+      onItemFinished: async (itemId, userId) => {
+        expect(userId).toBe("u1");
+        expect(store.item(itemId).appraising).toBe(false);
+        handedOff.push(itemId);
+      },
+    });
 
     expect(saved).toBe(2);
     expect(store.cleared).toBe(1);
-    expect(store.items.map((i) => i.status).sort()).toEqual(["needs_photos", "on_shelf"]);
+    // Every Item goes on the Shelf, and each is handed to the Refiner once priced.
+    expect(store.items.map((i) => i.status)).toEqual(["on_shelf", "on_shelf"]);
+    expect(handedOff.sort()).toEqual(store.items.map((i) => i.id).sort());
     const sneaker = store.items.find((i) => i.title === "Air Jordan 1 Mid");
     expect(sneaker?.identification.follow_up).toBe("Photo of the size tag");
     const lego = store.items.find((i) => i.title.startsWith("LEGO"));
