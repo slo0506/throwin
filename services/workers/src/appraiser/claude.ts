@@ -68,7 +68,7 @@ export const DEFAULT_PRICING: PricingConfig = {
  * Claude 4.6 or later, so Haiku 4.5 uses basic search; Sonnet 5.5 keeps filtering, which
  * trims search results before they reach the context window.
  */
-function webSearchTool(model: string, maxUses: number): Anthropic.ToolUnion {
+export function webSearchTool(model: string, maxUses: number): Anthropic.ToolUnion {
   return model === MODELS.fast
     ? { type: "web_search_20250305", name: "web_search", max_uses: maxUses }
     : { type: "web_search_20260318", name: "web_search", max_uses: maxUses };
@@ -134,7 +134,7 @@ export interface Vision {
 type ImageBlock = Anthropic.ImageBlockParam;
 type TextBlock = Anthropic.TextBlockParam;
 
-const imageBlock = (img: PreparedImage): ImageBlock => ({
+export const imageBlock = (img: PreparedImage): ImageBlock => ({
   type: "image",
   source: { type: "base64", media_type: "image/jpeg", data: img.jpeg.toString("base64") },
 });
@@ -361,75 +361,125 @@ export class ClaudeVision implements Vision {
     return text.slice(0, 6000);
   }
 
-  async #structured<T extends z.ZodType>(
+  #structured<T extends z.ZodType>(
     agent: string,
     model: string,
     system: string,
     content: (ImageBlock | TextBlock)[],
     spec: { schema: object; parser: T; maxTokens: number },
   ): Promise<z.output<T>> {
-    const started = Date.now();
-    const res = await this.client.messages.create({
+    return structuredCall(this.client, this.onRun, {
+      agent,
       model,
-      max_tokens: spec.maxTokens,
       system: `${system}\n\n(${PROMPT_VERSION})`,
-      output_config: {
-        format: { type: "json_schema", schema: spec.schema as Record<string, unknown> },
-      },
-      messages: [{ role: "user", content }],
+      content,
+      ...spec,
     });
-    const usage = {
-      input: res.usage.input_tokens,
-      output: res.usage.output_tokens,
-      cacheRead: res.usage.cache_read_input_tokens ?? 0,
-      cacheWrite: res.usage.cache_creation_input_tokens ?? 0,
-    };
-    const text = res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = undefined;
-    }
-    const parsed = spec.parser.safeParse(json);
-    this.#record(agent, model, usage, started, parsed.success ? "ok" : "invalid_output");
-    if (!parsed.success) {
-      throw new Error(
-        `${agent}: invalid output (${res.stop_reason}): ${parsed.error.issues[0]?.message ?? "unknown"}`,
-      );
-    }
-    return parsed.data;
   }
 
   #record(
     agent: string,
     model: string,
-    usage: { input: number; output: number; cacheRead: number; cacheWrite: number },
+    usage: TokenUsage,
     started: number,
     outcome: string,
     searches = 0,
   ) {
-    const price = PRICES[model] ?? { input: 3, output: 15 };
-    const usd =
-      (usage.input * price.input +
-        usage.cacheWrite * price.input * 1.25 +
-        usage.cacheRead * price.input * 0.1 +
-        usage.output * price.output) /
-        1_000_000 +
-      searches * WEB_SEARCH_USD;
-    this.onRun({
-      agent,
-      model,
-      inputTokens: usage.input,
-      outputTokens: usage.output,
-      cacheReadTokens: usage.cacheRead,
-      cacheWriteTokens: usage.cacheWrite,
-      costCents: Math.round(usd * 100 * 10000) / 10000,
-      latencyMs: Date.now() - started,
-      outcome,
-    });
+    this.onRun(modelRun(agent, model, usage, started, outcome, searches));
   }
+}
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/** A model run priced as `agent_runs.cost_cents`, web searches included. */
+export function modelRun(
+  agent: string,
+  model: string,
+  usage: TokenUsage,
+  started: number,
+  outcome: string,
+  searches = 0,
+): ModelRun {
+  const price = PRICES[model] ?? { input: 3, output: 15 };
+  const usd =
+    (usage.input * price.input +
+      usage.cacheWrite * price.input * 1.25 +
+      usage.cacheRead * price.input * 0.1 +
+      usage.output * price.output) /
+      1_000_000 +
+    searches * WEB_SEARCH_USD;
+  return {
+    agent,
+    model,
+    inputTokens: usage.input,
+    outputTokens: usage.output,
+    cacheReadTokens: usage.cacheRead,
+    cacheWriteTokens: usage.cacheWrite,
+    costCents: Math.round(usd * 100 * 10000) / 10000,
+    latencyMs: Date.now() - started,
+    outcome,
+  };
+}
+
+/** Sums a response's usage into a running total. */
+export function addUsage(total: TokenUsage, usage: Anthropic.Usage) {
+  total.input += usage.input_tokens;
+  total.output += usage.output_tokens;
+  total.cacheRead += usage.cache_read_input_tokens ?? 0;
+  total.cacheWrite += usage.cache_creation_input_tokens ?? 0;
+  return total;
+}
+
+/**
+ * 1 request with a structured output (`output_config.format`), validated by a zod parser.
+ * Records the run either way; throws on output that does not validate.
+ */
+export async function structuredCall<T extends z.ZodType>(
+  client: Anthropic,
+  onRun: (run: ModelRun) => void,
+  call: {
+    agent: string;
+    model: string;
+    /** The full system prompt, version tag included. */
+    system: string;
+    content: (Anthropic.ImageBlockParam | Anthropic.TextBlockParam)[];
+    schema: object;
+    parser: T;
+    maxTokens: number;
+  },
+): Promise<z.output<T>> {
+  const started = Date.now();
+  const res = await client.messages.create({
+    model: call.model,
+    max_tokens: call.maxTokens,
+    system: call.system,
+    output_config: {
+      format: { type: "json_schema", schema: call.schema as Record<string, unknown> },
+    },
+    messages: [{ role: "user", content: call.content }],
+  });
+  const usage = addUsage({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, res.usage);
+  const text = res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = undefined;
+  }
+  const parsed = call.parser.safeParse(json);
+  onRun(modelRun(call.agent, call.model, usage, started, parsed.success ? "ok" : "invalid_output"));
+  if (!parsed.success) {
+    throw new Error(
+      `${call.agent}: invalid output (${res.stop_reason}): ${parsed.error.issues[0]?.message ?? "unknown"}`,
+    );
+  }
+  return parsed.data;
 }

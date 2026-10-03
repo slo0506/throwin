@@ -2,14 +2,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   AutonomyLevel,
   ConditionGrade,
+  compareQuestions,
   DEFAULT_NOTIFICATION_PREFS,
+  ItemReadiness,
   ItemStatus,
   ItemWillingness,
   NotificationPrefs,
+  QuestionKind,
 } from "@throwin/shared";
 import { z } from "zod";
 import {
   ACTIVE_ASK_STATUSES,
+  type AnswerInput,
+  type AnswerResult,
   type CaptureMediaInput,
   type CaptureRecord,
   type CaptureStatus,
@@ -17,6 +22,7 @@ import {
   type ItemUpdate,
   type MePatch,
   type MeRecord,
+  type QuestionRecord,
   type Repository,
   SHELF_STATUSES,
 } from "./types.js";
@@ -58,13 +64,70 @@ const ItemRow = z.object({
   identity_conf: z.number().nullable(),
   condition_conf: z.number().nullable(),
   reserved_by_deal_id: z.string().nullable(),
-  follow_up: z.string().nullable(),
   appraising: z.boolean(),
   capture_id: z.string().nullable(),
+  readiness: ItemReadiness,
+  photo_score: z.number().int().nullable(),
+  photo_issues: z.array(z.string()).nullable(),
+  missing_angles: z.array(z.string()).nullable(),
+  description: z.string().nullable(),
   item_media: z.array(z.object({ storage_path: z.string(), position: z.number() })).nullable(),
+  item_questions: z
+    .array(
+      z.object({
+        kind: QuestionKind,
+        prompt: z.string(),
+        impact: z.number(),
+        status: z.string(),
+        created_at: ts,
+      }),
+    )
+    .nullable(),
   created_at: ts,
   updated_at: ts,
 });
+
+const QuestionRow = z.object({
+  id: z.string(),
+  item_id: z.string(),
+  kind: QuestionKind,
+  prompt: z.string(),
+  options: z.array(z.string()),
+  impact: z.number(),
+  created_at: ts,
+  // Many-to-one embed: an object, or an array on older PostgREST versions.
+  items: z.union([
+    z.object({
+      title: z.string(),
+      item_media: z.array(z.object({ storage_path: z.string(), position: z.number() })).nullable(),
+    }),
+    z
+      .array(
+        z.object({
+          title: z.string(),
+          item_media: z
+            .array(z.object({ storage_path: z.string(), position: z.number() }))
+            .nullable(),
+        }),
+      )
+      .min(1),
+  ]),
+});
+
+const AnswerRow = z.object({
+  result: z.enum([
+    "ok",
+    "not_found",
+    "already_answered",
+    "item_reserved",
+    "use_media_upload",
+    "invalid_answer",
+  ]),
+  item_id: z.string().optional(),
+});
+
+const firstPhoto = (media: { storage_path: string; position: number }[] | null) =>
+  [...(media ?? [])].sort((a, b) => a.position - b.position)[0]?.storage_path ?? null;
 
 const CaptureRow = z.object({
   id: z.string(),
@@ -96,7 +159,10 @@ function toCapture(row: z.infer<typeof CaptureRow>): CaptureRecord {
 }
 
 function toItem(r: z.infer<typeof ItemRow>): ItemRecord {
-  const media = [...(r.item_media ?? [])].sort((a, b) => a.position - b.position);
+  const open = (r.item_questions ?? [])
+    .filter((q) => q.status === "open")
+    .map((q) => ({ ...q, createdAt: q.created_at }))
+    .sort(compareQuestions);
   return {
     id: r.id,
     ownerId: r.owner_id,
@@ -115,10 +181,16 @@ function toItem(r: z.infer<typeof ItemRow>): ItemRecord {
     identityConf: r.identity_conf,
     conditionConf: r.condition_conf,
     reservedByDealId: r.reserved_by_deal_id,
-    followUp: r.follow_up,
+    followUp: open[0]?.prompt ?? null,
     appraising: r.appraising,
+    readiness: r.readiness,
+    photoScore: r.photo_score,
+    photoIssues: r.photo_issues ?? [],
+    missingAngles: r.missing_angles ?? [],
+    description: r.description,
+    openQuestions: open.length,
     captureId: r.capture_id,
-    thumbnailPath: media[0]?.storage_path ?? null,
+    thumbnailPath: firstPhoto(r.item_media),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -127,7 +199,7 @@ function toItem(r: z.infer<typeof ItemRow>): ItemRecord {
 const USER_SELECT =
   "id, display_name, photo_url, created_at, deleted_at, profiles(autonomy_level, notification_prefs, home_area, default_handoff_place_id)";
 const ITEM_SELECT =
-  "id, owner_id, status, title, willingness, category, brand, model, variant, condition_grade, defects, value_low_cents, value_mid_cents, value_high_cents, identity_conf, condition_conf, reserved_by_deal_id, follow_up, appraising, capture_id, item_media(storage_path, position), created_at, updated_at";
+  "id, owner_id, status, title, willingness, category, brand, model, variant, condition_grade, defects, value_low_cents, value_mid_cents, value_high_cents, identity_conf, condition_conf, reserved_by_deal_id, appraising, capture_id, readiness, photo_score, photo_issues, missing_angles, description, item_media(storage_path, position), item_questions(kind, prompt, impact, status, created_at), created_at, updated_at";
 const CAPTURE_SELECT = "id, user_id, status, media_count, item_count, progress, error, created_at";
 
 export class RepositoryError extends Error {
@@ -252,9 +324,17 @@ export class SupabaseRepository implements Repository {
       if (error) throw new RepositoryError("updateItem", error);
     }
     if (update.confirm) {
+      // Pins identity; the readiness trigger recomputes readiness on this write.
+      const pin = await this.db
+        .from("items")
+        .update({ identity_confirmed: true })
+        .eq("id", itemId)
+        .eq("owner_id", userId)
+        .in("status", [...SHELF_STATUSES]);
+      if (pin.error) throw new RepositoryError("updateItem.confirm", pin.error);
       const { error } = await this.db
         .from("items")
-        .update({ status: "on_shelf", follow_up: null })
+        .update({ status: "on_shelf" })
         .eq("id", itemId)
         .eq("owner_id", userId)
         .in("status", ["draft", "needs_photos"]);
@@ -304,6 +384,60 @@ export class SupabaseRepository implements Repository {
       .is("reserved_by_deal_id", null);
     if (error) throw new RepositoryError("removeItem", error);
     return "removed";
+  }
+
+  async listOpenQuestions(userId: string, itemId?: string): Promise<QuestionRecord[]> {
+    let query = this.db
+      .from("item_questions")
+      .select(
+        "id, item_id, kind, prompt, options, impact, created_at, items!inner(title, owner_id, status, item_media(storage_path, position))",
+      )
+      .eq("status", "open")
+      .eq("items.owner_id", userId)
+      .in("items.status", [...SHELF_STATUSES])
+      .order("created_at", { ascending: true })
+      .limit(200);
+    if (itemId) query = query.eq("item_id", itemId);
+    const { data, error } = await query;
+    if (error) throw new RepositoryError("listOpenQuestions", error);
+    return z
+      .array(QuestionRow)
+      .parse(data ?? [])
+      .map((q) => {
+        const item = Array.isArray(q.items) ? (q.items[0] as (typeof q.items)[0]) : q.items;
+        return {
+          id: q.id,
+          itemId: q.item_id,
+          itemTitle: item.title,
+          thumbnailPath: firstPhoto(item.item_media),
+          kind: q.kind,
+          prompt: q.prompt,
+          options: q.options,
+          impact: q.impact,
+          createdAt: q.created_at,
+        };
+      });
+  }
+
+  async answerQuestion(
+    userId: string,
+    questionId: string,
+    input: AnswerInput,
+  ): Promise<AnswerResult> {
+    const skip = "skip" in input;
+    const { data, error } = await this.db.rpc("answer_item_question", {
+      p_user_id: userId,
+      p_question_id: questionId,
+      p_answer: skip ? null : input.answer,
+      p_skip: skip,
+    });
+    if (error) throw new RepositoryError("answerQuestion", error);
+    const row = AnswerRow.parse(data);
+    if (row.result === "ok") {
+      if (!row.item_id) throw new RepositoryError("answerQuestion", { message: "no item_id" });
+      return { result: "ok", itemId: row.item_id };
+    }
+    return { result: row.result };
   }
 
   async createCapture(

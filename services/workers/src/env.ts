@@ -38,6 +38,27 @@ const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((v) => v === "true"),
+  /** Open Refiner questions per Item at most. */
+  REFINER_MAX_OPEN_QUESTIONS: z.coerce.number().int().min(0).max(5).default(3),
+  /** SKU research with web search ("false" turns it off). */
+  REFINER_RESEARCH: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  /** Model for SKU research. */
+  REFINER_RESEARCH_MODEL: z.enum(["haiku", "sonnet"]).default("sonnet").transform(modelId),
+  /** web_search max_uses per research pass. */
+  REFINER_RESEARCH_MAX_SEARCHES: z.coerce.number().int().min(1).max(5).default(2),
+  /** Research only Items whose mid value is at least this, in cents. */
+  REFINER_RESEARCH_MIN_MID_CENTS: z.coerce.number().int().min(0).default(4000),
+  /** At most 1 research pass per Item in this window, unless the owner added information. */
+  REFINER_RESEARCH_COOLDOWN_HOURS: z.coerce.number().min(0).max(720).default(24),
+  /** A question skipped once may come back after this long. Skipped twice means never. */
+  REFINER_REASK_AFTER_HOURS: z.coerce.number().min(0).max(2160).default(72),
+  /** Laplacian variance at or below which a photo scores 0 for sharpness. */
+  REFINER_SHARPNESS_LOW: z.coerce.number().min(0).default(20),
+  /** Laplacian variance at or above which a photo scores full marks for sharpness. */
+  REFINER_SHARPNESS_HIGH: z.coerce.number().min(1).default(200),
   /** SDK retries per Anthropic call (429 and 5xx, with backoff). */
   ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(4),
 });

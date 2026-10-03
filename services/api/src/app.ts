@@ -9,6 +9,7 @@ import { captureRoutes, mediaRoutes } from "./routes/captures.js";
 import { healthRoutes } from "./routes/health.js";
 import { itemRoutes } from "./routes/items.js";
 import { meRoutes } from "./routes/me.js";
+import { questionRoutes } from "./routes/questions.js";
 import type { AppDeps, AppEnv } from "./types.js";
 
 /** Builds the API with injected dependencies so tests can swap in fakes. */
@@ -31,6 +32,7 @@ export function createApp(deps: AppDeps) {
   v1.route("/items", itemRoutes(deps.repo, deps.media));
   v1.route("/media", mediaRoutes(deps.repo, deps.media));
   v1.route("/captures", captureRoutes(deps.repo, deps.media));
+  v1.route("/questions", questionRoutes(deps.repo, deps.media));
   app.route("/v1", v1);
 
   return app;

@@ -10,14 +10,22 @@ const post = (body: unknown, headers: Record<string, string> = {}) => ({
 });
 
 function withSneaker(h: ReturnType<typeof makeHarness>) {
-  return h.repo.addItem({
+  const item = h.repo.addItem({
     id: ITEM,
     ownerId: ALICE,
-    status: "needs_photos",
+    status: "on_shelf",
     title: "Air Jordan 1 Mid",
-    followUp: "Photo of the size tag",
     thumbnailPath: `${ALICE}/c/crops/0.jpg`,
   });
+  h.repo.addQuestion({
+    id: "bbbbbbbb-0000-4000-8000-0000000000b1",
+    itemId: ITEM,
+    kind: "photo",
+    prompt: "Photo of the size tag",
+    options: [],
+    driver: "size",
+  });
+  return item;
 }
 
 describe("GET /v1/items/:id", () => {
@@ -101,6 +109,9 @@ describe("POST /v1/items/:id/media", () => {
     expect(res.status).toBe(202);
     const item = ShelfItem.parse(await res.json());
     expect(item.is_appraising).toBe(true);
+    // The photos answer the open photo question.
+    expect(item).toMatchObject({ open_questions: 0, follow_up: null });
+    expect(h.repo.questions[0]).toMatchObject({ status: "answered", answer: { media: true } });
     expect(h.repo.itemMedia.map((m) => m.path)).toEqual([photo("a").path, photo("b").path]);
     expect(h.repo.jobs).toEqual([
       { kind: "reappraise_item", payload: { item_id: ITEM, user_id: ALICE } },

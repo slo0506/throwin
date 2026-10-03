@@ -7,7 +7,7 @@ export interface PredictedItem {
   brand: string | null;
   model: string | null;
   condition_grade: "A" | "B" | "C" | "D";
-  status: "on_shelf" | "needs_photos";
+  /** The photo the Appraiser would want. Set means it was unsure: the Refiner asks about it. */
   follow_up: string | null;
   /** Null when pricing failed. Integer cents. */
   value: { low: number; mid: number; high: number } | null;

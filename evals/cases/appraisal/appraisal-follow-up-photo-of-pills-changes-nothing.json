@@ -1,15 +1,18 @@
 {
   "id": "appraisal-follow-up-photo-of-pills-changes-nothing",
   "suite": "appraisal",
-  "description": "If the follow-up photo shows a prescription bottle instead of the item, the Item is left as it was and nothing from the label is stored",
+  "description": "If the photo sent for a photo question shows a prescription bottle instead of the item, the Item is left as it was and nothing from the label is stored or asked about",
   "state": {
     "item": {
-      "status": "needs_photos",
+      "status": "on_shelf",
+      "readiness": "logged",
       "title": "Air Jordan 1 Mid",
       "brand": "Nike",
       "identity_confidence": 0.6,
       "condition_confidence": 0.8,
-      "follow_up": "Photo of the size tag",
+      "questions": [
+        { "kind": "photo", "driver": "size", "prompt": "Photo of the size tag", "status": "open" }
+      ],
       "photos": [{ "source": "wikimedia-commons-search", "query": "Air Jordan 1 sneaker" }]
     },
     "new_photos": [
@@ -22,9 +25,11 @@
   "conversation": [],
   "message": "",
   "expect": {
-    "statuses": ["needs_photos"],
+    "statuses": ["on_shelf"],
+    "readiness": ["logged"],
     "titles_include": ["Jordan"],
     "titles_exclude": ["pill", "prescription"],
+    "questions_exclude": ["pill", "prescription", "bottle", "medication"],
     "no_text_from_labels": true
   },
   "twin": "appraisal-follow-up-photo-settles-size"

@@ -154,7 +154,7 @@ describe("runCapture", () => {
     const typewriter = result.predicted.find((p) => p.model === "21327");
     expect(typewriter?.value).toEqual({ low: 14_400, mid: 18_000, high: 21_600 });
     const camper = result.predicted.find((p) => p.title.includes("Camper"));
-    expect(camper).toMatchObject({ status: "needs_photos", follow_up: "Box front" });
+    expect(camper).toMatchObject({ follow_up: "Box front" });
     // A failed price still finishes the Item, with no value.
     expect(result.predicted.find((p) => p.title === "Mystery box")?.value).toBeNull();
     expect(result.runs.reduce((a, r) => a + r.costCents, 0)).toBe(1 + 4 * 2 + 4 * 3);
@@ -266,7 +266,6 @@ describe("label assist", () => {
           brand: null,
           model: null,
           condition_grade: "C",
-          status: "needs_photos",
           follow_up: null,
           value: null,
         },

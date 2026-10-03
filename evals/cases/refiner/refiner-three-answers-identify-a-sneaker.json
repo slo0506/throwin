@@ -1,0 +1,46 @@
+{
+  "id": "refiner-three-answers-identify-a-sneaker",
+  "suite": "refinement",
+  "description": "The Milestone 1 bar: 3 Tune up answers (brand, model candidate, size) move a typical sneaker from logged to identified with a range no wider than 1.6 times",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "readiness": "logged",
+      "title": "White high-top sneakers",
+      "category": "sneakers",
+      "identity_confidence": 0.55,
+      "condition_confidence": 0.7,
+      "value_cents": { "low": 4000, "mid": 6500, "high": 9000 },
+      "photos": [{ "source": "wikimedia-commons-search", "query": "Nike Air Force 1 Mid white" }]
+    },
+    "answers": [
+      { "driver": "brand", "kind": "yes_no", "prompt": "Is this Nike?", "answer": "Yes" },
+      {
+        "driver": "model",
+        "kind": "choice",
+        "prompt": "Which of these is it?",
+        "options": ["Air Force 1 '07", "Air Force 1 Mid '07", "Not sure"],
+        "answer": "Air Force 1 Mid '07"
+      },
+      {
+        "driver": "size",
+        "kind": "picker",
+        "prompt": "What size?",
+        "options": ["9", "9.5", "10", "10.5"],
+        "answer": "10"
+      }
+    ],
+    "reason": "answer"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "readiness": "identified",
+    "brand": "Nike",
+    "titles_include": ["Air Force 1 Mid"],
+    "attributes_include": { "size": "10" },
+    "range_ratio": { "max": 1.6 },
+    "open_questions": { "min": 0, "max": 0 },
+    "agent_runs_include": ["refiner.answer"]
+  }
+}

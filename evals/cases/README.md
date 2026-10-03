@@ -21,6 +21,8 @@ A constructed database state and conversation, a new user message, and the expec
 
 The first 5 appraisal cases use this shape, with `state.photos` as Wikimedia Commons searches. The capture runner lists them as skipped.
 
+The Refiner cases in `refiner/` (suite `refinement`) use this shape too: `state.item` is the Item as the Refiner loads it (reading, `value_cents`, open and closed `questions`, photos), `state.reason` is `created`, `answer` or `photos`, and `expect` names the readiness, questions, photo score and `agent_runs` the pass should leave. Unit tests in `services/workers/test/refiner.test.ts` run the same scenarios with a fake model in CI.
+
 ## Capture cases (version 2, appraisal)
 
 A capture is what a user films: photos or a video of a shelf. The case lists that media and the Items a careful person would list from it. This is the shape that measures the Milestone 1 bar.

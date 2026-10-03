@@ -21,7 +21,6 @@ export const predicted = (overrides: Partial<PredictedItem> = {}): PredictedItem
   brand: "LEGO",
   model: "21327",
   condition_grade: "B",
-  status: "on_shelf",
   follow_up: null,
   value: { low: 18_000, mid: 20_000, high: 24_000 },
   ...overrides,

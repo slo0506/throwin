@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { QuestionKind, QuestionStatus } from "@throwin/shared";
 import type { ModelRun } from "./appraiser/claude.js";
 import type { PreparedImage } from "./appraiser/images.js";
 import type {
@@ -13,6 +14,8 @@ import type {
 import type { CachedPrice } from "./appraiser/price-cache.js";
 import { PROMPT_VERSION } from "./appraiser/prompts.js";
 import type { Identification, ValueEstimate } from "./appraiser/schemas.js";
+import { REFINER_PROMPT_VERSION } from "./refiner/prompts.js";
+import type { RefineItem, RefinementUpdate, RefineReason, RefinerStore } from "./refiner/refine.js";
 
 const BUCKET = "item-media";
 const toCents = (usd: number) => Math.round(usd * 100);
@@ -73,7 +76,7 @@ export class SupabaseQueue {
 }
 
 export class SupabaseAppraiserStore implements AppraiserStore {
-  constructor(private readonly db: SupabaseClient) {}
+  constructor(protected readonly db: SupabaseClient) {}
 
   async loadCapture(captureId: string) {
     const { data, error } = await this.db
@@ -153,7 +156,7 @@ export class SupabaseAppraiserStore implements AppraiserStore {
   }
 
   async finishItem(itemId: string, priced: PricedItem): Promise<void> {
-    await this.#appendAppraisal(itemId, priced.identification, priced, []);
+    await this.appendAppraisal(itemId, priced.identification, priced, []);
     const { error } = await this.db
       .from("items")
       .update({ ...valueColumns(priced.value), appraising: false })
@@ -324,7 +327,7 @@ export class SupabaseAppraiserStore implements AppraiserStore {
   }
 
   async saveReappraisal(itemId: string, update: ReappraisedItem): Promise<void> {
-    await this.#appendAppraisal(itemId, update.identification, update.priced, update.inputMediaIds);
+    await this.appendAppraisal(itemId, update.identification, update.priced, update.inputMediaIds);
     const fields = {
       ...identificationColumns(update.identification),
       ...(update.priced && valueColumns(update.priced.value)),
@@ -375,24 +378,184 @@ export class SupabaseAppraiserStore implements AppraiserStore {
     if (error) fail("setAppraising", error);
   }
 
-  async #appendAppraisal(
+  protected async appendAppraisal(
     itemId: string,
     identification: Identification,
     priced: PricedItem | undefined,
     inputMediaIds: string[],
+    source: { model: string; promptVersion: string; extra?: Record<string, unknown> } = {
+      model: "claude-sonnet-5-5",
+      promptVersion: PROMPT_VERSION,
+    },
   ) {
     const { error } = await this.db.from("appraisals").insert({
       item_id: itemId,
       // Identification model; the pricing model is recorded in output.price_model.
-      model: "claude-sonnet-5-5",
+      model: source.model,
       input_media_ids: inputMediaIds,
       output: {
-        prompt_version: PROMPT_VERSION,
+        prompt_version: source.promptVersion,
         identification,
         ...(priced && { value: priced.value, price_model: priced.model }),
+        ...source.extra,
       },
       comps: priced?.comps ?? [],
     });
     if (error) fail("appendAppraisal", error);
+  }
+
+  /** Queues a Refiner pass unless 1 is already waiting for this Item. */
+  async enqueueRefine(itemId: string, userId: string, reason: RefineReason): Promise<void> {
+    const { error } = await this.db.rpc("enqueue_refine_item", {
+      p_item_id: itemId,
+      p_user_id: userId,
+      p_reason: reason,
+    });
+    if (error) fail("enqueueRefine", error);
+  }
+}
+
+const QUESTION_SELECT =
+  "id, kind, prompt, options, driver, impact, status, skip_count, answer, folded_at, created_at, answered_at";
+
+interface QuestionRow {
+  id: string;
+  kind: QuestionKind;
+  prompt: string;
+  options: unknown;
+  driver: string;
+  impact: number;
+  status: QuestionStatus;
+  skip_count: number;
+  answer: { value?: unknown } | null;
+  folded_at: string | null;
+  created_at: string;
+  answered_at: string | null;
+}
+
+const date = (v: string | null) => (v ? new Date(v) : null);
+
+/** The Refiner's reads and writes. Shares downloads, runs and the price cache with the Appraiser. */
+export class SupabaseRefinerStore extends SupabaseAppraiserStore implements RefinerStore {
+  async loadForRefine(itemId: string, userId: string): Promise<RefineItem | null> {
+    const stored = await this.loadItem(itemId, userId);
+    if (!stored) return null;
+    const { data, error } = await this.db
+      .from("items")
+      .select(
+        `identity_confirmed, value_low_cents, value_mid_cents, value_high_cents, description, photo_score, missing_angles, researched_at, item_questions(${QUESTION_SELECT})`,
+      )
+      .eq("id", itemId)
+      .maybeSingle();
+    if (error) fail("loadForRefine", error);
+    if (!data) return null;
+    const row = data as {
+      identity_confirmed: boolean;
+      value_low_cents: number | null;
+      value_mid_cents: number | null;
+      value_high_cents: number | null;
+      description: string | null;
+      photo_score: number | null;
+      missing_angles: string[] | null;
+      researched_at: string | null;
+      item_questions: QuestionRow[] | null;
+    };
+    const hasValue =
+      row.value_low_cents !== null && row.value_mid_cents !== null && row.value_high_cents !== null;
+    return {
+      id: stored.id,
+      userId: stored.userId,
+      identification: stored.identification,
+      identityConfirmed: row.identity_confirmed,
+      value: hasValue
+        ? {
+            lowCents: row.value_low_cents as number,
+            midCents: row.value_mid_cents as number,
+            highCents: row.value_high_cents as number,
+          }
+        : null,
+      description: row.description,
+      photoScore: row.photo_score,
+      missingAngles: row.missing_angles ?? [],
+      researchedAt: date(row.researched_at),
+      media: stored.media.map((m) => ({ id: m.id, path: m.path, position: m.position })),
+      questions: (row.item_questions ?? []).map((q) => ({
+        id: q.id,
+        kind: q.kind,
+        prompt: q.prompt,
+        options: Array.isArray(q.options) ? q.options.map(String) : [],
+        driver: q.driver,
+        impact: q.impact,
+        status: q.status,
+        skipCount: q.skip_count,
+        answer: typeof q.answer?.value === "string" ? q.answer.value : null,
+        foldedAt: date(q.folded_at),
+        createdAt: new Date(q.created_at),
+        answeredAt: date(q.answered_at),
+      })),
+    };
+  }
+
+  async saveRefinement(itemId: string, update: RefinementUpdate): Promise<void> {
+    const now = new Date().toISOString();
+    if (update.foldedQuestionIds.length > 0) {
+      const { error } = await this.db
+        .from("item_questions")
+        .update({ folded_at: now })
+        .in("id", update.foldedQuestionIds);
+      if (error) fail("saveRefinement.fold", error);
+    }
+    if (update.closeOpenQuestions) {
+      const { error } = await this.db
+        .from("item_questions")
+        .delete()
+        .eq("item_id", itemId)
+        .eq("status", "open");
+      if (error) fail("saveRefinement.close", error);
+    }
+    for (const q of update.newQuestions) {
+      const { error } = await this.db.from("item_questions").insert({ item_id: itemId, ...q });
+      // 23505: a question for this driver opened meanwhile. Keep that one.
+      if (error && error.code !== "23505") fail("saveRefinement.question", error);
+    }
+    if (update.identification || update.priced) {
+      await this.appendAppraisal(
+        itemId,
+        update.identification ?? (update.priced as PricedItem).identification,
+        update.priced,
+        [],
+        {
+          model: "claude-haiku-4-5",
+          promptVersion: REFINER_PROMPT_VERSION,
+          extra: { source: "refiner" },
+        },
+      );
+    }
+
+    const fields: Record<string, unknown> = {
+      ...(update.identification && identificationColumns(update.identification)),
+      ...(update.priced && valueColumns(update.priced.value)),
+      ...(update.identityConfirmed !== undefined && {
+        identity_confirmed: update.identityConfirmed,
+      }),
+      ...(update.description !== undefined && { description: update.description }),
+      ...(update.photo && {
+        photo_score: update.photo.score,
+        photo_issues: update.photo.issues,
+        missing_angles: update.photo.missingAngles,
+      }),
+      ...(update.researchedAt && { researched_at: update.researchedAt.toISOString() }),
+    };
+    // Answers given while this pass ran wait for their own pass, so stay appraising.
+    const waiting = await this.db
+      .from("item_questions")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId)
+      .eq("status", "answered")
+      .is("folded_at", null);
+    if (waiting.error) fail("saveRefinement.waiting", waiting.error);
+    fields.appraising = (waiting.count ?? 0) > 0;
+    const { error } = await this.db.from("items").update(fields).eq("id", itemId);
+    if (error) fail("saveRefinement", error);
   }
 }

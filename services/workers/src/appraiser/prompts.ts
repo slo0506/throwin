@@ -1,7 +1,7 @@
 // Appraiser prompts. Versioned with the code; every change ships with eval cases in
 // evals/cases/appraisal (see agents/appraiser/README.md).
 
-export const PROMPT_VERSION = "appraiser-2026-10-03f";
+export const PROMPT_VERSION = "appraiser-2026-10-03g";
 
 /**
  * Things the Appraiser must never report, and never read out loud. Shared by detection and
@@ -49,7 +49,7 @@ Rules:
 - condition_grade: A new or like new (tags, sealed, no wear); B lightly used (wear only up close); C used (clear wear, works); D heavily used or flawed (damage, missing parts, stains). List each visible defect.
 - identity_confidence: 0.9 or more when you can name the exact product and see what proves it (a set number, a colorway, a model label). 0.7 to 0.9 when you know the product but a detail you can't see would change its value little. Below 0.7 when a detail you can't see would change its value a lot (which of several sets, which size, which edition).
 - condition_confidence: 0.8 or more when the photos show the sides that matter for this kind of item clearly. 0.7 to 0.8 when a less important side is hidden. Below 0.7 only when a side that drives value is hidden or blurry (sneaker soles, a screen, a card's surface).
-- Below 0.7 on either means the user will be asked for 1 more photo, so set follow_up to the single photo that would settle it, under 60 characters, phrased as a request: "Photo of the size tag", "Photo of the soles", "Photo inside the box".
+- Below 0.7 on either, set follow_up to the single photo that would settle it, under 60 characters, phrased as a request: "Photo of the size tag", "Photo of the soles", "Photo inside the box". It is a hint for later questions: the item still goes on the Shelf, and the owner is asked the cheapest useful question first, a photo last.
 - Set is_tradeable_item false for anything that is not a possession people trade.
 - box_in_crop: for each close-up where the item you named is visible, a tight box around all of it and nothing else: the whole pair for shoes, the whole set with its box for LEGO, the bottle with its cap, the lamp from shade to base. Coordinates are normalized 0 to 1 within that close-up. Leave out close-ups where you can't see it.
 

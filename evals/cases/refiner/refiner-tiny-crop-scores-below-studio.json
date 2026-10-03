@@ -1,0 +1,32 @@
+{
+  "id": "refiner-tiny-crop-scores-below-studio",
+  "suite": "refinement",
+  "description": "A 180 px wide sneaker crop from a room scan scores below 50 with too_small, so Studio is not offered and it can't be showcase",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "title": "Nike Air Force 1 '07",
+      "category": "sneakers",
+      "brand": "Nike",
+      "model": "Air Force 1 '07",
+      "identity_confidence": 0.9,
+      "condition_confidence": 0.75,
+      "value_cents": { "low": 5000, "mid": 6000, "high": 7500 },
+      "photos": [
+        {
+          "source": "staged-photo",
+          "describe": "A room-scan frame crop of 1 white sneaker on a shoe rack, 180 by 140 pixels."
+        }
+      ]
+    },
+    "reason": "created"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "photo_score": { "max": 49 },
+    "photo_issues_include": ["too_small"],
+    "studio_allowed": false,
+    "readiness_not": "showcase"
+  }
+}

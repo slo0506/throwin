@@ -35,7 +35,7 @@ export function draftCase(id: string, media: string[], predicted: PredictedItem[
       condition_grade: p.condition_grade,
       value_cents_low: p.value?.low ?? 0,
       value_cents_high: p.value?.high ?? 0,
-      should_ask_for_photo: p.status === "needs_photos",
+      should_ask_for_photo: p.follow_up !== null,
       reviewed: false,
       ...(p.value ? {} : { notes: "The Appraiser returned no price. Fill in an honest range." }),
     })),

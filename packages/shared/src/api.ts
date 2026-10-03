@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AutonomyLevel, ConditionGrade, ItemStatus, ItemWillingness, MediaKind } from "./enums.js";
+import { ItemReadiness, PhotoIssue, QuestionKind } from "./readiness.js";
 
 // Wire format for the public /v1 API. Keys are snake_case. Money is integer cents.
 
@@ -110,10 +111,23 @@ export const ShelfItem = z.object({
   is_reserved: z.boolean(),
   /** Signed URL, filled in Milestone 1. */
   thumbnail_url: z.string().nullable(),
-  /** A specific photo the Appraiser needs, e.g. "Photo of the size tag". Set when status is needs_photos. */
+  /** Kept for older clients: the prompt of the Item's best open question, or null. */
   follow_up: z.string().nullable(),
-  /** True while the Appraiser is still pricing or re-reading this Item. Value may be null. */
+  /** True while the Appraiser or Refiner is still pricing or re-reading this Item. Value may be null. */
   is_appraising: z.boolean(),
+  /** What the Item still needs, computed on the server: logged, identified or showcase. */
+  readiness: ItemReadiness,
+  /** 0 to 100 for the Item's best photo. Null until the Refiner has scored it. */
+  photo_score: z.number().int().min(0).max(100).nullable(),
+  photo_issues: z.array(PhotoIssue),
+  /** Short labels of showcase angles still missing, e.g. "Both soles", "Size tag". */
+  missing_angles: z.array(z.string()),
+  /** True when photo_score is at least 50. */
+  studio_allowed: z.boolean(),
+  /** 2 to 3 plain sentences. Null until the Refiner writes it. */
+  description: z.string().nullable(),
+  /** How many Refiner questions are open for this Item. */
+  open_questions: z.number().int().nonnegative(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });
@@ -181,7 +195,7 @@ export const ItemPatch = z
     title: z.string().trim().min(1).max(120),
     willingness: ItemWillingness,
     condition_grade: ConditionGrade,
-    /** The user confirmed the GM's read of this Item. Moves needs_photos and draft to on_shelf. */
+    /** The owner confirmed our read of this Item: pins its identity and moves draft to on_shelf. */
     confirm: z.literal(true),
   })
   .partial()
@@ -206,3 +220,47 @@ export const ItemMediaRequest = z.strictObject({
   media: z.array(CaptureMediaInput).min(1).max(5),
 });
 export type ItemMediaRequest = z.infer<typeof ItemMediaRequest>;
+
+// ---------------------------------------------------------------------------
+// Refiner questions (Tune up): the cheapest useful questions per Item, best first.
+// ---------------------------------------------------------------------------
+
+export const Question = z.object({
+  id: z.uuid(),
+  item_id: z.uuid(),
+  item_title: z.string(),
+  /** Signed URL of the Item's first photo, like /v1/items. */
+  thumbnail_url: z.string().nullable(),
+  kind: QuestionKind,
+  prompt: z.string(),
+  /**
+   * yes_no: exactly ["Yes", "No", "Not sure"]. choice: 2 to 4 options plus "Not sure".
+   * picker: the options to pick from. text and photo: empty (photo questions are answered
+   * with the item media endpoints).
+   */
+  options: z.array(z.string()),
+  created_at: z.iso.datetime({ offset: true }),
+});
+export type Question = z.infer<typeof Question>;
+
+export const QuestionsQuery = z.strictObject({
+  item_id: z.uuid().optional(),
+});
+export type QuestionsQuery = z.infer<typeof QuestionsQuery>;
+
+export const QuestionsResponse = z.object({
+  questions: z.array(Question).max(20),
+});
+export type QuestionsResponse = z.infer<typeof QuestionsResponse>;
+
+/** 1 of the options (at most 200 characters for text questions), or a skip. */
+export const AnswerRequest = z.union([
+  z.strictObject({ answer: z.string().trim().min(1).max(200) }),
+  z.strictObject({ skip: z.literal(true) }),
+]);
+export type AnswerRequest = z.infer<typeof AnswerRequest>;
+
+export const AnswerResponse = z.object({
+  item: ShelfItem,
+});
+export type AnswerResponse = z.infer<typeof AnswerResponse>;
