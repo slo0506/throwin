@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  ApprovalState,
   AskStatus,
   AskTarget,
   AutonomyLevel,
@@ -7,6 +8,7 @@ import {
   ConditionGrade,
   compareQuestions,
   DEFAULT_NOTIFICATION_PREFS,
+  DealStatus,
   ItemReadiness,
   ItemStatus,
   ItemWillingness,
@@ -30,6 +32,8 @@ import {
   type CaptureStatus,
   type CircleMemberRecord,
   type CircleRecord,
+  type DealDecisionResult,
+  type DealRecord,
   type InvitePreviewRecord,
   type InviteRecord,
   type ItemRecord,
@@ -331,6 +335,46 @@ const AcceptInviteRow = z.object({
   result: z.enum(["ok", "already_member", "not_found", "expired", "full"]),
   circle_id: z.string().optional(),
 });
+
+const DealRow = z.object({ id: z.string(), status: DealStatus, expires_at: ts, created_at: ts });
+const DealLegRow = z.object({
+  deal_id: z.string(),
+  giver_id: z.string(),
+  receiver_id: z.string(),
+  item_id: z.string().nullable(),
+  throw_in_cents: z.number().int(),
+});
+const DealItemRow = z.object({
+  id: z.string(),
+  title: z.string(),
+  category: z.string().nullable(),
+  brand: z.string().nullable(),
+  model: z.string().nullable(),
+  condition_grade: ConditionGrade.nullable(),
+  value_low_cents: z.number().int().nullable(),
+  value_mid_cents: z.number().int().nullable(),
+  value_high_cents: z.number().int().nullable(),
+  item_media: z.array(z.object({ storage_path: z.string(), position: z.number() })).nullable(),
+});
+const DealParticipantRow = z.object({
+  deal_id: z.string(),
+  user_id: z.string(),
+  approval: ApprovalState,
+  users: z.object({ display_name: z.string().nullable(), photo_url: z.string().nullable() }),
+});
+const DecisionRow = z.object({ result: z.enum(["ok", "not_found", "closed", "decided"]) });
+
+/** Deal Sheets show Deals from awaiting approval onward; staged ones stay hidden. */
+const SHOWN_DEAL_STATUSES = [
+  "pending_approvals",
+  "approved",
+  "scheduling",
+  "in_handoff",
+  "completed",
+  "failed",
+  "cancelled",
+];
+const OPEN_DEAL_STATUSES = ["pending_approvals", "approved", "scheduling", "in_handoff"];
 
 const toInvite = (r: z.infer<typeof InviteRow>): InviteRecord => ({
   code: r.code,
@@ -853,6 +897,136 @@ export class SupabaseRepository implements Repository {
       return { joined: row.result === "ok", circleId: row.circle_id };
     }
     return row.result;
+  }
+
+  async listDeals(userId: string): Promise<DealRecord[]> {
+    return this.#deals(userId, null, OPEN_DEAL_STATUSES);
+  }
+
+  async getDeal(userId: string, dealId: string): Promise<DealRecord | null> {
+    return (await this.#deals(userId, dealId, SHOWN_DEAL_STATUSES))[0] ?? null;
+  }
+
+  async approveDeal(userId: string, dealId: string, snapshot: unknown) {
+    return this.#decide("approve_deal", userId, dealId, { p_snapshot: snapshot });
+  }
+
+  async declineDeal(userId: string, dealId: string, reason: string | null) {
+    return this.#decide("decline_deal", userId, dealId, { p_reason: reason });
+  }
+
+  async #decide(
+    fn: "approve_deal" | "decline_deal",
+    userId: string,
+    dealId: string,
+    extra: Record<string, unknown>,
+  ): Promise<DealDecisionResult> {
+    const { data, error } = await this.db.rpc(fn, {
+      p_user_id: userId,
+      p_deal_id: dealId,
+      ...extra,
+    });
+    if (error) throw new RepositoryError(fn, error);
+    const { result } = DecisionRow.parse(data);
+    if (result !== "ok") return result;
+    return (await this.getDeal(userId, dealId)) ?? "not_found";
+  }
+
+  /** The user's Deals in these statuses (1 when dealId is set), assembled in 4 reads. */
+  async #deals(userId: string, dealId: string | null, statuses: string[]): Promise<DealRecord[]> {
+    let mine = this.db.from("deal_participants").select("deal_id").eq("user_id", userId);
+    if (dealId) mine = mine.eq("deal_id", dealId);
+    const own = await mine;
+    if (own.error) throw new RepositoryError("deals.mine", own.error);
+    const ids = ((own.data ?? []) as { deal_id: string }[]).map((r) => r.deal_id);
+    if (ids.length === 0) return [];
+
+    const deals = await this.db
+      .from("deals")
+      .select("id, status, expires_at, created_at")
+      .in("id", ids)
+      .in("status", statuses)
+      .order("created_at", { ascending: false });
+    if (deals.error) throw new RepositoryError("deals", deals.error);
+    const dealRows = z.array(DealRow).parse(deals.data ?? []);
+    if (dealRows.length === 0) return [];
+    const shownIds = dealRows.map((d) => d.id);
+
+    const [legs, people] = await Promise.all([
+      this.db
+        .from("deal_legs")
+        .select("deal_id, giver_id, receiver_id, item_id, throw_in_cents")
+        .in("deal_id", shownIds),
+      this.db
+        .from("deal_participants")
+        .select("deal_id, user_id, approval, users(display_name, photo_url)")
+        .in("deal_id", shownIds),
+    ]);
+    if (legs.error) throw new RepositoryError("deals.legs", legs.error);
+    if (people.error) throw new RepositoryError("deals.participants", people.error);
+    const legRows = z.array(DealLegRow).parse(legs.data ?? []);
+    const peopleRows = z.array(DealParticipantRow).parse(people.data ?? []);
+
+    const itemIds = [...new Set(legRows.flatMap((l) => (l.item_id ? [l.item_id] : [])))];
+    const items = await this.db
+      .from("items")
+      .select(
+        "id, title, category, brand, model, condition_grade, value_low_cents, value_mid_cents, value_high_cents, item_media(storage_path, position)",
+      )
+      .in("id", itemIds);
+    if (items.error) throw new RepositoryError("deals.items", items.error);
+    const itemById = new Map(
+      z
+        .array(DealItemRow)
+        .parse(items.data ?? [])
+        .map((i) => [i.id, i]),
+    );
+
+    return dealRows.map((d) => ({
+      id: d.id,
+      status: d.status,
+      expiresAt: d.expires_at,
+      legs: legRows
+        .filter((l) => l.deal_id === d.id && l.item_id)
+        .flatMap((l) => {
+          const item = itemById.get(l.item_id as string);
+          if (!item) return [];
+          const photo = [...(item.item_media ?? [])].sort((a, b) => a.position - b.position)[0];
+          return [
+            {
+              giverId: l.giver_id,
+              receiverId: l.receiver_id,
+              item: {
+                id: item.id,
+                title: item.title,
+                category: item.category,
+                brand: item.brand,
+                model: item.model,
+                conditionGrade: item.condition_grade,
+                valueLowCents: item.value_low_cents,
+                valueMidCents: item.value_mid_cents,
+                valueHighCents: item.value_high_cents,
+                photoPath: photo?.storage_path ?? null,
+              },
+            },
+          ];
+        }),
+      throwIns: legRows
+        .filter((l) => l.deal_id === d.id && !l.item_id && l.throw_in_cents > 0)
+        .map((l) => ({
+          payerId: l.giver_id,
+          payeeId: l.receiver_id,
+          amountCents: l.throw_in_cents,
+        })),
+      participants: peopleRows
+        .filter((p) => p.deal_id === d.id)
+        .map((p) => ({
+          userId: p.user_id,
+          displayName: p.users.display_name,
+          photoUrl: p.users.photo_url,
+          approval: p.approval,
+        })),
+    }));
   }
 
   async #memberCounts(circleIds: string[]): Promise<Map<string, number>> {

@@ -9,6 +9,7 @@ import { askRoutes } from "./routes/asks.js";
 import { authRoutes } from "./routes/auth.js";
 import { captureRoutes, mediaRoutes } from "./routes/captures.js";
 import { circleRoutes, inviteRoutes } from "./routes/circles.js";
+import { dealRoutes } from "./routes/deals.js";
 import { gmRoutes } from "./routes/gm.js";
 import { healthRoutes } from "./routes/health.js";
 import { itemRoutes } from "./routes/items.js";
@@ -38,6 +39,7 @@ export function createApp(deps: AppDeps) {
   v1.route("/asks", askRoutes(deps.repo));
   v1.route("/circles", circleRoutes(deps.repo, now));
   v1.route("/invites", inviteRoutes(deps.repo, now));
+  v1.route("/deals", dealRoutes(deps.repo, deps.media));
   v1.route("/items", itemRoutes(deps.repo, deps.media));
   v1.route("/media", mediaRoutes(deps.repo, deps.media));
   v1.route("/captures", captureRoutes(deps.repo, deps.media));

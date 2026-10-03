@@ -1,9 +1,11 @@
 import type {
+  ApprovalState,
   AskStatus,
   AskTarget,
   AutonomyLevel,
   CircleRole,
   ConditionGrade,
+  DealStatus,
   ItemReadiness,
   ItemStatus,
   ItemWillingness,
@@ -221,6 +223,39 @@ export type AcceptInviteResult =
   | "expired"
   | "full";
 
+export interface DealPersonRecord {
+  userId: string;
+  displayName: string | null;
+  photoUrl: string | null;
+}
+
+export interface DealItemRecord {
+  id: string;
+  title: string;
+  category: string | null;
+  brand: string | null;
+  model: string | null;
+  conditionGrade: ConditionGrade | null;
+  valueLowCents: number | null;
+  valueMidCents: number | null;
+  valueHighCents: number | null;
+  /** The Item's first photo, to sign for the response. */
+  photoPath: string | null;
+}
+
+/** A Deal as every participant sees it; the route turns it into 1 person's Deal Sheet. */
+export interface DealRecord {
+  id: string;
+  status: DealStatus;
+  expiresAt: Date;
+  legs: { giverId: string; receiverId: string; item: DealItemRecord }[];
+  throwIns: { payerId: string; payeeId: string; amountCents: number }[];
+  participants: (DealPersonRecord & { approval: ApprovalState })[];
+}
+
+/** public.approve_deal and public.decline_deal results; on success, the Deal afterwards. */
+export type DealDecisionResult = DealRecord | "not_found" | "closed" | "decided";
+
 /** Statuses shown on the Shelf. Removed and traded Items are history, not inventory. */
 export const SHELF_STATUSES: readonly ItemStatus[] = [
   "draft",
@@ -317,4 +352,13 @@ export interface Repository {
   previewInvite(userId: string, code: string, now: Date): Promise<InvitePreviewRecord | null>;
   /** Atomic (public.accept_invite): a use is counted only when the user actually joins. */
   acceptInvite(userId: string, code: string, now: Date): Promise<AcceptInviteResult>;
+
+  /** Deals awaiting approval or approved that the user is in, newest first. */
+  listDeals(userId: string): Promise<DealRecord[]>;
+  /** Null unless the user is in it. Staged Deals are never shown, so they are null too. */
+  getDeal(userId: string, dealId: string): Promise<DealRecord | null>;
+  /** public.approve_deal, with the Deal Sheet the user saw as the snapshot. */
+  approveDeal(userId: string, dealId: string, snapshot: unknown): Promise<DealDecisionResult>;
+  /** public.decline_deal. */
+  declineDeal(userId: string, dealId: string, reason: string | null): Promise<DealDecisionResult>;
 }
