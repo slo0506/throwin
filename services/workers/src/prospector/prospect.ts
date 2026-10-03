@@ -10,8 +10,11 @@
  *    and keep the ones that clear the bar as explicit edges.
  * 4. Replace those Asks' stored edges and call the matcher anchored on the asker.
  *
+ * 5. Stage each Deal the matcher returns (public.stage_deal re-checks everything and holds
+ *    the Items), best first.
+ *
  * No model call here. Reviewing Deals against taste facts and writing the "why" is a later
- * step, and so is staging Deals.
+ * step that will sit between matching and staging.
  */
 
 import { createHash } from "node:crypto";
@@ -63,7 +66,15 @@ export interface ProspectorStore {
   candidates(circleId: string, model: string, perAsk: number): Promise<WantCandidate[]>;
   /** Deletes the edges of these Asks and writes the new ones, in that order. */
   replaceEdges(askIds: string[], edges: StoredEdge[]): Promise<void>;
+  /** public.stage_deal: re-checks the Deal against the database and holds its Items. */
+  stageDeal(deal: MatchDeal): Promise<StageResult>;
 }
+
+export type StageResult =
+  | { result: "ok"; dealId: string }
+  | {
+      result: "invalid" | "ask_unavailable" | "offer_changed" | "over_ceiling" | "items_taken";
+    };
 
 export interface ProspectorConfig {
   /** Candidates below this embedding similarity are dropped unless the model number matches. */
@@ -89,6 +100,8 @@ export type ProspectOutcome =
 export interface CircleDeal {
   circleId: string;
   deal: MatchDeal;
+  /** What staging said. Anything but ok means the database had moved on since matching. */
+  staged: StageResult;
 }
 
 /** The text an Ask is embedded from: the resolved target when there is one. */
@@ -196,7 +209,7 @@ export async function prospectAsk(
     asks.map((a) => a.id),
     [...stored.values()],
   );
-  const deals: CircleDeal[] = [];
+  const matched: Omit<CircleDeal, "staged">[] = [];
   for (const [circleId, edges] of edgesByCircle) {
     if (!edges.some((e) => e.from_user === userId)) continue;
     const result = await matcher.match({
@@ -204,9 +217,14 @@ export async function prospectAsk(
       anchor_user: userId,
       time_limit_seconds: config.matcherTimeLimitSeconds,
     });
-    deals.push(...result.deals.map((deal) => ({ circleId, deal })));
+    matched.push(...result.deals.map((deal) => ({ circleId, deal })));
   }
-  deals.sort((a, b) => b.deal.score - a.deal.score);
+  matched.sort((a, b) => b.deal.score - a.deal.score);
+
+  // 5. Stage, best first. A later Deal that shares an Ask or Item with an earlier one is
+  //    refused by the database, which is what we want.
+  const deals: CircleDeal[] = [];
+  for (const m of matched) deals.push({ ...m, staged: await store.stageDeal(m.deal) });
   deps.logger.info("prospect_matched", {
     ask_id: askId,
     circles: circleIds.length,
@@ -214,6 +232,7 @@ export async function prospectAsk(
     embedded: stale.length,
     edges: stored.size,
     deals: deals.length,
+    staged: deals.filter((d) => d.staged.result === "ok").length,
   });
   return { status: "matched", edges: stored.size, embedded: stale.length, deals };
 }

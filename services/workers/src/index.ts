@@ -52,9 +52,10 @@ const refiner: RefinerConfig = {
   photo: { sharpnessLow: env.REFINER_SHARPNESS_LOW, sharpnessHigh: env.REFINER_SHARPNESS_HIGH },
 };
 
+const prospectorStore = new SupabaseProspectorStore(db);
 const prospector: ProspectorDeps | null = env.MATCHER_URL
   ? {
-      store: new SupabaseProspectorStore(db),
+      store: prospectorStore,
       embedder,
       matcher: new HttpMatcher(env.MATCHER_URL),
       config: {
@@ -135,7 +136,16 @@ async function runJob(job: Job) {
         ask_id: job.payload.ask_id,
         outcome: outcome.status,
         ...(outcome.status === "matched"
-          ? { edges: outcome.edges, deals: outcome.deals.length }
+          ? {
+              edges: outcome.edges,
+              deals: outcome.deals.length,
+              staged: outcome.deals.flatMap((d) =>
+                d.staged.result === "ok" ? [d.staged.dealId] : [],
+              ),
+              refused: outcome.deals.flatMap((d) =>
+                d.staged.result === "ok" ? [] : [d.staged.result],
+              ),
+            }
           : { reason: outcome.reason }),
         ms: Date.now() - started,
       });
@@ -241,6 +251,21 @@ async function lane() {
   }
 }
 
+/** Deals expire after 24 hours staged or 48 hours awaiting approval; checked every minute. */
+const EXPIRE_EVERY_MS = 60_000;
+
+async function expireLoop() {
+  while (!stopping) {
+    try {
+      const expired = await prospectorStore.expireDeals();
+      if (expired > 0) logger.info("deals_expired", { count: expired });
+    } catch (err) {
+      logger.error("expire_deals_failed", { error: String(err) });
+    }
+    await new Promise((resolve) => setTimeout(resolve, EXPIRE_EVERY_MS));
+  }
+}
+
 async function main() {
   if (!prospector) logger.warn("prospector_off", { reason: "MATCHER_URL is not set" });
   logger.info("worker_started", {
@@ -250,7 +275,7 @@ async function main() {
     refiner,
     concurrency: CONCURRENCY,
   });
-  await Promise.all(Array.from({ length: CONCURRENCY }, () => lane()));
+  await Promise.all([...Array.from({ length: CONCURRENCY }, () => lane()), expireLoop()]);
   logger.info("worker_stopped");
 }
 

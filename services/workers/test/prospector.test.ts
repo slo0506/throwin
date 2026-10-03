@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { VoyageEmbedder } from "../src/appraiser/embeddings.js";
-import { HttpMatcher, type MatchRequest, type MatchResponse } from "../src/prospector/matcher.js";
+import {
+  HttpMatcher,
+  type MatchDeal,
+  type MatchRequest,
+  type MatchResponse,
+} from "../src/prospector/matcher.js";
 import {
   askEmbeddingText,
   embeddingHash,
@@ -8,6 +13,7 @@ import {
   type ProspectorConfig,
   type ProspectorStore,
   prospectAsk,
+  type StageResult,
   type StoredEdge,
   scoreCandidate,
   type WantCandidate,
@@ -89,6 +95,9 @@ class FakeStore implements ProspectorStore {
   candidatesByCircle = new Map<string, WantCandidate[]>();
   saved: { askId: string; hash: string }[] = [];
   replaced: { askIds: string[]; edges: StoredEdge[] } | null = null;
+  staged: number[] = [];
+  /** Results to return from stageDeal, in order; ok with a fresh ID once they run out. */
+  stageResults: StageResult[] = [];
 
   async getAsk(userId: string, askId: string) {
     const ask = this.asks.find((a) => a.id === askId && a.userId === userId);
@@ -108,6 +117,10 @@ class FakeStore implements ProspectorStore {
   }
   async replaceEdges(askIds: string[], edges: StoredEdge[]) {
     this.replaced = { askIds, edges };
+  }
+  async stageDeal(deal: MatchDeal): Promise<StageResult> {
+    this.staged.push(deal.score);
+    return this.stageResults.shift() ?? { result: "ok", dealId: `deal-${this.staged.length}` };
   }
 }
 
@@ -277,7 +290,7 @@ describe("prospectAsk", () => {
     ]);
   });
 
-  it("returns the matcher's Deals, best first, with their Circle", async () => {
+  it("stages the matcher's Deals best first and reports refusals", async () => {
     const w = world();
     w.store.asks = [ask("ask-jordan", JORDAN)];
     w.store.circles.set(JORDAN, ["circle-1"]);
@@ -291,13 +304,25 @@ describe("prospectAsk", () => {
       score,
     });
     w.respond({ ...EMPTY_MATCH, deals: [deal(0.4), deal(1.2)] });
+    w.store.stageResults = [{ result: "ok", dealId: "deal-best" }, { result: "items_taken" }];
     const outcome = await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(w.store.staged).toEqual([1.2, 0.4]);
     expect(
-      outcome.status === "matched" && outcome.deals.map((d) => [d.circleId, d.deal.score]),
+      outcome.status === "matched" &&
+        outcome.deals.map((d) => [d.circleId, d.deal.score, d.staged]),
     ).toEqual([
-      ["circle-1", 1.2],
-      ["circle-1", 0.4],
+      ["circle-1", 1.2, { result: "ok", dealId: "deal-best" }],
+      ["circle-1", 0.4, { result: "items_taken" }],
     ]);
+  });
+
+  it("stages nothing when the matcher finds nothing", async () => {
+    const w = world();
+    w.store.asks = [ask("ask-jordan", JORDAN)];
+    w.store.circles.set(JORDAN, ["circle-1"]);
+    w.store.candidatesByCircle.set("circle-1", [candidate({ model: null, brand: null })]);
+    await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(w.store.staged).toEqual([]);
   });
 });
 
