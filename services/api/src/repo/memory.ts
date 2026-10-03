@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import {
+  type ApprovalState,
   type CircleRole,
   CLOSED_ASK_STATUSES,
   compareQuestions,
   computeReadiness,
   DEFAULT_NOTIFICATION_PREFS,
+  type DealStatus,
   type QuestionKind,
   type QuestionStatus,
 } from "@throwin/shared";
@@ -21,6 +23,8 @@ import {
   type CaptureRecord,
   type CircleMemberRecord,
   type CircleRecord,
+  type DealDecisionResult,
+  type DealRecord,
   type InvitePreviewRecord,
   type InviteRecord,
   type ItemRecord,
@@ -76,6 +80,23 @@ export class MemoryRepository implements Repository {
     joinedAt?: Date;
   }[] = [];
   readonly invites: (InviteRecord & { createdBy: string })[] = [];
+  readonly deals: { id: string; status: DealStatus; expiresAt: Date; createdAt: Date }[] = [];
+  readonly dealLegs: {
+    dealId: string;
+    giverId: string;
+    receiverId: string;
+    itemId: string | null;
+    throwInCents: number;
+    askId: string | null;
+  }[] = [];
+  readonly dealParticipants: {
+    dealId: string;
+    userId: string;
+    approval: ApprovalState;
+    snapshot: unknown;
+    declineReason: string | null;
+  }[] = [];
+  readonly askExclusions: { askId: string; itemId: string }[] = [];
   readonly captures: CaptureRecord[] = [];
   readonly captureMedia: (CaptureMediaInput & { captureId: string })[] = [];
   readonly itemMedia: (CaptureMediaInput & { itemId: string })[] = [];
@@ -543,6 +564,182 @@ export class MemoryRepository implements Repository {
     this.memberships.push({ userId, circleId: invite.circleId, role: "member", joinedAt: now });
     invite.uses += 1;
     return { joined: true, circleId: invite.circleId };
+  }
+
+  /** A Deal as stage_deal would write it: Items reserved, Asks proposed, all pending. */
+  addDeal(deal: {
+    id: string;
+    status?: DealStatus;
+    expiresAt?: Date;
+    createdAt?: Date;
+    legs: { giverId: string; receiverId: string; itemId: string; askId?: string }[];
+    throwIns?: { payerId: string; payeeId: string; amountCents: number }[];
+  }) {
+    this.deals.push({
+      id: deal.id,
+      status: deal.status ?? "pending_approvals",
+      expiresAt: deal.expiresAt ?? new Date("2099-01-01T00:00:00Z"),
+      createdAt: deal.createdAt ?? new Date("2026-10-03T00:00:00Z"),
+    });
+    for (const leg of deal.legs) {
+      this.dealLegs.push({
+        dealId: deal.id,
+        giverId: leg.giverId,
+        receiverId: leg.receiverId,
+        itemId: leg.itemId,
+        throwInCents: 0,
+        askId: leg.askId ?? null,
+      });
+      const item = this.items.find((i) => i.id === leg.itemId);
+      if (item) Object.assign(item, { status: "reserved", reservedByDealId: deal.id });
+      const ask = this.asks.find((a) => a.id === leg.askId);
+      if (ask) ask.status = "proposed";
+    }
+    for (const t of deal.throwIns ?? []) {
+      this.dealLegs.push({
+        dealId: deal.id,
+        giverId: t.payerId,
+        receiverId: t.payeeId,
+        itemId: null,
+        throwInCents: t.amountCents,
+        askId: null,
+      });
+    }
+    for (const userId of new Set(deal.legs.map((l) => l.receiverId))) {
+      this.dealParticipants.push({
+        dealId: deal.id,
+        userId,
+        approval: "pending",
+        snapshot: null,
+        declineReason: null,
+      });
+    }
+  }
+
+  async listDeals(userId: string): Promise<DealRecord[]> {
+    const open: DealStatus[] = ["pending_approvals", "approved", "scheduling", "in_handoff"];
+    return this.deals
+      .filter((d) => open.includes(d.status) && this.#inDeal(userId, d.id))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((d) => this.#dealRecord(d.id));
+  }
+
+  async getDeal(userId: string, dealId: string): Promise<DealRecord | null> {
+    const deal = this.deals.find((d) => d.id === dealId);
+    if (!deal || deal.status === "staged" || !this.#inDeal(userId, dealId)) return null;
+    return this.#dealRecord(dealId);
+  }
+
+  /** Mirrors public.approve_deal. */
+  async approveDeal(
+    userId: string,
+    dealId: string,
+    snapshot: unknown,
+  ): Promise<DealDecisionResult> {
+    const check = this.#decidable(userId, dealId);
+    if (typeof check === "string") return check;
+    const { deal, me } = check;
+    Object.assign(me, { approval: "approved", snapshot });
+    const everyone = this.dealParticipants.filter((p) => p.dealId === dealId);
+    if (everyone.every((p) => p.approval === "approved")) {
+      deal.status = "approved";
+      for (const ask of this.#dealAsks(dealId))
+        if (ask.status === "proposed") ask.status = "accepted";
+    }
+    return this.#dealRecord(dealId);
+  }
+
+  /** Mirrors public.decline_deal. */
+  async declineDeal(
+    userId: string,
+    dealId: string,
+    reason: string | null,
+  ): Promise<DealDecisionResult> {
+    const check = this.#decidable(userId, dealId);
+    if (typeof check === "string") return check;
+    const { deal, me } = check;
+    Object.assign(me, { approval: "declined", declineReason: reason?.trim() || null });
+    for (const leg of this.dealLegs) {
+      if (leg.dealId === dealId && leg.receiverId === userId && leg.askId && leg.itemId) {
+        this.askExclusions.push({ askId: leg.askId, itemId: leg.itemId });
+      }
+    }
+    deal.status = "cancelled";
+    for (const item of this.items) {
+      if (item.reservedByDealId === dealId) {
+        Object.assign(item, { status: "on_shelf", reservedByDealId: null });
+      }
+    }
+    for (const ask of this.#dealAsks(dealId))
+      if (ask.status === "proposed") ask.status = "prospecting";
+    return this.#dealRecord(dealId);
+  }
+
+  #inDeal(userId: string, dealId: string) {
+    return this.dealParticipants.some((p) => p.dealId === dealId && p.userId === userId);
+  }
+
+  #decidable(userId: string, dealId: string) {
+    const deal = this.deals.find((d) => d.id === dealId);
+    const me = this.dealParticipants.find((p) => p.dealId === dealId && p.userId === userId);
+    if (!deal || !me || deal.status === "staged") return "not_found" as const;
+    if (deal.status !== "pending_approvals" || deal.expiresAt.getTime() <= Date.now()) {
+      return "closed" as const;
+    }
+    if (me.approval !== "pending") return "decided" as const;
+    return { deal, me };
+  }
+
+  #dealAsks(dealId: string) {
+    const ids = new Set(this.dealLegs.filter((l) => l.dealId === dealId).map((l) => l.askId));
+    return this.asks.filter((a) => ids.has(a.id));
+  }
+
+  #dealRecord(dealId: string): DealRecord {
+    const deal = this.deals.find((d) => d.id === dealId);
+    if (!deal) throw new Error(`no Deal ${dealId}`);
+    const legs = this.dealLegs.filter((l) => l.dealId === dealId);
+    return {
+      id: deal.id,
+      status: deal.status,
+      expiresAt: deal.expiresAt,
+      legs: legs.flatMap((l) => {
+        const item = l.itemId ? this.items.find((i) => i.id === l.itemId) : undefined;
+        if (!item) return [];
+        return [
+          {
+            giverId: l.giverId,
+            receiverId: l.receiverId,
+            item: {
+              id: item.id,
+              title: item.title,
+              category: item.category,
+              brand: item.brand,
+              model: item.model,
+              conditionGrade: item.conditionGrade,
+              valueLowCents: item.valueLowCents,
+              valueMidCents: item.valueMidCents,
+              valueHighCents: item.valueHighCents,
+              photoPath: item.thumbnailPath,
+            },
+          },
+        ];
+      }),
+      throwIns: legs
+        .filter((l) => !l.itemId && l.throwInCents > 0)
+        .map((l) => ({ payerId: l.giverId, payeeId: l.receiverId, amountCents: l.throwInCents })),
+      participants: this.dealParticipants
+        .filter((p) => p.dealId === dealId)
+        .map((p) => {
+          const user = this.users.get(p.userId);
+          return {
+            userId: p.userId,
+            displayName: user?.displayName ?? null,
+            photoUrl: user?.photoUrl ?? null,
+            approval: p.approval,
+          };
+        }),
+    };
   }
 
   #isMember(userId: string, circleId: string) {

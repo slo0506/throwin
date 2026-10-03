@@ -1,6 +1,6 @@
 # Milestone 3 contract: Deal staging and lifecycle
 
-How a matcher Deal becomes rows in `deals`, `deal_legs` and `deal_participants`, and how it moves until approval. Product intent lives in `docs/prd.md` ("From candidate to Deal Sheet", "Item readiness" rules, "Domain objects and the Ask lifecycle"). The Deal Sheet API and approvals come in a later contract.
+How a matcher Deal becomes rows in `deals`, `deal_legs` and `deal_participants`, how it moves until approval, and the Deal Sheet API. Product intent lives in `docs/prd.md` ("The Deal Sheet", "From candidate to Deal Sheet", "Item readiness" rules, "Domain objects and the Ask lifecycle").
 
 ## Lifecycle
 
@@ -8,6 +8,7 @@ How a matcher Deal becomes rows in `deals`, `deal_legs` and `deal_participants`,
 | --- | --- | --- | --- | --- |
 | `staged` | Matched and held, waiting for every Item to reach `showcase` | reserved | `proposed` | 24 hours after staging |
 | `pending_approvals` | Every Item is `showcase`; participants decide | reserved | `proposed` | 48 hours after it got here |
+| `approved` | Everyone approved | still reserved, for the handoff | `accepted` | Handoffs (Milestone 4) |
 | `cancelled` | Expired or declined | released to `on_shelf` | back to `prospecting` | |
 
 - A Deal whose Items are all `showcase` when it's staged skips `staged`.
@@ -36,8 +37,56 @@ How a matcher Deal becomes rows in `deals`, `deal_legs` and `deal_participants`,
 
 `deals.fairness` stores `{ "participants": [matcher fairness], "cash_moved_cents", "score" }`.
 
+## Deal Sheet API
+
+All JSON is snake_case and money is integer cents. Someone else's Deal, or a `staged` one, is a 404.
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| GET | `/v1/deals` | | `{ "deals": [DealSheet] }`: the caller's Deals awaiting approval or later but not finished, newest first |
+| GET | `/v1/deals/{id}` | | DealSheet, including cancelled ones |
+| POST | `/v1/deals/{id}/approve` | | DealSheet after the approval |
+| POST | `/v1/deals/{id}/decline` | `{ "reason"?: up to 200 chars }` | DealSheet, now `cancelled` |
+
+```json
+{
+  "id": "uuid",
+  "status": "pending_approvals",
+  "expires_at": "...",
+  "you_give": DealItem, "give_to": DealPerson,
+  "you_get": DealItem, "get_from": DealPerson,
+  "cash": { "pay_cents": 2000, "receive_cents": 0 },
+  "fairness": { "give_cents": 4200, "get_cents": 8500 },
+  "loop": [{ "giver": DealPerson, "receiver": DealPerson, "item": DealItem }],
+  "throw_ins": [{ "payer": DealPerson, "payee": DealPerson, "amount_cents": 2000 }],
+  "participants": [{ "...DealPerson", "approval": "pending | approved | declined" }],
+  "your_approval": "pending",
+  "why": null
+}
+```
+
+- `DealItem` is `{ id, title, category, brand, model, condition_grade, value: ValueRange, photo_url }`. Every Item is showcase by the time a Deal is shown, so photos are always included.
+- `DealPerson` is `{ user_id, first_name, photo_url }`.
+- `fairness` holds the mid values of what the caller gives and gets, for "You give about $42 in value and get about $85". Everyone sees the same Items and ranges in `loop`, and nobody's cash ceiling ever appears.
+- `why` stays null until Claude's review writes it.
+
+### Decisions
+
+`approve_deal(user, deal, snapshot)` and `decline_deal(user, deal, reason)` run in 1 transaction each and return:
+
+| Result | HTTP | When |
+| --- | --- | --- |
+| `ok` | 200 | Recorded |
+| `not_found` | 404 | Not the caller's Deal, or still staged |
+| `closed` | 409 `deal_closed` | Not awaiting approvals, or expired |
+| `decided` | 409 `already_decided` | The caller already approved or declined |
+
+- **Approve** stores the caller's Deal Sheet as it was at that moment in `deal_participants.sheet_snapshot`. When the last person approves, the Deal becomes `approved` and its Asks `accepted`. Items stay reserved for the handoff, and approved Deals never expire.
+- **Decline** cancels the Deal for everyone, through `close_deal`, and records `(the decliner's Ask, the Item they'd have received)` in `ask_exclusions`. `circle_want_candidates` skips those pairs, so the re-match never offers the same Item for that Ask again.
+- **Device-bound confirmation:** the PRD requires Face ID or a passkey on approve. The server can't verify either until App Attest or passkeys ship (both need the Apple Developer account), so until then the app checks Face ID locally before calling approve.
+
 ## Not yet
 
+- Counter (a different Throw-In or Item) re-running the match.
 - Just-in-time photo requests to owners of non-showcase Items: needs notifications.
-- Approve, decline and counter, plus the Deal Sheet reads: next.
 - Claude's taste-fact review and the "why": it will sit between matching and staging.
