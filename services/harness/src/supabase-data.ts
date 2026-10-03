@@ -16,6 +16,7 @@ import {
   type AgentRun,
   type AskPatch,
   type AskRecord,
+  type AskUpdateResult,
   type CircleStats,
   type Conversation,
   type GmData,
@@ -41,6 +42,10 @@ export class GmDataError extends Error {
 }
 
 const ts = z.string().transform((s) => new Date(s));
+
+const PatchAskResult = z.object({
+  result: z.enum(["ok", "not_found", "ask_closed", "invalid_offer_item", "invalid_status"]),
+});
 const one = <T extends z.ZodType>(schema: T) =>
   z.union([schema, z.array(schema)]).transform((v) => (Array.isArray(v) ? v[0] : v));
 
@@ -452,54 +457,29 @@ export class SupabaseGmData implements GmData {
     return created;
   }
 
-  async updateAsk(userId: string, askId: string, patch: AskPatch): Promise<AskRecord | null> {
-    if (!isUuid(askId)) return null;
+  async updateAsk(userId: string, askId: string, patch: AskPatch): Promise<AskUpdateResult> {
+    if (!isUuid(askId)) return "not_found";
+    if (patch.offerItemIds?.some((id) => !isUuid(id))) return "invalid_offer_item";
     const fields: Record<string, unknown> = {
       ...(patch.rawText !== undefined && { raw_text: patch.rawText }),
       ...(patch.target !== undefined && { target: patch.target ?? {} }),
-      ...(patch.status !== undefined && { status: patch.status }),
+      ...(patch.title !== undefined && { title: patch.title }),
+      ...(patch.offerItemIds !== undefined && { offer_item_ids: patch.offerItemIds }),
+      ...(patch.cashCeilingCents !== undefined && { cash_ceiling_cents: patch.cashCeilingCents }),
       ...(patch.autonomy !== undefined && { autonomy: patch.autonomy }),
       ...(patch.deadline !== undefined && { deadline: patch.deadline?.toISOString() ?? null }),
-      ...(await this.#titleField(patch.title)),
     };
-    if (Object.keys(fields).length > 0) {
-      const { error } = await this.db
-        .from("asks")
-        .update(fields)
-        .eq("id", askId)
-        .eq("user_id", userId);
-      if (error) throw new GmDataError("updateAsk", error);
-    }
-    return this.getAsk(userId, askId);
-  }
-
-  async setOfferSet(
-    userId: string,
-    askId: string,
-    itemIds: string[],
-    cashCeilingCents: number,
-  ): Promise<AskRecord | null> {
-    const ask = await this.getAsk(userId, askId);
-    if (!ask) return null;
-    const ids = itemIds.filter(isUuid);
-    if (ids.length) {
-      const { error } = await this.db.from("offer_sets").upsert(
-        ids.map((item_id) => ({ ask_id: askId, item_id })),
-        { onConflict: "ask_id,item_id", ignoreDuplicates: true },
-      );
-      if (error) throw new GmDataError("setOfferSet.insert", error);
-    }
-    let remove = this.db.from("offer_sets").delete().eq("ask_id", askId);
-    if (ids.length) remove = remove.not("item_id", "in", `(${ids.join(",")})`);
-    const removed = await remove;
-    if (removed.error) throw new GmDataError("setOfferSet.delete", removed.error);
-    const { error } = await this.db
-      .from("asks")
-      .update({ cash_ceiling_cents: cashCeilingCents })
-      .eq("id", askId)
-      .eq("user_id", userId);
-    if (error) throw new GmDataError("setOfferSet.cash", error);
-    return this.getAsk(userId, askId);
+    const { data, error } = await this.db.rpc("patch_ask", {
+      p_user_id: userId,
+      p_ask_id: askId,
+      p_patch: fields,
+    });
+    if (error) throw new GmDataError("updateAsk", error);
+    const { result } = PatchAskResult.parse(data);
+    // AskPatch has no status field, so invalid_status means a bug here.
+    if (result === "invalid_status") throw new GmDataError("updateAsk", { message: result });
+    if (result !== "ok") return result;
+    return (await this.getAsk(userId, askId)) ?? "not_found";
   }
 
   async listAlwaysOnFacts(userId: string): Promise<TasteFact[]> {

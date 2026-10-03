@@ -6,6 +6,7 @@ import {
   type AgentRun,
   type AskPatch,
   type AskRecord,
+  type AskUpdateResult,
   type CircleStats,
   type Conversation,
   type GmData,
@@ -204,22 +205,27 @@ export class MemoryGmData implements GmData {
     return record;
   }
 
-  async updateAsk(userId: string, askId: string, patch: AskPatch) {
+  /** Mirrors public.patch_ask. */
+  async updateAsk(userId: string, askId: string, patch: AskPatch): Promise<AskUpdateResult> {
     const ask = await this.getAsk(userId, askId);
-    if (!ask) return null;
-    Object.assign(ask, patch, { updatedAt: this.now() });
-    return ask;
-  }
-
-  async setOfferSet(userId: string, askId: string, itemIds: string[], cashCeilingCents: number) {
-    const ask = await this.getAsk(userId, askId);
-    if (!ask) return null;
-    const own = new Set(this.items.filter((i) => i.ownerId === userId).map((i) => i.id));
-    if (itemIds.some((id) => !own.has(id)))
-      throw new Error("offer set item must belong to the asker");
-    ask.offerItemIds = [...itemIds];
-    ask.cashCeilingCents = cashCeilingCents;
-    ask.updatedAt = this.now();
+    if (!ask) return "not_found";
+    if (["fulfilled", "expired", "cancelled"].includes(ask.status)) return "ask_closed";
+    let status = ask.status;
+    if (patch.offerItemIds) {
+      const ids = [...new Set(patch.offerItemIds)];
+      const valid = ids.every((id) =>
+        this.items.some(
+          (i) => i.id === id && i.ownerId === userId && i.status === "on_shelf" && !i.reserved,
+        ),
+      );
+      if (!valid) return "invalid_offer_item";
+      ask.offerItemIds = ids;
+      if (ids.length > 0 && (status === "drafting" || status === "offering"))
+        status = "prospecting";
+    }
+    if (patch.target !== undefined && status === "drafting") status = "offering";
+    const { offerItemIds: _ids, ...fields } = patch;
+    Object.assign(ask, fields, { status, updatedAt: this.now() });
     return ask;
   }
 
