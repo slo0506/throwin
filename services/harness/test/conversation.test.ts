@@ -337,4 +337,69 @@ describe("offers", () => {
     expect(notAvailable).toMatch(/marked not available/);
     expect(ask.offerItemIds).toEqual([]);
   });
+
+  it("surfaces the write path's offer rules when an Item is taken after the check", async () => {
+    const world = await makeWorld();
+    const ask = await world.data.createAsk(ALICE, {
+      rawText: "x",
+      title: null,
+      target: null,
+      status: "offering",
+      autonomy: "every_deal",
+      deadline: null,
+    });
+    // A Deal reserves Zelda between set_offer_set's own check and patch_ask.
+    const update = world.data.updateAsk.bind(world.data);
+    world.data.updateAsk = async (userId, askId, patch) => {
+      const zelda = world.data.items.find((i) => i.id === ALICE_ZELDA);
+      if (zelda) zelda.reserved = true;
+      return update(userId, askId, patch);
+    };
+    world.model.push(
+      {
+        tools: [
+          {
+            name: "set_offer_set",
+            input: { ask_id: ask.id, item_ids: [ALICE_ZELDA], cash_ceiling_cents: 500 },
+          },
+        ],
+      },
+      { text: "ok" },
+    );
+    await turn(world, { text: "offer Zelda" });
+    const [result] = world.model.requests
+      .slice(1, 2)
+      .map((r) => resultText(lastToolResults(r)[0] as Anthropic.ToolResultBlockParam));
+    expect(result).toMatch(/no longer the user's, on the Shelf and free/);
+    expect(ask).toMatchObject({ status: "offering", offerItemIds: [], cashCeilingCents: 0 });
+  });
+
+  it("moves a drafting Ask to offering when upsert_ask adds a target", async () => {
+    const world = await makeWorld();
+    const ask = await world.data.createAsk(ALICE, {
+      rawText: "something batman",
+      title: null,
+      target: null,
+      status: "drafting",
+      autonomy: "every_deal",
+      deadline: null,
+    });
+    world.model.push(
+      { tools: [{ name: "resolve_target", input: { text: "batmobile" } }] },
+      (params) => ({
+        tools: [
+          {
+            name: "upsert_ask",
+            input: { ask_id: ask.id, target_id: idFromLastResult(params, "target_id") },
+          },
+        ],
+      }),
+      { text: "ok" },
+    );
+    await turn(world, { text: "the Batmobile Tumbler" });
+    expect(ask).toMatchObject({
+      status: "offering",
+      title: "LEGO Batman Batmobile Tumbler 76240",
+    });
+  });
 });

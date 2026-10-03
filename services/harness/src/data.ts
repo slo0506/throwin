@@ -124,14 +124,23 @@ export interface NewAsk {
   deadline: Date | null;
 }
 
+/**
+ * An owner's edit, applied by public.patch_ask in 1 transaction. Status moves only by its
+ * rules: a target moves drafting to offering, a non-empty offer set moves drafting or
+ * offering to prospecting.
+ */
 export interface AskPatch {
   rawText?: string;
   title?: string | null;
   target?: AskTarget | null;
-  status?: AskStatus;
+  /** Replaces the offer set. Items must be the owner's, on the Shelf and not reserved. */
+  offerItemIds?: string[];
+  cashCeilingCents?: number;
   autonomy?: AutonomyLevel;
   deadline?: Date | null;
 }
+
+export type AskUpdateResult = AskRecord | "not_found" | "ask_closed" | "invalid_offer_item";
 
 export interface TasteFact {
   id: string;
@@ -213,17 +222,8 @@ export interface GmData {
   listActiveAsks(userId: string): Promise<AskRecord[]>;
   getAsk(userId: string, askId: string): Promise<AskRecord | null>;
   createAsk(userId: string, ask: NewAsk): Promise<AskRecord>;
-  updateAsk(userId: string, askId: string, patch: AskPatch): Promise<AskRecord | null>;
-  /**
-   * Replaces the Ask's offer set and cash ceiling. Callers check the Items first; the
-   * database trigger still rejects anything that is not the asker's own.
-   */
-  setOfferSet(
-    userId: string,
-    askId: string,
-    itemIds: string[],
-    cashCeilingCents: number,
-  ): Promise<AskRecord | null>;
+  /** The same write path as PATCH /v1/asks/{id}: public.patch_ask. */
+  updateAsk(userId: string, askId: string, patch: AskPatch): Promise<AskUpdateResult>;
 
   /** Active, always-on taste facts. Written only by the memory extractor. */
   listAlwaysOnFacts(userId: string): Promise<TasteFact[]>;

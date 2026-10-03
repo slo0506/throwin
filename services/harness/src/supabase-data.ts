@@ -16,6 +16,7 @@ import {
   type AgentRun,
   type AskPatch,
   type AskRecord,
+  type AskUpdateResult,
   type CircleStats,
   type Conversation,
   type GmData,
@@ -41,6 +42,10 @@ export class GmDataError extends Error {
 }
 
 const ts = z.string().transform((s) => new Date(s));
+
+const PatchAskResult = z.object({
+  result: z.enum(["ok", "not_found", "ask_closed", "invalid_offer_item", "invalid_status"]),
+});
 const one = <T extends z.ZodType>(schema: T) =>
   z.union([schema, z.array(schema)]).transform((v) => (Array.isArray(v) ? v[0] : v));
 
@@ -139,13 +144,13 @@ const NetworkRow = z.object({
 });
 
 const ASK_COLUMNS =
-  "id, user_id, raw_text, target, status, cash_ceiling_cents, deadline, autonomy, created_at, updated_at, offer_sets(item_id)";
+  "id, user_id, raw_text, title, target, status, cash_ceiling_cents, deadline, autonomy, created_at, updated_at, offer_sets(item_id)";
 
 const AskRow = z.object({
   id: z.string(),
   user_id: z.string(),
   raw_text: z.string(),
-  title: z.string().nullable().optional(),
+  title: z.string().nullable(),
   target: z.unknown(),
   status: AskStatus,
   cash_ceiling_cents: z.number().int(),
@@ -162,7 +167,7 @@ function toAsk(r: z.infer<typeof AskRow>): AskRecord {
     id: r.id,
     userId: r.user_id,
     rawText: r.raw_text,
-    title: r.title ?? null,
+    title: r.title,
     status: r.status,
     target: target.success ? target.data : null,
     cashCeilingCents: r.cash_ceiling_cents,
@@ -210,22 +215,7 @@ function sniffImage(bytes: Uint8Array): LoadedImage["mediaType"] | null {
  * under the service role), plus the showcase rule.
  */
 export class SupabaseGmData implements GmData {
-  #askTitle: Promise<boolean> | null = null;
-
   constructor(private readonly db: SupabaseClient) {}
-
-  /** Whether `asks.title` exists yet (it lands with the Asks module's migration). */
-  #hasAskTitle(): Promise<boolean> {
-    this.#askTitle ??= (async () => {
-      const { error } = await this.db.from("asks").select("title").limit(1);
-      return !error;
-    })();
-    return this.#askTitle;
-  }
-
-  async #askSelect() {
-    return (await this.#hasAskTitle()) ? `${ASK_COLUMNS}, title` : ASK_COLUMNS;
-  }
 
   async getUser(userId: string): Promise<GmUser | null> {
     const { data, error } = await this.db
@@ -403,7 +393,7 @@ export class SupabaseGmData implements GmData {
   async listActiveAsks(userId: string): Promise<AskRecord[]> {
     const { data, error } = await this.db
       .from("asks")
-      .select(await this.#askSelect())
+      .select(ASK_COLUMNS)
       .eq("user_id", userId)
       .in("status", [...ACTIVE_ASK_STATUSES])
       .order("created_at", { ascending: false })
@@ -419,17 +409,12 @@ export class SupabaseGmData implements GmData {
     if (!isUuid(askId)) return null;
     const { data, error } = await this.db
       .from("asks")
-      .select(await this.#askSelect())
+      .select(ASK_COLUMNS)
       .eq("id", askId)
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw new GmDataError("getAsk", error);
     return data ? toAsk(AskRow.parse(data)) : null;
-  }
-
-  /** Writes the title column when it exists; target.name always carries the title too. */
-  async #titleField(title: string | null | undefined) {
-    return title !== undefined && (await this.#hasAskTitle()) ? { title } : {};
   }
 
   async createAsk(userId: string, ask: NewAsk): Promise<AskRecord> {
@@ -442,7 +427,7 @@ export class SupabaseGmData implements GmData {
         status: ask.status,
         autonomy: ask.autonomy,
         deadline: ask.deadline?.toISOString() ?? null,
-        ...(await this.#titleField(ask.title)),
+        title: ask.title,
       })
       .select("id")
       .single();
@@ -452,54 +437,29 @@ export class SupabaseGmData implements GmData {
     return created;
   }
 
-  async updateAsk(userId: string, askId: string, patch: AskPatch): Promise<AskRecord | null> {
-    if (!isUuid(askId)) return null;
+  async updateAsk(userId: string, askId: string, patch: AskPatch): Promise<AskUpdateResult> {
+    if (!isUuid(askId)) return "not_found";
+    if (patch.offerItemIds?.some((id) => !isUuid(id))) return "invalid_offer_item";
     const fields: Record<string, unknown> = {
       ...(patch.rawText !== undefined && { raw_text: patch.rawText }),
       ...(patch.target !== undefined && { target: patch.target ?? {} }),
-      ...(patch.status !== undefined && { status: patch.status }),
+      ...(patch.title !== undefined && { title: patch.title }),
+      ...(patch.offerItemIds !== undefined && { offer_item_ids: patch.offerItemIds }),
+      ...(patch.cashCeilingCents !== undefined && { cash_ceiling_cents: patch.cashCeilingCents }),
       ...(patch.autonomy !== undefined && { autonomy: patch.autonomy }),
       ...(patch.deadline !== undefined && { deadline: patch.deadline?.toISOString() ?? null }),
-      ...(await this.#titleField(patch.title)),
     };
-    if (Object.keys(fields).length > 0) {
-      const { error } = await this.db
-        .from("asks")
-        .update(fields)
-        .eq("id", askId)
-        .eq("user_id", userId);
-      if (error) throw new GmDataError("updateAsk", error);
-    }
-    return this.getAsk(userId, askId);
-  }
-
-  async setOfferSet(
-    userId: string,
-    askId: string,
-    itemIds: string[],
-    cashCeilingCents: number,
-  ): Promise<AskRecord | null> {
-    const ask = await this.getAsk(userId, askId);
-    if (!ask) return null;
-    const ids = itemIds.filter(isUuid);
-    if (ids.length) {
-      const { error } = await this.db.from("offer_sets").upsert(
-        ids.map((item_id) => ({ ask_id: askId, item_id })),
-        { onConflict: "ask_id,item_id", ignoreDuplicates: true },
-      );
-      if (error) throw new GmDataError("setOfferSet.insert", error);
-    }
-    let remove = this.db.from("offer_sets").delete().eq("ask_id", askId);
-    if (ids.length) remove = remove.not("item_id", "in", `(${ids.join(",")})`);
-    const removed = await remove;
-    if (removed.error) throw new GmDataError("setOfferSet.delete", removed.error);
-    const { error } = await this.db
-      .from("asks")
-      .update({ cash_ceiling_cents: cashCeilingCents })
-      .eq("id", askId)
-      .eq("user_id", userId);
-    if (error) throw new GmDataError("setOfferSet.cash", error);
-    return this.getAsk(userId, askId);
+    const { data, error } = await this.db.rpc("patch_ask", {
+      p_user_id: userId,
+      p_ask_id: askId,
+      p_patch: fields,
+    });
+    if (error) throw new GmDataError("updateAsk", error);
+    const { result } = PatchAskResult.parse(data);
+    // AskPatch has no status field, so invalid_status means a bug here.
+    if (result === "invalid_status") throw new GmDataError("updateAsk", { message: result });
+    if (result !== "ok") return result;
+    return (await this.getAsk(userId, askId)) ?? "not_found";
   }
 
   async listAlwaysOnFacts(userId: string): Promise<TasteFact[]> {

@@ -1,6 +1,6 @@
 import { AutonomyLevel, fenceUntrusted } from "@throwin/shared";
 import { z } from "zod";
-import type { AskRecord, AskTarget } from "../data.js";
+import type { AskPatch, AskRecord, AskTarget } from "../data.js";
 import { askTitle, clean, offerValue, statusLine, usd, usdRange } from "../format.js";
 import type { ResolvedTargetData } from "../history.js";
 import { assertIssued, defineTool, type ToolContext, ToolError } from "./registry.js";
@@ -22,6 +22,21 @@ async function ownAsk(ctx: ToolContext, askId: string) {
   const ask = await ctx.data.getAsk(ctx.userId, askId);
   if (!ask) throw new ToolError("not_found", "That Ask does not exist or is not the user's.");
   return ask;
+}
+
+/** Writes through public.patch_ask, the same path as PATCH /v1/asks/{id}. */
+async function patchAsk(ctx: ToolContext, askId: string, patch: AskPatch): Promise<AskRecord> {
+  const result = await ctx.data.updateAsk(ctx.userId, askId, patch);
+  if (result === "not_found")
+    throw new ToolError("not_found", "That Ask does not exist or is not the user's.");
+  if (result === "ask_closed")
+    throw new ToolError("ask_locked", "This Ask is closed and can't be edited in chat.");
+  if (result === "invalid_offer_item")
+    throw new ToolError(
+      "item_not_offerable",
+      "An Item is no longer the user's, on the Shelf and free. Check the Shelf again.",
+    );
+  return result;
 }
 
 function targetText(id: string, t: ResolvedTargetData) {
@@ -161,15 +176,13 @@ export const upsertAsk = defineTool({
       : current.target && input.constraints
         ? { ...current.target, constraints: input.constraints }
         : undefined;
-    const ask = await ctx.data.updateAsk(ctx.userId, current.id, {
+    const ask = await patchAsk(ctx, current.id, {
       ...(input.raw_text && { rawText: input.raw_text }),
       ...(nextTarget && { target: nextTarget }),
       ...(target && { title: target.name }),
-      ...(target && current.status === "drafting" && { status: "offering" as const }),
       ...(input.autonomy && { autonomy: input.autonomy }),
       ...(deadline && { deadline }),
     });
-    if (!ask) throw new ToolError("not_found", "That Ask does not exist or is not the user's.");
     return {
       content: `Updated the Ask.\n${await describeAsk(ctx, ask)}`,
       issuedIds: [ask.id],
@@ -221,13 +234,10 @@ export const setOfferSet = defineTool({
     if (problems.length)
       throw new ToolError("item_not_offerable", `Can't offer: ${problems.join("; ")}.`);
 
-    const updated = await ctx.data.setOfferSet(ctx.userId, ask.id, ids, input.cash_ceiling_cents);
-    if (!updated) throw new ToolError("not_found", "That Ask does not exist or is not the user's.");
-    const moved =
-      ids.length > 0 && (updated.status === "drafting" || updated.status === "offering")
-        ? await ctx.data.updateAsk(ctx.userId, ask.id, { status: "prospecting" })
-        : updated;
-    const final = moved ?? updated;
+    const final = await patchAsk(ctx, ask.id, {
+      offerItemIds: ids,
+      cashCeilingCents: input.cash_ceiling_cents,
+    });
     const title = clean(askTitle(final) ?? final.rawText, 80);
     const cash =
       input.cash_ceiling_cents > 0 ? `up to ${usd(input.cash_ceiling_cents)} cash` : "no cash";
