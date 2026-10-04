@@ -283,7 +283,7 @@ struct OnboardingFlow: View {
             }
 
             Toggle(isOn: $consented.animation(Motion.snappy)) {
-                Text("I agree to Throw-In's Terms and Privacy Policy, including AI processing of my photos and chats.")
+                Text("I agree to Throw-In's Terms and Privacy Policy, including AI processing.")
                     .font(Typo.callout)
                     .foregroundStyle(Palette.ink)
             }

@@ -62,8 +62,12 @@ struct DebugMediaButton: View {
 
     private func load(_ set: URL) async {
         let files = ((try? FileManager.default.contentsOfDirectory(at: set, includingPropertiesForKeys: nil)) ?? [])
+            .filter { Self.imageTypes.contains($0.pathExtension.lowercased()) || Self.videoTypes.contains($0.pathExtension.lowercased()) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        // The same placeholder path as the photo picker, so it's testable here.
+        capture.expect(files.count)
         for file in files {
+            defer { capture.settle() }
             let ext = file.pathExtension.lowercased()
             if Self.imageTypes.contains(ext), let data = try? Data(contentsOf: file) {
                 await capture.add(imageData: [data])
