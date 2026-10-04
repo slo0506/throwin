@@ -16,6 +16,7 @@ export {
   GM_MODELS,
   type ModelClient,
 } from "./model.js";
+export { braveImageSearch, findProductImage } from "./product-image.js";
 export {
   findPromptDir,
   type GmPrompts,

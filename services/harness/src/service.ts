@@ -24,8 +24,14 @@ import {
 } from "./history.js";
 import { type ModelCallRecord, runTurn, type TurnStep } from "./loop.js";
 import { addUsage, costCents, emptyUsage, GM_MODELS, type ModelClient } from "./model.js";
+import { findProductImage } from "./product-image.js";
 import { type GmPrompts, greetingFor } from "./prompts.js";
-import { ClaudeTargetResolver, type ResolverRun, type TargetResolver } from "./resolver.js";
+import {
+  ClaudeTargetResolver,
+  DEFAULT_RESOLVER,
+  type ResolverRun,
+  type TargetResolver,
+} from "./resolver.js";
 import { GmSession, RECAP_OPTIONS } from "./session.js";
 import { createToolRegistry } from "./tools/index.js";
 import type { ToolContext, ToolEvent, ToolRegistry } from "./tools/registry.js";
@@ -44,6 +50,8 @@ export interface GmServiceDeps {
   model: ModelClient;
   prompts: GmPrompts;
   resolver?: TargetResolver;
+  /** Product image search by name for Ask cards (Brave). Optional; pages are tried either way. */
+  imageSearch?: (query: string) => Promise<string | null>;
   logger?: GmLogger;
   now?: () => Date;
   newId?: () => string;
@@ -100,7 +108,9 @@ export class GmService {
     this.#data = deps.data;
     this.#model = deps.model;
     this.#prompts = deps.prompts;
-    this.#resolver = deps.resolver ?? new ClaudeTargetResolver(deps.model);
+    this.#resolver =
+      deps.resolver ??
+      new ClaudeTargetResolver(deps.model, DEFAULT_RESOLVER, findProductImage, deps.imageSearch);
     this.#logger = deps.logger ?? quietLogger;
     this.#now = deps.now ?? (() => new Date());
     this.#newId = deps.newId ?? randomUUID;

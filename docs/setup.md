@@ -24,6 +24,7 @@ Keys for Anthropic, Voyage, Stripe and the Supabase service role live only in Ra
 | `SUPABASE_JWT_SECRET` or `SUPABASE_JWKS_URL` | Supabase project settings, JWT keys |
 | `APP_ATTEST_MODE` | `off` locally, `log` in staging, `enforce` in prod |
 | `PORT` | Defaults to 8787 |
+| `BRAVE_SEARCH_API_KEY` | Optional. [Brave Search API](https://api-search.brave.com) key, for product photos on Ask cards. Without it, only images on pages the GM cited are tried, and most retail sites block those. Server only. |
 
 ## Local development
 

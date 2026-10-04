@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { createClient } from "@supabase/supabase-js";
 import {
   AnthropicModelClient,
+  braveImageSearch,
   findPromptDir,
   GmService,
   loadGmPrompts,
@@ -36,10 +37,17 @@ const gm = env.ANTHROPIC_API_KEY
       model: AnthropicModelClient.fromApiKey(env.ANTHROPIC_API_KEY, env.ANTHROPIC_MAX_RETRIES),
       prompts: await loadGmPrompts(env.GM_PROMPT_DIR ?? findPromptDir()),
       logger,
+      ...(env.BRAVE_SEARCH_API_KEY && {
+        imageSearch: (query: string) => braveImageSearch(query, env.BRAVE_SEARCH_API_KEY as string),
+      }),
     })
   : null;
-if (gm) logger.info("gm_ready", { prompt_version: gm.promptVersion });
-else logger.warn("gm_disabled", { reason: "ANTHROPIC_API_KEY is not set" });
+if (gm) {
+  logger.info("gm_ready", {
+    prompt_version: gm.promptVersion,
+    product_images: env.BRAVE_SEARCH_API_KEY ? "brave" : "pages_only",
+  });
+} else logger.warn("gm_disabled", { reason: "ANTHROPIC_API_KEY is not set" });
 
 const app = createApp({
   gm,

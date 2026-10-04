@@ -22,6 +22,8 @@ export const EnvSchema = z
     ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
     /** Folder holding system.md and skills/. Defaults to the nearest agents/gm above the cwd. */
     GM_PROMPT_DIR: optionalString,
+    /** Brave Search API key: product photos for Ask cards. Without it, only cited pages are tried. */
+    BRAVE_SEARCH_API_KEY: optionalString,
   })
   .refine((env) => env.SUPABASE_JWT_SECRET || env.SUPABASE_JWKS_URL, {
     message: "Set SUPABASE_JWT_SECRET, SUPABASE_JWKS_URL, or both",

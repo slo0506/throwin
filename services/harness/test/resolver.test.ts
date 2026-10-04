@@ -124,3 +124,50 @@ describe("money and prompts", () => {
     expect(parseFrontmatter("No frontmatter")).toEqual({ meta: {}, body: "No frontmatter" });
   });
 });
+
+describe("ClaudeTargetResolver product images", () => {
+  const resolveWith = async (
+    input: { text?: string; url?: string },
+    pages: Record<string, string | null>,
+    search: string | null,
+  ) => {
+    const model = new FakeModelClient([
+      { text: "It's the 76240 Tumbler." },
+      { text: extraction() },
+    ]);
+    const searched: string[] = [];
+    const resolver = new ClaudeTargetResolver(
+      model,
+      undefined,
+      async (urls) => (urls.length ? (pages[urls[0] as string] ?? null) : null),
+      async (query) => {
+        searched.push(query);
+        return search;
+      },
+    );
+    const target = await resolver.resolve(input, async () => {});
+    return { target, searched };
+  };
+
+  it("prefers the user's own link, then the image search, never asking twice", async () => {
+    const link = "https://shop.example.com/my-listing";
+    const fromLink = await resolveWith(
+      { text: "this one", url: link },
+      { [link]: "https://shop.example.com/listing.jpg" },
+      "https://img.example.com/search.jpg",
+    );
+    expect(fromLink.target.image_url).toBe("https://shop.example.com/listing.jpg");
+    expect(fromLink.searched).toEqual([]);
+
+    const fromSearch = await resolveWith(
+      { text: "the Batmobile" },
+      {},
+      "https://img.example.com/search.jpg",
+    );
+    expect(fromSearch.target.image_url).toBe("https://img.example.com/search.jpg");
+    expect(fromSearch.searched).toEqual(["LEGO Batman Batmobile Tumbler 76240"]);
+
+    const none = await resolveWith({ text: "the Batmobile" }, {}, null);
+    expect(none.target.image_url).toBeNull();
+  });
+});

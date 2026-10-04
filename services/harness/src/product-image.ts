@@ -103,3 +103,40 @@ export async function findProductImage(
   }
   return null;
 }
+
+/**
+ * Brave's image search, for when no page gives an image. Returns the first result whose
+ * original image verifies, else Brave's own thumbnail of the first result (served from
+ * Brave's image proxy, so it stays up). Null on any failure. Never throws.
+ */
+export async function braveImageSearch(
+  query: string,
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  try {
+    const url = new URL("https://api.search.brave.com/res/v1/images/search");
+    url.searchParams.set("q", query.slice(0, 200));
+    url.searchParams.set("count", "5");
+    url.searchParams.set("safesearch", "strict");
+    const res = await fetchImpl(url, {
+      headers: { Accept: "application/json", "X-Subscription-Token": apiKey },
+      signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      results?: { properties?: { url?: unknown }; thumbnail?: { src?: unknown } }[];
+    };
+    const results = body.results ?? [];
+    for (const r of results.slice(0, 3)) {
+      const original = typeof r.properties?.url === "string" ? r.properties.url : null;
+      if (original && isPublicHttps(original) && (await isImage(original, fetchImpl))) {
+        return original;
+      }
+    }
+    const thumb = results[0]?.thumbnail?.src;
+    return typeof thumb === "string" && isPublicHttps(thumb) ? thumb : null;
+  } catch {
+    return null;
+  }
+}
