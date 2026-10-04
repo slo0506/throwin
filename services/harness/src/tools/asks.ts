@@ -109,6 +109,7 @@ const toAskTarget = (t: ResolvedTargetData, constraints?: string[]): AskTarget =
   category: t.category,
   constraints: constraints ?? t.constraints,
   anchor: t.anchor,
+  image_url: t.image_url,
 });
 
 export const upsertAsk = defineTool({

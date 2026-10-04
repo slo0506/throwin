@@ -27,6 +27,12 @@ export const AskTarget = z.strictObject({
   category: z.string().trim().min(1).max(80).nullable().default(null),
   constraints: z.array(z.string().trim().min(1).max(120)).max(10).default([]),
   anchor: AskAnchor.nullable().default(null),
+  /** A reference product photo from the web (the GM finds it), not the user's own. */
+  image_url: z
+    .url({ protocol: /^https$/ })
+    .max(1000)
+    .nullable()
+    .default(null),
 });
 export type AskTarget = z.infer<typeof AskTarget>;
 

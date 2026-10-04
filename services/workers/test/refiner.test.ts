@@ -11,6 +11,7 @@ import {
   askableDrivers,
   DEFAULT_REFINER,
   normalizeQuestion,
+  offersAlternatives,
   type RefineItem,
   type RefinementUpdate,
   type RefinerStore,
@@ -504,6 +505,41 @@ describe("questions and text", () => {
     expect(
       normalizeQuestion({ ...base, kind: "yes_no", prompt: "Is it authentic?", options: [] }),
     ).toBeNull();
+  });
+
+  it("never asks an either/or question with Yes and No answers", () => {
+    // Both came from a live Tune up on Oct 3.
+    const clog = {
+      driver: "model",
+      prompt: "Is this the unisex Classic Clog or the Bistro?",
+      impact: 0.8,
+    };
+    expect(
+      normalizeQuestion({ ...clog, kind: "yes_no", options: ["Classic Clog", "Bistro"] }),
+    ).toEqual({
+      ...clog,
+      kind: "choice",
+      options: ["Classic Clog", "Bistro", "Not sure"],
+    });
+    // No alternatives named: nothing sensible to offer, so it's dropped.
+    const soles = {
+      driver: "sole_wear",
+      prompt: "Do the soles look fairly intact or heavily worn?",
+      impact: 0.5,
+    };
+    expect(normalizeQuestion({ ...soles, kind: "yes_no", options: [] })).toBeNull();
+    expect(normalizeQuestion({ ...soles, kind: "yes_no", options: ["Yes", "No"] })).toBeNull();
+    // "Or not" is still a yes/no question.
+    expect(
+      normalizeQuestion({
+        ...soles,
+        kind: "yes_no",
+        prompt: "Is the box included or not?",
+        options: [],
+      })?.kind,
+    ).toBe("yes_no");
+    expect(offersAlternatives("Is this Nike?")).toBe(false);
+    expect(offersAlternatives("Nike or Adidas?")).toBe(true);
   });
 
   it("writes plain text with no em dashes or authenticity claims", () => {

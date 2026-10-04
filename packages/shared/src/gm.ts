@@ -84,6 +84,8 @@ export const AskCardTarget = z.object({
   model: z.string().nullable(),
   category: z.string().nullable(),
   constraints: z.array(z.string()),
+  /** A reference product photo from the web, not the user's own. Null when none was found. */
+  image_url: z.string().nullable().default(null),
   anchor: z
     .object({
       retail_cents: z.number().int().nonnegative().nullable(),

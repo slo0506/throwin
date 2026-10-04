@@ -113,6 +113,7 @@ describe("POST /v1/asks", () => {
       category: null,
       constraints: [],
       anchor: null,
+      image_url: null,
     });
   });
 

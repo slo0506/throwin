@@ -146,6 +146,51 @@ describe("GET conversation", () => {
     });
   });
 
+  it("accepts the recap card's chips as an answer", async () => {
+    const world = await makeWorld([
+      { tools: [{ name: "present_recap", input: RECAP }] },
+      { text: "" },
+    ]);
+    const { events } = await turn(world, { text: "recap" });
+    const recap = events.find((e) => e.event === "component")?.data as { id: string };
+    await expect(
+      world.gm.prepareTurn(ALICE, { choice: { component_id: recap.id, option_ids: ["approve"] } }),
+    ).rejects.toMatchObject({ code: "invalid_choice", status: 400 });
+
+    world.model.push({ text: "Great." });
+    await turn(world, { choice: { component_id: recap.id, option_ids: ["looks_right"] } });
+    const convo = await world.gm.getConversation(ALICE);
+    expect(convo.messages.at(-2)?.text).toBe("Looks right");
+    const sent = JSON.stringify(world.model.requests.at(-1)?.messages.at(-1));
+    expect(sent).toContain(`tapped \\"Looks right\\" on the recap card ${recap.id}`);
+  });
+
+  it("shows at most 1 question card per turn", async () => {
+    const question = {
+      name: "present_choices",
+      input: {
+        prompt: "How should I handle deals I find?",
+        options: [
+          { id: "every_deal", label: "Bring me every deal" },
+          { id: "likely_yes", label: "Only likely yeses" },
+        ],
+      },
+    };
+    const world = await makeWorld([{ tools: [question] }, { tools: [question] }, { text: "" }]);
+    const { events } = await turn(world, { text: "hi" });
+    expect(events.filter((e) => e.event === "component")).toHaveLength(1);
+    const second = resultText(
+      lastToolResults(
+        world.model.requests[2] as Anthropic.MessageCreateParamsNonStreaming,
+      )[0] as Anthropic.ToolResultBlockParam,
+    );
+    expect(second).toMatch(/already asked a question/);
+    // The next turn may ask again.
+    world.model.push({ tools: [question] }, { text: "" });
+    const next = await turn(world, { text: "ok" });
+    expect(next.events.filter((e) => e.event === "component")).toHaveLength(1);
+  });
+
   it("rejects media paths outside the user's own uploads", async () => {
     const world = await makeWorld();
     await expect(

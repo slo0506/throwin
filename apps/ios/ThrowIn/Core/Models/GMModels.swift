@@ -43,11 +43,13 @@ nonisolated struct AskTarget: Codable, Hashable, Sendable {
     var category: String?
     var constraints: [String] = []
     var anchor: AskAnchor?
+    /// A reference product photo from the web, not the user's own. Nil when none was found.
+    var imageUrl: String?
 }
 
 nonisolated extension AskTarget {
     enum CodingKeys: String, CodingKey {
-        case kind, name, brand, model, category, constraints, anchor
+        case kind, name, brand, model, category, constraints, anchor, imageUrl
     }
 
     init(from decoder: any Decoder) throws {
@@ -59,6 +61,7 @@ nonisolated extension AskTarget {
         category = try? c.decodeIfPresent(String.self, forKey: .category)
         constraints = (try? c.decodeIfPresent([String].self, forKey: .constraints)) ?? []
         anchor = try? c.decodeIfPresent(AskAnchor.self, forKey: .anchor)
+        imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
     }
 }
 

@@ -32,6 +32,7 @@ export const BATMOBILE: ResolvedTargetData = {
   anchor: { retail_cents: 26999, used_low_cents: 18000, used_high_cents: 25000 },
   confidence: 0.9,
   alternatives: [],
+  image_url: "https://images.example-shop.com/76240.jpg",
 };
 
 export class FakeResolver implements TargetResolver {

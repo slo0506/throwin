@@ -2,6 +2,12 @@ import { type GmComponentKind, type GmMode, IdAllowList } from "@throwin/shared"
 import type { StoredMessage } from "./data.js";
 import { type ResolvedTargetData, rowMeta, toolCallsOf } from "./history.js";
 
+/** The recap card's 2 chips. A tap posts a choice with 1 of these IDs. */
+export const RECAP_OPTIONS = {
+  looks_right: "Looks right",
+  fix_something: "Fix something",
+} as const;
+
 export interface KnownComponent {
   kind: GmComponentKind;
   optionIds: string[];
@@ -22,6 +28,8 @@ export class GmSession {
   readonly components = new Map<string, KnownComponent>();
   readonly amounts = new Set<number>();
   recapShown = false;
+  /** present_choices cards rendered in the turn being run; the session is rebuilt per turn. */
+  choicesThisTurn = 0;
   mode: GmMode;
 
   constructor(
@@ -47,7 +55,10 @@ export class GmSession {
         if (call.component) {
           this.components.set(call.component.id, {
             kind: call.component.kind,
-            optionIds: call.component.option_ids ?? [],
+            // Recaps stored before their chips were registered still answer to them.
+            optionIds:
+              call.component.option_ids ??
+              (call.component.kind === "recap" ? Object.keys(RECAP_OPTIONS) : []),
           });
           if (call.component.kind === "recap") this.recapShown = true;
         }

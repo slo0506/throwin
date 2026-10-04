@@ -19,7 +19,19 @@ describe("AskTarget", () => {
       category: null,
       constraints: [],
       anchor: null,
+      image_url: null,
     });
+  });
+
+  it("takes only https reference images", () => {
+    const base = { kind: "exact", name: "Tumbler" };
+    expect(
+      AskTarget.parse({ ...base, image_url: "https://shop.example.com/a.jpg" }).image_url,
+    ).toBe("https://shop.example.com/a.jpg");
+    expect(
+      AskTarget.safeParse({ ...base, image_url: "http://shop.example.com/a.jpg" }).success,
+    ).toBe(false);
+    expect(AskTarget.safeParse({ ...base, image_url: "javascript:alert(1)" }).success).toBe(false);
   });
 
   it("requires the anchor to be a range", () => {

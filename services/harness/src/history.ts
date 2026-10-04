@@ -22,6 +22,8 @@ export const ResolvedTargetData = z.object({
     .nullable(),
   confidence: z.number().min(0).max(1),
   alternatives: z.array(z.object({ name: z.string(), detail: z.string() })),
+  /** A reference product photo from a cited page (product-image.ts). Older rows have none. */
+  image_url: z.string().nullable().default(null),
 });
 export type ResolvedTargetData = z.infer<typeof ResolvedTargetData>;
 

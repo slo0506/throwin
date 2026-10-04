@@ -552,7 +552,7 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
   if (saved.length > 0) {
     await store.setProgress(captureId, {
       stage: "pricing",
-      detail: `Found ${plural(saved.length, "item")}. Pricing them now`,
+      detail: `Found ${plural(saved.length, "item")}. Adding them to your Shelf`,
       found: saved.length,
     });
   }
@@ -591,7 +591,7 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
       await store
         .setProgress(captureId, {
           stage: "pricing",
-          detail: `Priced ${priced} of ${saved.length}`,
+          detail: `Added ${priced} of ${saved.length} to your Shelf`,
           found: saved.length,
         })
         .catch(() => {});

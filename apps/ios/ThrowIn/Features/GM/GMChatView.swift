@@ -279,12 +279,12 @@ struct GMChatView: View {
 
     private var composer: some View {
         HStack(spacing: Space.xs) {
+            // Like Messages: return starts a new line and only the arrow sends, so there's 1
+            // send control, not 2.
             TextField(placeholder, text: $draft, axis: .vertical)
                 .font(Typo.body)
                 .lineLimit(1...4)
                 .focused($composerFocused)
-                .submitLabel(.send)
-                .onSubmit(send)
                 .padding(.leading, Space.md)
                 .padding(.vertical, 12)
 

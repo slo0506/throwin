@@ -2,7 +2,8 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Add to Shelf: film a shelf or pick photos, then watch the GM read and price them.
+/// Add to Shelf: take photos, film a shelf or choose from the library, then watch the Items
+/// land on the Shelf.
 struct CaptureSheet: View {
     var onFinish: () -> Void
     /// Set by the Shelf: closes this sheet and opens Tune up on the new Items.
@@ -14,6 +15,8 @@ struct CaptureSheet: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var isPickerPresented = false
     @State private var isCameraPresented = false
+    /// The camera opens for video (Film a shelf) or for stills (Take photos).
+    @State private var cameraFilms = true
     @State private var scanTick = 0
     @State private var burst = 0
 
@@ -47,15 +50,19 @@ struct CaptureSheet: View {
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             pickerItems = []
+            // Placeholders first, so the tray answers the pick right away.
+            capture.expect(items.count)
             Task { await load(items) }
         }
         .fullScreenCover(isPresented: $isCameraPresented) {
-            CameraPicker { result in
+            CameraPicker(allowsVideo: cameraFilms) { result in
+                capture.expect(1)
                 Task {
                     switch result {
                     case let .photo(data): await capture.add(imageData: [data])
                     case let .video(url): await capture.add(videoAt: url)
                     }
+                    capture.settle()
                 }
             }
             .ignoresSafeArea()
@@ -103,21 +110,20 @@ struct CaptureSheet: View {
     private var collecting: some View {
         VStack(spacing: Space.xl) {
             VStack(spacing: Space.xs) {
-                Text(capture.frames.isEmpty ? "What are you trading?" : "\(capture.frames.count) \(capture.frames.count == 1 ? "photo" : "photos")")
+                Text(isEmpty ? "What are you trading?" : photoCount)
                     .font(Typo.title)
                     .tracking(-0.4)
                     .contentTransition(.numericText())
-                Text(capture.frames.isEmpty
-                     ? "Film a shelf for 15 to 60 seconds, or pick a few photos. Your GM names and prices each thing."
-                     : "Add more angles, or let your GM take it from here.")
+                Text(isEmpty
+                     ? "Snap a few things, or film a whole shelf. We'll name and price each one."
+                     : capture.pending > 0 ? "Getting your photos ready." : "Add more, or add these to your Shelf.")
                     .font(Typo.callout)
                     .foregroundStyle(Palette.inkSecondary)
                     .multilineTextAlignment(.center)
             }
             .padding(.top, Space.xl)
 
-            if capture.frames.isEmpty {
-                Spacer()
+            if isEmpty {
                 sourceButtons
                 Spacer()
             } else {
@@ -126,9 +132,10 @@ struct CaptureSheet: View {
                 HStack(spacing: Space.sm) {
                     Menu {
                         if cameraAvailable {
-                            Button("Camera", systemImage: "camera") { isCameraPresented = true }
+                            Button("Take photos", systemImage: "camera") { openCamera(filming: false) }
+                            Button("Film a shelf", systemImage: "video") { openCamera(filming: true) }
                         }
-                        Button("Photos", systemImage: "photo.on.rectangle") { isPickerPresented = true }
+                        Button("Choose from library", systemImage: "photo.on.rectangle") { isPickerPresented = true }
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 19, weight: .bold))
@@ -143,7 +150,7 @@ struct CaptureSheet: View {
                         guard let api = app.api else { return }
                         Task { await capture.submit(using: api) }
                     } label: {
-                        PrimaryLabel("Price these", symbol: "sparkles")
+                        PrimaryLabel("Add to Shelf", symbol: "plus")
                             .frame(height: 48)
                     }
                     .buttonStyle(.glassProminent)
@@ -153,30 +160,41 @@ struct CaptureSheet: View {
                 .padding(.bottom, Space.lg)
             }
         }
-        .overlay {
-            if capture.isPreparing {
-                LoopIndicator(people: 3, size: 36)
-                    .padding(Space.lg)
-                    .glassEffect(.regular, in: .circle)
-                    .transition(.scale.combined(with: .opacity))
-            }
-        }
-        .animation(Motion.bouncy, value: capture.isPreparing)
+    }
+
+    private var isEmpty: Bool { capture.frames.isEmpty && capture.pending == 0 }
+
+    private var photoCount: String {
+        let n = capture.frames.count + capture.pending
+        return n == 1 ? "1 photo" : "\(n) photos"
+    }
+
+    private func openCamera(filming: Bool) {
+        cameraFilms = filming
+        isCameraPresented = true
     }
 
     private var sourceButtons: some View {
         VStack(spacing: Space.md) {
             SourceTile(
-                title: "Film a shelf",
-                detail: cameraAvailable ? "Slow pan, 15 to 60 seconds" : "Needs a camera",
-                symbol: "video.fill",
+                title: "Take photos",
+                detail: cameraAvailable ? "1 or a few things at a time" : "Needs a camera",
+                symbol: "camera.fill",
                 tint: Palette.tangerine
-            ) { isCameraPresented = true }
+            ) { openCamera(filming: false) }
             .disabled(!cameraAvailable)
 
             SourceTile(
-                title: "Pick photos",
-                detail: "Up to 30, or a video",
+                title: "Film a shelf",
+                detail: cameraAvailable ? "Slow pan, 15 to 60 seconds" : "Needs a camera",
+                symbol: "video.fill",
+                tint: Palette.bubblegum
+            ) { openCamera(filming: true) }
+            .disabled(!cameraAvailable)
+
+            SourceTile(
+                title: "Choose from library",
+                detail: "Up to 30 photos, or a video",
                 symbol: "photo.stack.fill",
                 tint: Palette.iris
             ) { isPickerPresented = true }
@@ -208,6 +226,11 @@ struct CaptureSheet: View {
                         .accessibilityLabel("Remove photo")
                     }
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
+                ForEach(0..<capture.pending, id: \.self) { _ in
+                    PendingTile()
+                        .frame(width: 112, height: 140)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
             .padding(.vertical, Space.xs)
@@ -301,6 +324,7 @@ struct CaptureSheet: View {
             } else if let data = try? await item.loadTransferable(type: Data.self) {
                 await capture.add(imageData: [data])
             }
+            capture.settle()
         }
     }
 
@@ -325,6 +349,27 @@ struct CaptureSheet: View {
 }
 
 // MARK: - Source tile
+
+/// A photo still loading: a soft pulsing tile in the photo's place.
+private struct PendingTile: View {
+    @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
+            .fill(Palette.surface)
+            .overlay {
+                RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
+                    .fill(Palette.ink.opacity(pulse ? 0.08 : 0.03))
+            }
+            .overlay { ProgressView().tint(Palette.inkTertiary) }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
+            }
+            .accessibilityLabel("Loading photo")
+    }
+}
 
 private struct SourceTile: View {
     var title: String

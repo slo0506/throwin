@@ -425,12 +425,12 @@ struct ShelfEmptyState: View {
             }
 
             VStack(spacing: Space.xs) {
-                Text("Film a shelf.\nYour GM does the rest.")
+                Text("Trade what you have\nfor what you want.")
                     .font(Typo.title)
                     .tracking(-0.4)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Palette.ink)
-                Text("15 to 60 seconds is plenty. Items show up named and priced, as ranges.")
+                Text("Snap a few things or film a shelf. Each one shows up named, with a value range.")
                     .font(Typo.callout)
                     .foregroundStyle(Palette.inkSecondary)
                     .multilineTextAlignment(.center)
