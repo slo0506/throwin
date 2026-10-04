@@ -141,16 +141,22 @@ export class ClaudeTargetResolver implements TargetResolver {
     private readonly model: ModelClient,
     private readonly config: ResolverConfig = DEFAULT_RESOLVER,
     private readonly findImage: (pages: string[]) => Promise<string | null> = findProductImage,
+    /** An image search by product name (Brave), when configured. */
+    private readonly searchImage?: (query: string) => Promise<string | null>,
   ) {}
 
   async resolve(input: ResolveInput, onRun: (run: ResolverRun) => Promise<void>) {
     const { notes, sources } = await this.#research(input, onRun);
-    // The image search runs alongside extraction, so it adds no wait. A link the user shared
-    // is the best source, then the pages the research cited.
-    const [target, image] = await Promise.all([
+    // Best first: the page of a link the user shared (that exact item), then an image search
+    // for the product's name, then the pages the research cited. The page lookups run
+    // alongside extraction; the search needs the name, so it runs after.
+    const [target, fromLink, fromSources] = await Promise.all([
       this.#extract(input, notes, onRun),
-      this.findImage([...(input.url ? [input.url] : []), ...sources]),
+      input.url ? this.findImage([input.url]) : Promise.resolve(null),
+      this.findImage(sources),
     ]);
+    const image =
+      fromLink ?? (this.searchImage ? await this.searchImage(target.name) : null) ?? fromSources;
     return { ...target, image_url: image };
   }
 

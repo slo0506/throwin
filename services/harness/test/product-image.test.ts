@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findProductImage, isPublicHttps, metaImage } from "../src/product-image.js";
+import {
+  braveImageSearch,
+  findProductImage,
+  isPublicHttps,
+  metaImage,
+} from "../src/product-image.js";
 
 describe("isPublicHttps", () => {
   it("allows public https hosts only", () => {
@@ -92,5 +97,59 @@ describe("findProductImage", () => {
       throw new Error("network down");
     }) as unknown as typeof fetch;
     expect(await findProductImage(["https://shop.example.com/p"], failing)).toBeNull();
+  });
+});
+
+describe("braveImageSearch", () => {
+  it("sends the key, takes the first verified original, and falls back to Brave's thumbnail", async () => {
+    let sent: { url: string; key: string | null } | null = null;
+    const results = {
+      results: [
+        {
+          properties: { url: "https://blocked.example.com/a.jpg" },
+          thumbnail: { src: "https://imgs.search.brave.com/a" },
+        },
+        {
+          properties: { url: "https://img.example.com/b.jpg" },
+          thumbnail: { src: "https://imgs.search.brave.com/b" },
+        },
+      ],
+    };
+    const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("https://api.search.brave.com/")) {
+        sent = { url, key: new Headers(init?.headers).get("X-Subscription-Token") };
+        return new Response(JSON.stringify(results), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url === "https://img.example.com/b.jpg") {
+        return new Response("", { headers: { "content-type": "image/jpeg" } });
+      }
+      return new Response("nope", { status: 403 });
+    }) as typeof fetch;
+    expect(await braveImageSearch("Luka Doncic Prizm rookie", "key-1", fetchImpl)).toBe(
+      "https://img.example.com/b.jpg",
+    );
+    expect(sent).toMatchObject({ key: "key-1" });
+    expect(new URL((sent as unknown as { url: string }).url).searchParams.get("q")).toBe(
+      "Luka Doncic Prizm rookie",
+    );
+
+    results.results[1] = {
+      properties: { url: "https://blocked.example.com/c.jpg" },
+      thumbnail: { src: "x" },
+    };
+    expect(await braveImageSearch("q", "key-1", fetchImpl)).toBe("https://imgs.search.brave.com/a");
+  });
+
+  it("returns null on a bad key or an outage", async () => {
+    const denied = (async () =>
+      new Response("unauthorized", { status: 401 })) as unknown as typeof fetch;
+    expect(await braveImageSearch("q", "bad", denied)).toBeNull();
+    const down = (async () => {
+      throw new Error("down");
+    }) as unknown as typeof fetch;
+    expect(await braveImageSearch("q", "key", down)).toBeNull();
   });
 });
