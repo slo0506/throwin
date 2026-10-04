@@ -121,7 +121,7 @@ struct OnboardingFlow: View {
                     .tracking(-0.8)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Palette.ink)
-                Text("Trade what you have for what you want. Your GM does the legwork.")
+                Text("Trade what you have for what you want.")
                     .font(Typo.body)
                     .foregroundStyle(Palette.inkSecondary)
                     .multilineTextAlignment(.center)
@@ -151,7 +151,7 @@ struct OnboardingFlow: View {
     private var nameStep: some View {
         VStack(spacing: Space.xl) {
             VStack(spacing: Space.xs) {
-                Text("What should your GM call you?")
+                Text("What should we call you?")
                     .font(Typo.title)
                     .tracking(-0.4)
                     .multilineTextAlignment(.center)
@@ -262,10 +262,10 @@ struct OnboardingFlow: View {
     private var consentStep: some View {
         VStack(spacing: Space.lg) {
             VStack(spacing: Space.xs) {
-                Text("Your GM runs on Claude")
+                Text("Before we start")
                     .font(Typo.title)
                     .tracking(-0.4)
-                Text("Here's what that means for your stuff.")
+                Text("How Throw-In handles your stuff.")
                     .font(Typo.callout)
                     .foregroundStyle(Palette.inkSecondary)
             }
@@ -273,14 +273,17 @@ struct OnboardingFlow: View {
 
             PaperCard(padding: Space.lg) {
                 VStack(alignment: .leading, spacing: Space.md) {
-                    consentRow("camera.viewfinder", Palette.tangerine, "Photos you add are analyzed to identify and price your items.")
-                    consentRow("bubble.left.and.text.bubble.right", Palette.iris, "Your chats with your GM are processed by Anthropic's Claude models.")
-                    consentRow("hand.raised", Palette.mint, "We never sell your data or use it for ads. Delete it all anytime.")
+                    // App Store 5.1.2(i): say plainly that third-party AI processes personal data.
+                    // Providers are named in the Privacy Policy, so the app stays model-independent.
+                    consentRow("camera.viewfinder", Palette.tangerine, "We analyze your photos to identify and price your items.")
+                    consentRow("bubble.left.and.text.bubble.right", Palette.iris, "Photos and chats are processed by Throw-In and our AI providers.")
+                    consentRow("tag", Palette.gold, "Values are estimates, not appraisals. You approve every trade.")
+                    consentRow("hand.raised", Palette.mint, "We never sell your data or use it for ads. Delete it anytime.")
                 }
             }
 
             Toggle(isOn: $consented.animation(Motion.snappy)) {
-                Text("I agree to let Anthropic's models process my photos and messages.")
+                Text("I agree to Throw-In's Terms and Privacy Policy, including AI processing of my photos and chats.")
                     .font(Typo.callout)
                     .foregroundStyle(Palette.ink)
             }

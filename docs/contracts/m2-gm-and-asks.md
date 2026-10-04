@@ -26,7 +26,8 @@ All JSON is snake_case. Money is integer cents. Values are ranges. IDs are UUIDs
     "model": "76240",
     "category": "toys/lego",
     "constraints": ["built is fine", "no missing pieces"],
-    "anchor": { "retail_cents": 26999, "used_low_cents": 18000, "used_high_cents": 25000 }
+    "anchor": { "retail_cents": 26999, "used_low_cents": 18000, "used_high_cents": 25000 },
+    "image_url": "https://... or null (a reference product photo from a page the research cited)"
   },
   "offer_item_ids": ["uuid"],
   "offer_value": { "low_cents": 14000, "high_cents": 21000 },
@@ -115,7 +116,7 @@ A keep-alive comment line is sent every 15 seconds. The stream ends after `done`
 | `ask_card` | `Ask` |
 | `recap` | `{ "paragraph": string, "sample_decisions": [{ "give": string, "get": string, "verdict": "yes" or "no", "why": string }] }` |
 
-The user answers `choices` by posting `choice`. Selecting Items in a selectable `item_cards` also posts `choice` with the Item IDs as `option_ids`.
+The user answers `choices` by posting `choice`. Selecting Items in a selectable `item_cards` also posts `choice` with the Item IDs as `option_ids`, and the recap's 2 chips post `choice` with `looks_right` or `fix_something`. The GM shows at most 1 `choices` card per turn.
 
 ## Harness rules (from the PRD non-negotiables)
 

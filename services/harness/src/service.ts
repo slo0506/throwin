@@ -26,7 +26,7 @@ import { type ModelCallRecord, runTurn, type TurnStep } from "./loop.js";
 import { addUsage, costCents, emptyUsage, GM_MODELS, type ModelClient } from "./model.js";
 import { type GmPrompts, greetingFor } from "./prompts.js";
 import { ClaudeTargetResolver, type ResolverRun, type TargetResolver } from "./resolver.js";
-import { GmSession } from "./session.js";
+import { GmSession, RECAP_OPTIONS } from "./session.js";
 import { createToolRegistry } from "./tools/index.js";
 import type { ToolContext, ToolEvent, ToolRegistry } from "./tools/registry.js";
 import { renderAskCard, renderItemCards } from "./tools/render.js";
@@ -264,7 +264,10 @@ export class GmService {
     if (body.choice) {
       const { component_id: componentId, option_ids: optionIds } = body.choice;
       const known = session.components.get(componentId);
-      if (!known || (known.kind !== "choices" && known.kind !== "item_cards")) {
+      if (
+        !known ||
+        (known.kind !== "choices" && known.kind !== "item_cards" && known.kind !== "recap")
+      ) {
         throw new GmInputError(
           400,
           "unknown_component",
@@ -309,9 +312,16 @@ export class GmService {
     session: GmSession,
     rows: StoredMessage[],
     componentId: string,
-    kind: "choices" | "item_cards",
+    kind: "choices" | "item_cards" | "recap",
     optionIds: string[],
   ) {
+    if (kind === "recap") {
+      const label = RECAP_OPTIONS[optionIds[0] as keyof typeof RECAP_OPTIONS] ?? optionIds[0];
+      return {
+        forModel: `[The user tapped "${label}" on the recap card ${componentId}.]`,
+        forUser: label ?? "",
+      };
+    }
     if (kind === "choices") {
       const call = rows.flatMap(toolCallsOf).find((c) => c.component?.id === componentId);
       const data = ChoicesData.safeParse(call?.component?.data);

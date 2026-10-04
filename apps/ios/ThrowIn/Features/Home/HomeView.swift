@@ -54,9 +54,12 @@ struct HomeView: View {
                     }
                     .animation(Motion.bouncy, value: model.asks.map(\.id))
 
-                    VStack(alignment: .leading, spacing: Space.sm) {
-                        SectionHeader(title: "From your GM")
-                        GMSuggestionCard()
+                    // A sample until the GM makes real suggestions; never shown to live users.
+                    if !model.isLive {
+                        VStack(alignment: .leading, spacing: Space.sm) {
+                            SectionHeader(title: "From your GM")
+                            GMSuggestionCard()
+                        }
                     }
                 }
                 .padding(.horizontal, Space.gutter)
@@ -247,7 +250,8 @@ struct AskCard: View {
     var body: some View {
         PaperCard {
             VStack(alignment: .leading, spacing: Space.md) {
-                HStack(alignment: .top) {
+                HStack(alignment: .top, spacing: Space.sm) {
+                    AskTargetThumb(ask: ask, size: 52)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(ask.displayTitle)
                             .font(Typo.headline)

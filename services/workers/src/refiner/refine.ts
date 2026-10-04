@@ -163,15 +163,32 @@ export function valueDriverChanged(
   return changed(after.attributes, before.attributes);
 }
 
+/**
+ * "Is this the Classic Clog or the Bistro?": offers alternatives, so Yes and No don't answer
+ * it. "Is it scratched or not?" still does.
+ */
+export function offersAlternatives(prompt: string): boolean {
+  return /\bor\b(?!\s+not\b)/i.test(prompt);
+}
+
 /** Enforces the contract's option rules per kind. Null drops the question. */
 export function normalizeQuestion(q: QuestionDraft["questions"][number]): NewQuestion | null {
   const prompt = plain(q.prompt);
   if (!prompt || claimsAuthenticity(prompt)) return null;
-  const cleaned = [
+  let cleaned = [
     ...new Set(q.options.map(plain).filter((o) => o && o.toLowerCase() !== "not sure")),
   ];
+  let kind = q.kind;
+  // A yes/no prompt that offers alternatives becomes a choice when the model named them, and
+  // is dropped otherwise: Yes or No would be an answer to nothing.
+  if (kind === "yes_no" && offersAlternatives(prompt)) {
+    const answers = cleaned.filter((o) => !["yes", "no"].includes(o.toLowerCase()));
+    if (answers.length < 2) return null;
+    kind = "choice";
+    cleaned = answers;
+  }
   let options: string[];
-  switch (q.kind) {
+  switch (kind) {
     case "yes_no":
       options = [...YES_NO_OPTIONS];
       break;
@@ -188,7 +205,7 @@ export function normalizeQuestion(q: QuestionDraft["questions"][number]): NewQue
   }
   if (looksPrivate(prompt, ...options) || options.some(claimsAuthenticity)) return null;
   return {
-    kind: q.kind,
+    kind,
     prompt: prompt.slice(0, 200),
     options,
     driver: q.driver,

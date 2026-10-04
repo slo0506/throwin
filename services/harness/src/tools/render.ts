@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import type { GmData } from "../data.js";
 import { clean, dollarAmounts, toAskCard, toNetworkCard, toShelfItem } from "../format.js";
+import { RECAP_OPTIONS } from "../session.js";
 import { assertIssued, defineTool, type ToolContext, ToolError } from "./registry.js";
 
 // UI components are tools. The model passes IDs and short words; the server fills every
@@ -113,9 +114,17 @@ export const presentChoices = defineTool({
   }),
   progress: null,
   async run(ctx, input) {
+    // 1 question at a time: a second card in the same turn showed up as a duplicate.
+    if (ctx.session.choicesThisTurn > 0) {
+      throw new ToolError(
+        "one_question_per_turn",
+        "You already asked a question with present_choices this turn. Stop here and wait for the user's answer.",
+      );
+    }
     const ids = input.options.map((o) => o.id);
     if (new Set(ids).size !== ids.length)
       throw new ToolError("invalid_input", "Option ids must be unique.");
+    ctx.session.choicesThisTurn++;
     const id = ctx.newId();
     const data: ChoicesData = {
       prompt: input.prompt,
@@ -228,6 +237,7 @@ export const presentRecap = defineTool({
     return {
       content: `${shownNote("recap", id)} Ask if anything is off; when they're happy, call finish_intake.`,
       component: { id, kind: "recap", data } satisfies GmComponent,
+      optionIds: Object.keys(RECAP_OPTIONS),
     };
   },
 });

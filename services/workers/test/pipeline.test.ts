@@ -152,7 +152,9 @@ describe("progressive Items", () => {
     expect(seenWhilePricing.every(Boolean)).toBe(true);
     expect(store.items.every((i) => !i.appraising && i.priced?.value)).toBe(true);
     expect(store.items.every((i) => i.appraisals === 1)).toBe(true);
-    expect(store.progress.map((p) => p.detail)).toContain("Found 3 items. Pricing them now");
+    expect(store.progress.map((p) => p.detail)).toContain(
+      "Found 3 items. Adding them to your Shelf",
+    );
   });
 
   it("keeps an Item with a null value when pricing fails", async () => {

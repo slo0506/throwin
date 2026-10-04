@@ -23,13 +23,26 @@ final class CaptureModel {
     private(set) var frames: [PreparedFrame] = []
     private(set) var phase: Phase = .collecting
     private(set) var isPreparing = false
+    /// Photos picked or shot but still loading. Shown as placeholder tiles, so a pick answers
+    /// at once instead of after the first photo decodes.
+    private(set) var pending = 0
     /// Decoded tray thumbnails, keyed by frame.
     private(set) var thumbnails: [UUID: UIImage] = [:]
     /// Items the Appraiser has found so far, shown while it keeps working.
     private(set) var arrivedItems: [ShelfItem] = []
 
-    var isFull: Bool { frames.count >= FrameTools.maxFrames }
-    var canSubmit: Bool { !frames.isEmpty && !isPreparing && phase == .collecting }
+    var isFull: Bool { frames.count + pending >= FrameTools.maxFrames }
+    var canSubmit: Bool { !frames.isEmpty && !isPreparing && pending == 0 && phase == .collecting }
+
+    /// Call the moment the user picks, before any loading starts.
+    func expect(_ count: Int) {
+        withAnimation(Motion.bouncy) { pending += count }
+    }
+
+    /// 1 expected photo or video finished loading, whether or not it worked.
+    func settle() {
+        withAnimation(Motion.bouncy) { pending = max(0, pending - 1) }
+    }
 
     // MARK: Collecting
 

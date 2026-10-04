@@ -1,0 +1,25 @@
+{
+  "id": "refiner-either-or-is-a-choice-not-yes-no",
+  "suite": "refinement",
+  "description": "From the Oct 3 live Tune up: questions that offer alternatives (which model, how worn) are choices with those alternatives as options, never yes_no with Yes and No",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "title": "Crocs clog, yellow",
+      "category": "sneakers",
+      "brand": "Crocs",
+      "model": null,
+      "identity_confidence": 0.6,
+      "condition_confidence": 0.5,
+      "value_cents": { "low": 1200, "mid": 2000, "high": 3500 },
+      "photos": [{ "source": "wikimedia-commons-search", "query": "yellow crocs clog" }]
+    },
+    "reason": "created"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "no_yes_no_offering_alternatives": true,
+    "no_em_dashes": true
+  }
+}

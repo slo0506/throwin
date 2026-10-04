@@ -281,10 +281,14 @@ struct AskChatCard: View {
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Palette.inkTertiary)
                     }
-                    Text(ask.displayTitle)
-                        .font(Typo.headline)
-                        .foregroundStyle(Palette.ink)
-                        .multilineTextAlignment(.leading)
+                    HStack(alignment: .top, spacing: Space.sm) {
+                        AskTargetThumb(ask: ask, size: 56)
+                        Text(ask.displayTitle)
+                            .font(Typo.headline)
+                            .foregroundStyle(Palette.ink)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
                     if let range = ask.usedRange {
                         Text("Usually \(range.label) used")
                             .font(Typo.footnote)
@@ -297,6 +301,54 @@ struct AskChatCard: View {
         }
         .buttonStyle(.pressable)
         .accessibilityHint("Opens the Ask")
+    }
+}
+
+/// What the Ask is for, at a glance: a reference photo of the product when the GM found
+/// one, else an icon for its category. Tinted Pool, the "get" side.
+struct AskTargetThumb: View {
+    var ask: Ask
+    var size: CGFloat
+
+    private var symbol: String {
+        let c = (ask.target?.category ?? "").lowercased()
+        if c.contains("sneaker") || c.contains("shoe") { return "shoe.fill" }
+        if c.contains("card") { return "rectangle.portrait.on.rectangle.portrait.fill" }
+        if c.contains("lego") || c.contains("toy") { return "puzzlepiece.fill" }
+        if c.contains("game") { return "gamecontroller.fill" }
+        if c.contains("bag") || c.contains("apparel") { return "handbag.fill" }
+        if c.contains("book") || c.contains("media") { return "book.closed.fill" }
+        if c.contains("electronic") || c.contains("console") { return "desktopcomputer" }
+        return "sparkles"
+    }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        ZStack {
+            shape.fill(Palette.receive.opacity(0.12))
+            if let raw = ask.target?.imageUrl, let url = URL(string: raw) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        // Product shots come on all sorts of backgrounds: fit, on white.
+                        image.resizable().scaledToFit().padding(size * 0.08).background(.white)
+                    } else {
+                        icon
+                    }
+                }
+            } else {
+                icon
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+        .accessibilityHidden(true)
+    }
+
+    private var icon: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.4, weight: .semibold))
+            .foregroundStyle(Palette.receive)
     }
 }
 

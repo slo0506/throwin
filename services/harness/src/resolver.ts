@@ -12,6 +12,7 @@ import {
   type TokenUsage,
   webSearchTool,
 } from "./model.js";
+import { findProductImage } from "./product-image.js";
 
 export const RESOLVER_PROMPT_VERSION = "resolver-v1";
 
@@ -139,11 +140,18 @@ export class ClaudeTargetResolver implements TargetResolver {
   constructor(
     private readonly model: ModelClient,
     private readonly config: ResolverConfig = DEFAULT_RESOLVER,
+    private readonly findImage: (pages: string[]) => Promise<string | null> = findProductImage,
   ) {}
 
   async resolve(input: ResolveInput, onRun: (run: ResolverRun) => Promise<void>) {
-    const notes = await this.#research(input, onRun);
-    return this.#extract(input, notes, onRun);
+    const { notes, sources } = await this.#research(input, onRun);
+    // The image search runs alongside extraction, so it adds no wait. A link the user shared
+    // is the best source, then the pages the research cited.
+    const [target, image] = await Promise.all([
+      this.#extract(input, notes, onRun),
+      this.findImage([...(input.url ? [input.url] : []), ...sources]),
+    ]);
+    return { ...target, image_url: image };
   }
 
   async #research(input: ResolveInput, onRun: (run: ResolverRun) => Promise<void>) {
@@ -162,6 +170,7 @@ export class ClaudeTargetResolver implements TargetResolver {
     let searches = 0;
     let text = "";
     let outcome = "ok";
+    const sources: string[] = [];
     try {
       for (let turn = 0; turn < 3; turn++) {
         const res = await this.model.create({
@@ -173,11 +182,16 @@ export class ClaudeTargetResolver implements TargetResolver {
         });
         addUsage(usage, res.usage);
         searches += res.usage.server_tool_use?.web_search_requests ?? 0;
-        text = res.content
-          .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        const blocks = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
+        text = blocks
           .map((b) => b.text)
           .join("")
           .trim();
+        for (const block of blocks) {
+          for (const c of block.citations ?? []) {
+            if ("url" in c && typeof c.url === "string") sources.push(c.url);
+          }
+        }
         if (res.stop_reason !== "pause_turn") break;
         messages.push({ role: "assistant", content: res.content });
       }
@@ -194,7 +208,7 @@ export class ClaudeTargetResolver implements TargetResolver {
         outcome,
       });
     }
-    return text.slice(0, 4000);
+    return { notes: text.slice(0, 4000), sources };
   }
 
   async #extract(input: ResolveInput, notes: string, onRun: (run: ResolverRun) => Promise<void>) {
