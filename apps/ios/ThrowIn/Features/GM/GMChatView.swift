@@ -22,7 +22,6 @@ struct GMChatView: View {
     @State private var sendCount = 0
     @State private var openAsk: AskRoute?
     @State private var isCapturing = false
-    @State private var shelfBeforeCapture: Set<String> = []
     @State private var shoot: ChatShootRoute?
     @State private var position = ScrollPosition(edge: .bottom)
     /// Following the newest message. The user's own scrolling turns it off and back on.
@@ -56,8 +55,8 @@ struct GMChatView: View {
         .onChange(of: chat.intakeDone, initial: true) { _, done in
             if isIntake, done { onIntakeComplete() }
         }
-        .sheet(isPresented: $isCapturing, onDismiss: captureClosed) {
-            CaptureSheet(onFinish: {})
+        .sheet(isPresented: $isCapturing) {
+            CaptureSheet(capture: model.draftCapture(), source: .gm, onLanded: landed)
         }
         .fullScreenCover(item: $shoot) { route in
             ShowcaseShootView(itemID: route.itemID, angles: route.angles) { sent in
@@ -143,6 +142,11 @@ struct GMChatView: View {
                                 removal: .opacity
                             )
                         )
+                }
+                // Photos the GM asked for, on their way to the Shelf.
+                ForEach(model.captures.filter { $0.source == .gm }) { capture in
+                    CaptureStatusCard(capture: capture)
+                        .transition(.opacity.combined(with: .offset(y: 8)))
                 }
                 activity
                 if chat.failed != nil, !chat.isBusy {
@@ -262,9 +266,13 @@ struct GMChatView: View {
         let canAct = !chat.isBusy
         switch component.body {
         case let .itemCards(data):
-            ItemCardsComponentView(data: data, answer: answer, isEnabled: canAct) { ids, echo in
-                chat.choose(component, optionIDs: ids, echo: echo)
-            }
+            ItemCardsComponentView(
+                data: data,
+                answer: answer,
+                isEnabled: canAct,
+                onConfirm: { ids, echo in chat.choose(component, optionIDs: ids, echo: echo) },
+                onNone: { chat.answerInWords(component, text: "None of these") }
+            )
         case let .choices(data):
             ChoicesComponentView(data: data, answer: answer, isEnabled: canAct) { ids, echo in
                 chat.choose(component, optionIDs: ids, echo: echo)
@@ -402,19 +410,17 @@ struct GMChatView: View {
             chat.send(text: "I snapped 3 things.")
             return
         }
-        shelfBeforeCapture = Set(model.shelf.map(\.id))
         isCapturing = true
     }
 
-    /// Tells the GM what the capture added, so it can carry on.
-    private func captureClosed() {
-        let before = shelfBeforeCapture
-        Task {
-            await model.refreshShelf()
-            let added = model.shelf.filter { !before.contains($0.id) }.count
-            guard added > 0 else { return }
-            chat.send(text: added == 1 ? "I added 1 thing to my Shelf." : "I added \(added) things to my Shelf.")
-        }
+    /// Tells the GM exactly which Items the photos it asked for became, so it can carry on
+    /// with them (for example, straight into an Ask's offer) instead of asking which.
+    private func landed(_ items: [ShelfItem]) {
+        guard !items.isEmpty else { return }
+        let text = items.count == 1
+            ? "I added \(items[0].title) to my Shelf."
+            : "I added \(items.count) things to my Shelf."
+        chat.sendWhenIdle(text: text, addedItemIDs: items.map(\.id))
     }
 }
 

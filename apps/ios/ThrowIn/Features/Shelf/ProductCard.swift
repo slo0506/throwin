@@ -105,11 +105,9 @@ struct ProductPage: View {
         }
     }
 
+    /// Both on the right, like Maps and Find My: more actions, then close.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button("Close", systemImage: "xmark") { dismiss() }
-        }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button("Fix name or condition", systemImage: "pencil") { isEditing = true }
@@ -120,6 +118,10 @@ struct ProductPage: View {
                 Image(systemName: "ellipsis")
             }
             .accessibilityLabel("More actions")
+        }
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Close", systemImage: "xmark") { dismiss() }
         }
     }
 

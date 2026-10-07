@@ -161,6 +161,8 @@ final class AppModel {
         circles = []
         tasteFacts = []
         approvedDealIDs = []
+        captures = []
+        captureDraft = nil
         askRevisions = [:]
         showsPushPrompt = false
         gm.reset()
@@ -354,6 +356,62 @@ final class AppModel {
     }
 
     private var followingShelf = false
+
+    // MARK: Captures
+
+    /// Photos sent to the Appraiser, newest first. The app follows them here rather than in
+    /// the capture sheet, so closing the sheet never stops anything: progress shows on the
+    /// Shelf, and in the chat when the GM asked for the photo.
+    private(set) var captures: [CaptureModel] = []
+
+    /// Photos in the capture tray that haven't been sent. Kept when the sheet closes, so a
+    /// swipe down never loses them; the next capture sheet picks up where this 1 left off.
+    @ObservationIgnored private var captureDraft: CaptureModel?
+
+    /// The tray for the capture sheet: the unsent draft, or a fresh 1. Safe to call while a
+    /// view is being drawn: it changes nothing anything observes.
+    func draftCapture() -> CaptureModel {
+        if let captureDraft, captureDraft.phase == .collecting {
+            return captureDraft
+        }
+        let fresh = CaptureModel()
+        captureDraft = fresh
+        return fresh
+    }
+
+    /// Sends a capture and follows it to the end. `onLanded` gets the new Items once, on
+    /// success, so the GM can carry on with exactly those.
+    func submitCapture(_ capture: CaptureModel, onLanded: (([ShelfItem]) -> Void)? = nil) {
+        guard let api else { return }
+        if captureDraft === capture { captureDraft = nil }
+        if !captures.contains(where: { $0 === capture }) {
+            withAnimation(Motion.bouncy) { captures.insert(capture, at: 0) }
+        }
+        Task {
+            await capture.submit(using: api)
+            await refreshShelf()
+            guard case let .finished(items, _) = capture.phase else { return }
+            await loadQuestions()
+            onLanded?(items)
+            // Items landed: stay long enough to see it and tap Tune up, then clear. "Nothing
+            // to trade in these" stays until dismissed, so the advice isn't missed.
+            guard !items.isEmpty else { return }
+            try? await Task.sleep(for: .seconds(8))
+            dismissCapture(capture)
+        }
+    }
+
+    /// Takes the card off the Shelf. A capture still sending or being read can't be dismissed.
+    func dismissCapture(_ capture: CaptureModel) {
+        guard !capture.phase.isBusy else { return }
+        withAnimation(Motion.soft) { captures.removeAll { $0 === capture } }
+    }
+
+    /// Sends the same photos again after a failure.
+    func retryCapture(_ capture: CaptureModel) {
+        capture.retry()
+        submitCapture(capture)
+    }
 
     /// While anything on the Shelf is being priced or re-read, keeps the Shelf fresh (every
     /// 3 seconds, for up to 3 minutes) so each card's scan stops when the GM is done with it.

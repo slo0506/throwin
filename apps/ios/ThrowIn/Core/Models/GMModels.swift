@@ -270,6 +270,8 @@ nonisolated struct GMSendRequest: Encodable, Hashable, Sendable {
     var text: String?
     var choice: GMChoice?
     var mediaPaths: [String]?
+    /// Items that just landed on the Shelf from photos the GM asked for.
+    var addedItemIds: [String]?
     /// Where the user opened the GM from, like `new_ask`.
     var screen: String?
 }

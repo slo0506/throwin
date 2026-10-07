@@ -17,8 +17,8 @@ struct GMChip: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if showsCheck {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 15, weight: .bold))
+                    Image(systemName: isSelected ? "checkmark" : "plus")
+                        .font(.system(size: 13, weight: .bold))
                         .contentTransition(.symbolEffect(.replace))
                 }
                 Text(label)
@@ -72,20 +72,25 @@ struct ChoicesComponentView: View {
                     .animation(Motion.bouncy.delay(Double(index) * 0.06), value: appeared)
                 }
             }
-            if data.multiple, answer == nil {
+            if data.multiple, answer == nil, !picked.isEmpty {
                 Button {
                     send(picked)
                 } label: {
-                    Text("Done")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(Palette.canvas)
-                        .padding(.horizontal, Space.xl)
-                        .frame(height: 40)
+                    HStack(spacing: 6) {
+                        Text(picked.count == 1 ? "Send 1" : "Send \(picked.count)")
+                            .contentTransition(.numericText())
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(Palette.canvas)
+                    .padding(.horizontal, Space.lg)
+                    .frame(height: 40)
                 }
                 .buttonStyle(.glassProminent)
                 .tint(Palette.ink)
-                .disabled(picked.isEmpty || !isEnabled)
-                .transition(.opacity)
+                .disabled(!isEnabled)
+                .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
         .sensoryFeedback(.selection, trigger: picked)
@@ -120,13 +125,15 @@ struct ChoicesComponentView: View {
 
 // MARK: - Item cards
 
-/// `item_cards`: a row of Item cards. When selectable, a tap toggles a check and Confirm
-/// sends the picked Item IDs.
+/// `item_cards`: a row of Item cards. When selectable, tapping a card picks it (a check
+/// badge and a warm border, nothing on cards you haven't picked), and a Send button appears
+/// with the count once anything is picked. "None of these" answers with words instead.
 struct ItemCardsComponentView: View {
     var data: ItemCardsData
     var answer: [String]?
     var isEnabled: Bool
     var onConfirm: (_ itemIDs: [String], _ echo: String) -> Void
+    var onNone: () -> Void = {}
 
     @State private var picked: Set<String> = []
     @State private var seeded = false
@@ -145,17 +152,38 @@ struct ItemCardsComponentView: View {
             .scrollClipDisabled()
 
             if data.selectable, answer == nil {
-                Button(action: confirm) {
-                    Text(picked.isEmpty ? "Confirm" : "Confirm \(picked.count)")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(Palette.canvas)
-                        .padding(.horizontal, Space.xl)
-                        .frame(height: 40)
-                        .contentTransition(.numericText())
+                HStack(spacing: Space.sm) {
+                    if picked.isEmpty {
+                        Text(data.items.count == 1 ? "Tap it to pick it." : "Tap the ones you mean.")
+                            .font(Typo.footnote)
+                            .foregroundStyle(Palette.inkTertiary)
+                            .transition(.opacity)
+                    } else {
+                        Button(action: confirm) {
+                            HStack(spacing: 6) {
+                                Text(picked.count == 1 ? "Send 1" : "Send \(picked.count)")
+                                    .contentTransition(.numericText())
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(Palette.canvas)
+                            .padding(.horizontal, Space.lg)
+                            .frame(height: 40)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .tint(Palette.ink)
+                        .disabled(!isEnabled)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                    }
+                    Spacer(minLength: 0)
+                    Button("None of these", action: onNone)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Palette.inkSecondary)
+                        .buttonStyle(.plain)
+                        .disabled(!isEnabled)
                 }
-                .buttonStyle(.glassProminent)
-                .tint(Palette.ink)
-                .disabled(picked.isEmpty || !isEnabled)
+                .animation(Motion.snappy, value: picked.isEmpty)
                 .animation(Motion.snappy, value: picked.count)
             }
         }
@@ -171,24 +199,26 @@ struct ItemCardsComponentView: View {
         let isPicked = selection.contains(entry.id)
         return VStack(alignment: .leading, spacing: 6) {
             ItemCard(item: entry.item)
-                .overlay(alignment: .topTrailing) {
-                    if data.selectable {
-                        Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 24, weight: .semibold))
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(isPicked ? Color.white : Palette.inkTertiary, isPicked ? Palette.give : Palette.surface)
-                            .background(Circle().fill(Palette.surface.opacity(isPicked ? 0 : 0.85)))
-                            .padding(Space.sm)
-                            .contentTransition(.symbolEffect(.replace))
-                            .accessibilityHidden(true)
-                    }
-                }
                 .overlay {
                     if data.selectable, isPicked {
                         RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                            .strokeBorder(Palette.give, lineWidth: 2)
+                            .strokeBorder(Palette.give, lineWidth: 2.5)
                     }
                 }
+                .overlay(alignment: .topTrailing) {
+                    if data.selectable, isPicked {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(Palette.give, in: Circle())
+                            .overlay(Circle().strokeBorder(.white, lineWidth: 2))
+                            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                            .padding(Space.xs)
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    }
+                }
+                .scaleEffect(data.selectable && isPicked && answer == nil ? 0.97 : 1)
                 .opacity(data.selectable && !isPicked && answer != nil ? 0.45 : 1)
             if let owner = entry.ownerFirstName, !owner.isEmpty {
                 Text("\(owner)'s Shelf")
@@ -202,12 +232,13 @@ struct ItemCardsComponentView: View {
         .onTapGesture { toggle(entry.id) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(data.selectable ? [.isButton] : [])
-        .accessibilityValue(data.selectable ? (isPicked ? "Included" : "Not included") : "")
-        .animation(Motion.snappy, value: isPicked)
+        .accessibilityValue(data.selectable ? (isPicked ? "Picked" : "Not picked") : "")
+        .animation(Motion.bouncy, value: isPicked)
     }
 
     private var selection: Set<String> {
         if let answer {
+            // Answered in an earlier session: the server fills in what was picked.
             return Set(answer.isEmpty ? data.selectedIds : answer)
         }
         return picked

@@ -9,7 +9,6 @@ struct ShelfView: View {
     @Namespace private var itemNamespace
     @State private var isCapturing = false
     @State private var isCaptureSheetPresented = false
-    @State private var tuneUpAfterCapture = false
     @State private var filter: ShelfFilter = .all
     @State private var openItem: ItemRoute?
     @State private var tuneUp: TuneUpRoute?
@@ -23,7 +22,7 @@ struct ShelfView: View {
         NavigationStack {
             ZStack {
                 Palette.canvas.ignoresSafeArea()
-                if model.shelf.isEmpty {
+                if model.shelf.isEmpty, model.captures.isEmpty {
                     ShelfEmptyState(isCapturing: isCapturing, onCapture: capture)
                         .transition(.blurReplace)
                 } else {
@@ -31,22 +30,13 @@ struct ShelfView: View {
                         .transition(.blurReplace)
                 }
             }
-            .animation(Motion.soft, value: model.shelf.isEmpty)
+            .animation(Motion.soft, value: model.shelf.isEmpty && model.captures.isEmpty)
             .task {
                 await model.refreshShelf()
                 await model.loadQuestions()
             }
-            .sheet(isPresented: $isCaptureSheetPresented, onDismiss: {
-                guard tuneUpAfterCapture else { return }
-                tuneUpAfterCapture = false
-                tuneUp = TuneUpRoute(itemID: nil)
-            }) {
-                CaptureSheet(
-                    onFinish: {
-                        Task { await model.refreshShelf() }
-                    },
-                    onTuneUp: { tuneUpAfterCapture = true }
-                )
+            .sheet(isPresented: $isCaptureSheetPresented) {
+                CaptureSheet(capture: model.draftCapture())
             }
             .sheet(item: $openItem) { route in
                 ProductPage(itemID: route.id)
@@ -68,9 +58,17 @@ struct ShelfView: View {
             VStack(alignment: .leading, spacing: Space.lg) {
                 header
 
+                // Photos on their way: the GM's work shows here, where the Items will land.
+                ForEach(model.captures) { capture in
+                    CaptureStatusCard(capture: capture) {
+                        tuneUp = TuneUpRoute(itemID: nil)
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 ShelfFilterBar(selection: $filter)
 
-                if visibleItems.isEmpty {
+                if visibleItems.isEmpty, !model.shelf.isEmpty {
                     Text(filter == .ready
                          ? "Nothing ready to show yet. A quick Tune up gets you there."
                          : "Everything here is ready to show.")
