@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { MatchDeal } from "./matcher.js";
 import type {
+  InquiryResult,
   ProspectingAsk,
   ProspectorStore,
   ReviewContext,
@@ -172,7 +173,7 @@ export class SupabaseProspectorStore implements ProspectorStore {
         giver_ask_id: e.giverAskId,
         utility: e.utility,
         confidence: e.confidence,
-        kind: "explicit",
+        kind: e.kind,
       })),
     );
     if (error) fail("replaceEdges.insert", error);
@@ -262,6 +263,39 @@ export class SupabaseProspectorStore implements ProspectorStore {
       prospects: z.number().int().parse(prospects.data),
       drops: z.number().int().parse(drops.data),
     };
+  }
+
+  async answeredYes(askIds: string[]): Promise<Set<string>> {
+    if (askIds.length === 0) return new Set();
+    const { data, error } = await this.db
+      .from("inquiries")
+      .select("ask_id, item_id")
+      .in("ask_id", askIds)
+      .eq("status", "yes");
+    if (error) fail("answeredYes", error);
+    return new Set(
+      z
+        .array(z.object({ ask_id: z.string(), item_id: z.string() }))
+        .parse(data ?? [])
+        .map((r) => `${r.ask_id}|${r.item_id}`),
+    );
+  }
+
+  async createInquiry(askId: string, itemId: string, giverId: string): Promise<InquiryResult> {
+    const { data, error } = await this.db.rpc("create_inquiry", {
+      p_ask_id: askId,
+      p_item_id: itemId,
+      p_giver_id: giverId,
+    });
+    if (error) fail("createInquiry", error);
+    return z.object({ result: z.enum(["ok", "exists", "limited", "invalid"]) }).parse(data).result;
+  }
+
+  /** public.expire_inquiries: closes questions nobody answered in 24 hours. Returns how many. */
+  async expireInquiries(): Promise<number> {
+    const { data, error } = await this.db.rpc("expire_inquiries");
+    if (error) fail("expireInquiries", error);
+    return z.number().int().parse(data);
   }
 
   /** public.expire_deals: cancels open Deals past expiry. Returns how many. */

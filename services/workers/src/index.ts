@@ -6,6 +6,8 @@ import { type AppraiserDeps, appraiseCapture, reappraiseItem } from "./appraiser
 import { CachedPricer } from "./appraiser/price-cache.js";
 import { SpendGuard } from "./budget.js";
 import { loadEnv } from "./env.js";
+import { answerInquiry, ClaudeLiaisonModel } from "./liaison/answer.js";
+import { SupabaseLiaisonStore } from "./liaison/store.js";
 import { createLogger } from "./log.js";
 import { ExtractMemoryPayload, extractMemory } from "./memory/extract.js";
 import { ClaudeMemoryModel } from "./memory/model.js";
@@ -60,6 +62,7 @@ const refiner: RefinerConfig = {
 };
 
 const prospectorStore = new SupabaseProspectorStore(db);
+const liaisonStore = new SupabaseLiaisonStore(db);
 const prospector: Omit<ProspectorDeps, "review"> | null = env.MATCHER_URL
   ? {
       store: prospectorStore,
@@ -71,6 +74,9 @@ const prospector: Omit<ProspectorDeps, "review"> | null = env.MATCHER_URL
         maxEmbedsPerRun: env.PROSPECT_MAX_EMBEDS,
         matcherTimeLimitSeconds: env.MATCHER_TIME_LIMIT_SECONDS,
         maxItemsPerLeg: env.PROSPECT_MAX_ITEMS_PER_LEG,
+        inferred: env.PROSPECT_INFERRED_EDGES
+          ? { minSimilarity: env.PROSPECT_INFER_MIN_SIMILARITY, perAsk: env.PROSPECT_INFER_PER_ASK }
+          : null,
       },
       logger,
     }
@@ -81,6 +87,7 @@ const KINDS = [
   "reappraise_item",
   "refine_item",
   "extract_memory",
+  "answer_inquiry",
   // Without a matcher, these stay queued until one is configured.
   ...(prospector ? ["prospect_ask", "drop_circle"] : []),
 ];
@@ -181,6 +188,23 @@ async function runJob(job: Job) {
               ),
             }
           : { reason: outcome.reason }),
+        ms: Date.now() - started,
+      });
+    } else if (job.kind === "answer_inquiry") {
+      // The Liaison answers for the person asked, so its model runs are theirs.
+      const model = new ClaudeLiaisonModel(anthropic, recorder(userId, "inquiry", runs));
+      const outcome = await answerInquiry(String(job.payload.inquiry_id ?? ""), {
+        store: liaisonStore,
+        model,
+      });
+      await queue.finish(job.id);
+      logger.info("job_done", {
+        job_id: job.id,
+        kind: job.kind,
+        inquiry_id: job.payload.inquiry_id,
+        outcome: outcome.status,
+        ...(outcome.status === "answered" && { yes: outcome.yes }),
+        ...(outcome.status === "left_for_user" && { why: outcome.why }),
         ms: Date.now() - started,
       });
     } else if (job.kind === "extract_memory") {
@@ -296,6 +320,8 @@ async function expireLoop() {
     try {
       const expired = await prospectorStore.expireDeals();
       if (expired > 0) logger.info("deals_expired", { count: expired });
+      const unanswered = await prospectorStore.expireInquiries();
+      if (unanswered > 0) logger.info("inquiries_expired", { count: unanswered });
     } catch (err) {
       logger.error("expire_deals_failed", { error: String(err) });
     }

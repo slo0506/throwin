@@ -15,6 +15,11 @@
  * 6. Stage the kept Deals best first (public.stage_deal re-checks everything and holds the
  *    Items).
  *
+ * Guesses: an Item in the same top-level category as an Ask that didn't clear the bar (a
+ * PS5 for an Xbox Ask) becomes an inferred edge. A Deal that rests on 1 isn't reviewed or
+ * staged; the wanter's side is asked first (public.create_inquiry, then the Liaison). Yes
+ * makes it a want on the next run; no keeps the Item away from that Ask.
+ *
  * The review is the only model call.
  */
 
@@ -65,7 +70,11 @@ export interface StoredEdge {
   giverAskId: string;
   utility: number;
   confidence: number;
+  kind: "explicit" | "inferred";
 }
+
+/** public.create_inquiry's answer. */
+export type InquiryResult = "ok" | "exists" | "limited" | "invalid";
 
 export interface ProspectorStore {
   /** Null when missing or not the user's. */
@@ -87,6 +96,10 @@ export interface ProspectorStore {
   ): Promise<StageResult>;
   /** Records that these Asks were just prospected, for the 6-hour sweep. */
   markProspected(askIds: string[]): Promise<void>;
+  /** Guesses the wanter said yes to, which are wants now, as "askId|itemId". */
+  answeredYes(askIds: string[]): Promise<Set<string>>;
+  /** public.create_inquiry: ask the wanter's side about a guess, within the limits. */
+  createInquiry(askId: string, itemId: string, giverId: string): Promise<InquiryResult>;
   /** What the review reads: participants' names and taste facts, and the Items' details. */
   reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext>;
 }
@@ -99,6 +112,8 @@ export interface ReviewContext {
 
 export type StageResult =
   | { result: "ok"; dealId: string }
+  /** It rests on guesses: their wanters are asked first, and nothing is staged yet. */
+  | { result: "asked"; inquiries: InquiryResult[] }
   | { result: "dropped"; by: "never_trade" | "model"; reason: string }
   | {
       result: "invalid" | "ask_unavailable" | "offer_changed" | "over_ceiling" | "items_taken";
@@ -113,6 +128,8 @@ export interface ProspectorConfig {
   matcherTimeLimitSeconds: number;
   /** Items 1 person may hand another in 1 Deal: 1 means 1 Item each way, more allows bundles. */
   maxItemsPerLeg: number;
+  /** Guesses: the similarity they need, and how many per Ask. Null turns them off. */
+  inferred: { minSimilarity: number; perAsk: number } | null;
 }
 
 export interface ProspectorDeps {
@@ -176,6 +193,25 @@ export function scoreCandidate(
   }
   if (c.similarity < minSimilarity) return null;
   return Math.min(1, c.similarity);
+}
+
+/** How sure the matcher is of a guess: low enough that a sure want usually wins. */
+export const INFERRED_CONFIDENCE = 0.6;
+
+/**
+ * How well a guess fits an Ask, or null when it isn't 1: it must share the Ask's top-level
+ * category and come close enough in embedding space. A brand clash doesn't rule it out;
+ * that's what makes it a guess and not a want.
+ */
+export function inferCandidate(
+  target: unknown,
+  c: Pick<WantCandidate, "similarity" | "category">,
+  minSimilarity: number,
+): number | null {
+  const parsed = AskTarget.safeParse(target);
+  const category = parsed.success ? parsed.data.category : null;
+  if (!category || !c.category || topCategory(category) !== topCategory(c.category)) return null;
+  return c.similarity >= minSimilarity ? Math.min(1, c.similarity) : null;
 }
 
 /** Each person's side of a matched Deal, as the review reads it. */
@@ -265,22 +301,27 @@ async function runMatching(
     await store.saveAskEmbedding(s.ask.id, embedder.model, vector, s.hash);
   }
 
-  // 2 and 3. Score candidates into edges, per Circle.
+  // 2 and 3. Score candidates into edges, per Circle: wants first, then the best few
+  //    guesses per Ask. A guess its wanter said yes to is a want.
   const targets = new Map(asks.map((a) => [a.id, a.target]));
+  const yes = await store.answeredYes(asks.map((a) => a.id));
   const edgesByCircle = new Map<string, MatcherEdge[]>();
   const stored = new Map<string, StoredEdge>();
   for (const circleId of circleIds) {
     const edges: MatcherEdge[] = [];
-    for (const c of await store.candidates(circleId, embedder.model, config.candidatesPerAsk)) {
-      const score = scoreCandidate(targets.get(c.askId), c, config.minSimilarity);
-      if (score === null) continue;
+    const add = (
+      c: WantCandidate,
+      kind: StoredEdge["kind"],
+      utility: number,
+      confidence: number,
+    ) => {
       edges.push({
         from_user: c.wanterId,
         to_user: c.giverId,
         item_id: c.itemId,
-        utility: score,
-        confidence: score,
-        kind: "explicit",
+        utility,
+        confidence,
+        kind,
         ask_id: c.askId,
         giver_ask_id: c.giverAskId,
         value_cents: c.valueMidCents,
@@ -293,9 +334,29 @@ async function runMatching(
         itemId: c.itemId,
         askId: c.askId,
         giverAskId: c.giverAskId,
-        utility: score,
-        confidence: score,
+        utility,
+        confidence,
+        kind,
       });
+    };
+    const guesses = new Map<string, { c: WantCandidate; score: number }[]>();
+    for (const c of await store.candidates(circleId, embedder.model, config.candidatesPerAsk)) {
+      const score = yes.has(`${c.askId}|${c.itemId}`)
+        ? Math.max(0.9, c.similarity)
+        : scoreCandidate(targets.get(c.askId), c, config.minSimilarity);
+      if (score !== null) {
+        add(c, "explicit", score, score);
+        continue;
+      }
+      const guess =
+        config.inferred && inferCandidate(targets.get(c.askId), c, config.inferred.minSimilarity);
+      if (guess) guesses.set(c.askId, [...(guesses.get(c.askId) ?? []), { c, score: guess }]);
+    }
+    for (const list of guesses.values()) {
+      list.sort((a, b) => b.score - a.score);
+      for (const { c, score } of list.slice(0, config.inferred?.perAsk ?? 0)) {
+        add(c, "inferred", score, INFERRED_CONFIDENCE);
+      }
     }
     edgesByCircle.set(circleId, edges);
   }
@@ -323,6 +384,18 @@ async function runMatching(
   const mode = anchor ? "live" : "drop";
   const deals: CircleDeal[] = [];
   for (const m of matched) {
+    // A Loop that rests on a guess waits for each guess's wanter to say yes.
+    const guessed = m.deal.item_legs.filter((l) => l.kind === "inferred");
+    if (guessed.length > 0) {
+      const inquiries: InquiryResult[] = [];
+      for (const leg of guessed) {
+        inquiries.push(
+          leg.ask_id ? await store.createInquiry(leg.ask_id, leg.item_id, leg.giver) : "invalid",
+        );
+      }
+      deals.push({ ...m, staged: { result: "asked", inquiries } });
+      continue;
+    }
     const participants = await reviewParticipants(store, m.deal);
     const verdict = await reviewDeal(participants, deps.review);
     if (!verdict.keep) {
@@ -343,6 +416,7 @@ async function runMatching(
       deals: deals.length,
       staged: deals.filter((d) => d.staged.result === "ok").length,
       dropped: deals.filter((d) => d.staged.result === "dropped").length,
+      asked: deals.filter((d) => d.staged.result === "asked").length,
     },
   };
 }
