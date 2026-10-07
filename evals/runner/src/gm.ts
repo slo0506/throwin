@@ -96,6 +96,17 @@ export const GmCaseState = z.strictObject({
   added_item_ids: z.array(z.uuid()).optional(),
   /** Open Deals, from the user's side (get_deals, stage_counter). */
   deals: z.array(EvalDeal).default([]),
+  /** What circle_demand returns for the user (get_demand): counts only. */
+  demand: z
+    .array(
+      z.strictObject({
+        label: z.string(),
+        category: z.string().nullable().default(null),
+        askers: z.number().int().positive(),
+        item_ids: z.array(z.uuid()).default([]),
+      }),
+    )
+    .default([]),
 });
 export type GmCaseState = z.infer<typeof GmCaseState>;
 
@@ -169,6 +180,15 @@ function seed(state: GmCaseState, data: MemoryGmData) {
       description: s.description ?? null,
     });
   }
+  data.demand.set(
+    EVAL_USER,
+    state.demand.map((d) => ({
+      label: d.label,
+      category: d.category,
+      askers: d.askers,
+      itemIds: d.item_ids,
+    })),
+  );
   if (state.circle.length) data.joinCircle(EVAL_USER, "eval-circle");
   for (const m of state.circle) {
     data.addUser(m.user_id, { firstName: m.first_name });

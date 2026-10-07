@@ -10,6 +10,7 @@ nonisolated struct NextUpItem: Decodable, Identifiable, Hashable, Sendable {
         case offerForAsk = "offer_for_ask"
         case joinCircle = "join_circle"
         case weakOffer = "weak_offer"
+        case inDemand = "in_demand"
         case tuneUp = "tune_up"
         case itemPhotos = "item_photos"
         case addToShelf = "add_to_shelf"

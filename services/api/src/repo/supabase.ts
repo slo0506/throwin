@@ -39,6 +39,7 @@ import {
   type DealItemRecord,
   type DealLegRecord,
   type DealRecord,
+  type DemandRecord,
   type InvitePreviewRecord,
   type InviteRecord,
   type ItemRecord,
@@ -1234,6 +1235,27 @@ export class SupabaseRepository implements Repository {
           : null,
       };
     });
+  }
+
+  async getDemand(userId: string): Promise<DemandRecord[]> {
+    const { data, error } = await this.db.rpc("circle_demand", { p_user_id: userId });
+    if (error) throw new RepositoryError("getDemand", error);
+    return z
+      .array(
+        z.object({
+          label: z.string(),
+          category: z.string().nullable(),
+          askers: z.number().int(),
+          item_ids: z.array(z.string()).nullable(),
+        }),
+      )
+      .parse(data ?? [])
+      .map((r) => ({
+        label: r.label,
+        category: r.category,
+        askers: r.askers,
+        itemIds: r.item_ids ?? [],
+      }));
   }
 
   async getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]> {

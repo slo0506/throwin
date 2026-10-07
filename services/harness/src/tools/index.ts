@@ -4,7 +4,7 @@ import { getAskStatus, resolveTarget, setAutonomy, setOfferSet, upsertAsk } from
 import { getDeals, stageCounter } from "./deals.js";
 import { defineTool, type GmTool, ToolError, ToolRegistry } from "./registry.js";
 import { presentAsk, presentChoices, presentItems, presentRecap, requestMedia } from "./render.js";
-import { getItem, searchMyShelf, searchNetwork, updateItem } from "./shelf.js";
+import { getDemand, getItem, searchMyShelf, searchNetwork, updateItem } from "./shelf.js";
 
 /** Skills the session summary inlines instead of loading on demand. */
 const INLINE_SKILLS = new Set(["intake"]);
@@ -66,6 +66,7 @@ export function gmTools(prompts: GmPrompts): GmTool[] {
   return [
     searchMyShelf,
     searchNetwork,
+    getDemand,
     getItem,
     resolveTarget,
     upsertAsk,

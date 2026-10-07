@@ -145,6 +145,10 @@ struct HomeView: View {
             }
         case .joinCircle:
             withAnimation(Motion.bouncy) { model.tab = .circles }
+        case .inDemand:
+            // People want something this Item could fill: the GM turns it into an Ask.
+            let title = model.shelf.first(where: { $0.id == item.itemId })?.title ?? "this"
+            model.openGM(screen: "in_demand", seed: "People in my Circles want something like my \(title). What could I trade it for? ")
         case .tuneUp:
             tuneUp = TuneUpRoute(itemID: nil)
         case .addToShelf:
@@ -523,6 +527,7 @@ struct NextUpRow: View {
         case .offerForAsk: ("hand.point.up.left.fill", Palette.iris)
         case .joinCircle: ("person.3.fill", Palette.receive)
         case .weakOffer: ("scalemass.fill", Palette.gold)
+        case .inDemand: ("flame.fill", Palette.give)
         case .tuneUp: ("wand.and.stars", Palette.iris)
         case .itemPhotos: ("camera.aperture", Palette.mint)
         case .addToShelf: ("plus.viewfinder", Palette.give)

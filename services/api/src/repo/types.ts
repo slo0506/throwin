@@ -299,6 +299,15 @@ export interface CounterRecord {
   expiresAt: Date;
 }
 
+/** A want in the user's Circles, as a count (public.circle_demand). Never who. */
+export interface DemandRecord {
+  label: string;
+  category: string | null;
+  askers: number;
+  /** The user's own Items that could fill it. */
+  itemIds: string[];
+}
+
 /** An Item a counter may add: who owns it, whether it's free, and what a Deal Sheet shows. */
 export interface CounterItemRecord {
   ownerId: string;
@@ -463,6 +472,8 @@ export interface Repository {
   approveDeal(userId: string, dealId: string, snapshot: unknown): Promise<DealDecisionResult>;
   /** public.decline_deal. */
   declineDeal(userId: string, dealId: string, reason: string | null): Promise<DealDecisionResult>;
+  /** What people in the user's Circles want, as counts only (public.circle_demand). */
+  getDemand(userId: string): Promise<DemandRecord[]>;
   /** Items a counter may add, by ID. Missing IDs are skipped. */
   getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]>;
   /** Each Ask's cash ceiling, to re-balance a counter. Server only: never shown to others. */

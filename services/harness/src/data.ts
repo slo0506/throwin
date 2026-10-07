@@ -147,6 +147,16 @@ export interface AskPatch {
 
 export type AskUpdateResult = AskRecord | "not_found" | "ask_closed" | "invalid_offer_item";
 
+/** A want in the user's Circles, as a count (public.circle_demand). Never who. */
+export interface DemandView {
+  /** Written from other people's words: untrusted. */
+  label: string;
+  category: string | null;
+  askers: number;
+  /** The user's own Items that could fill it. */
+  items: OwnItem[];
+}
+
 export interface TasteFact {
   id: string;
   key: string;
@@ -224,6 +234,8 @@ export interface GmData {
   ): Promise<OwnItem | null>;
 
   listNetworkItems(userId: string, query: NetworkQuery): Promise<NetworkItem[]>;
+  /** What people in the user's Circles want, as counts only. */
+  circleDemand(userId: string): Promise<DemandView[]>;
   circleStats(userId: string): Promise<CircleStats>;
 
   listActiveAsks(userId: string): Promise<AskRecord[]>;

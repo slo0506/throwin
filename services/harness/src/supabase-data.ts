@@ -19,6 +19,7 @@ import {
   type AskUpdateResult,
   type CircleStats,
   type Conversation,
+  type DemandView,
   type GmData,
   type GmUser,
   type LoadedImage,
@@ -631,6 +632,32 @@ export class SupabaseGmData implements GmData {
       .limit(1);
     if (error) throw new GmDataError("intakeFinished", error);
     return (data ?? []).length > 0;
+  }
+
+  async circleDemand(userId: string): Promise<DemandView[]> {
+    const { data, error } = await this.db.rpc("circle_demand", { p_user_id: userId });
+    if (error) throw new GmDataError("circleDemand", error);
+    const rows = z
+      .array(
+        z.object({
+          label: z.string(),
+          category: z.string().nullable(),
+          askers: z.number().int(),
+          item_ids: z.array(z.string()).nullable(),
+        }),
+      )
+      .parse(data ?? []);
+    const own = new Map(
+      (await this.getOwnItems(userId, [...new Set(rows.flatMap((r) => r.item_ids ?? []))])).map(
+        (i) => [i.id, i],
+      ),
+    );
+    return rows.map((r) => ({
+      label: r.label,
+      category: r.category,
+      askers: r.askers,
+      items: (r.item_ids ?? []).flatMap((id) => own.get(id) ?? []),
+    }));
   }
 
   async recordRun(run: AgentRun): Promise<void> {

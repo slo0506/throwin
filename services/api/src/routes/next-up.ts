@@ -9,12 +9,13 @@ import type { AppEnv } from "../types.js";
 export const nextUpRoutes = (repo: Repository, media: MediaStore, now: () => Date) =>
   new Hono<AppEnv>().get("/", async (c) => {
     const userId = c.get("user").id;
-    const [deals, photoRequests, asks, items, circles] = await Promise.all([
+    const [deals, photoRequests, asks, items, circles, demand] = await Promise.all([
       repo.listDeals(userId),
       repo.listPhotoRequests(userId),
       repo.listAsks(userId),
       repo.listShelfItems(userId),
       repo.listCircles(userId),
+      repo.getDemand(userId),
     ]);
     const paths = [
       ...deals.flatMap((d) => d.legs.flatMap((l) => (l.item.photoPath ? [l.item.photoPath] : []))),
@@ -25,7 +26,17 @@ export const nextUpRoutes = (repo: Repository, media: MediaStore, now: () => Dat
       ? await media.signedReadUrls([...new Set(paths)])
       : new Map<string, string | null>();
     const body: NextUpResponse = {
-      items: buildNextUp({ userId, now: now(), deals, photoRequests, asks, items, circles, urls }),
+      items: buildNextUp({
+        userId,
+        now: now(),
+        deals,
+        photoRequests,
+        asks,
+        items,
+        circles,
+        demand,
+        urls,
+      }),
     };
     return c.json(body);
   });

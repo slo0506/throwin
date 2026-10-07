@@ -354,6 +354,7 @@ describe("untrusted text", () => {
     expect(names).toEqual([
       "search_my_shelf",
       "search_network",
+      "get_demand",
       "get_item",
       "resolve_target",
       "upsert_ask",
