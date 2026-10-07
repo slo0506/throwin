@@ -1,5 +1,7 @@
 import { DealSheet } from "@throwin/shared";
 import { describe, expect, it } from "vitest";
+import { Counters } from "../src/lib/counters.js";
+import { ApiDealDesk } from "../src/lib/deal-desk.js";
 import type { BalanceRequest, BalanceResult, Balancer } from "../src/lib/matcher.js";
 import { ALICE, BOB, errorCode, makeHarness } from "./helpers.js";
 
@@ -257,6 +259,34 @@ describe("counters", () => {
     const res = await counter([{ op: "add", item_id: JACKET }]);
     expect(res.status).toBe(409);
     expect(await errorCode(res)).toBe("no_rounds_left");
+  });
+
+  it("previews a counter for the GM without sending it", async () => {
+    const { repo, media, balancer } = setup();
+    const desk = new ApiDealDesk(repo, media, new Counters(repo, balancer as FakeBalancer));
+    expect((await desk.list(ALICE)).map((d) => d.id)).toEqual([DEAL]);
+    const card = await desk.preview(ALICE, DEAL, [{ op: "add", item_id: JACKET }]);
+    expect(card).toMatchObject({
+      deal_id: DEAL,
+      changes: [{ op: "add", item_id: JACKET }],
+      lines: [{ op: "add", item: { id: JACKET }, giver: { user_id: BOB } }],
+      gets: [{ id: GALAXY }, { id: JACKET }],
+      cash: { pay_cents: 5775, receive_cents: 0 },
+      cash_now: { pay_cents: 2800, receive_cents: 0 },
+      waiting_on: [{ user_id: BOB }],
+    });
+    expect(repo.counters).toHaveLength(0);
+    expect(await desk.preview(ALICE, DEAL, [{ op: "remove", item_id: ZELDA }])).toEqual({
+      problem: "empty_side",
+      message: "Everyone has to give at least 1 thing",
+    });
+    expect(await desk.preview(BOB, "nope", [{ op: "add", item_id: JACKET }])).toMatchObject({
+      problem: "not_found",
+    });
+    const off = new ApiDealDesk(repo, media, null);
+    expect(await off.preview(ALICE, DEAL, [{ op: "add", item_id: JACKET }])).toMatchObject({
+      problem: "counters_unavailable",
+    });
   });
 
   it("answers 503 without the matcher", async () => {

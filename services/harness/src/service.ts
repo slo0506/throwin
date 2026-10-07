@@ -12,6 +12,7 @@ import {
 } from "@throwin/shared";
 import { buildSessionBlock, volatileBlock } from "./context.js";
 import type { Conversation, GmData, GmUser, StoredMessage } from "./data.js";
+import type { DealDesk } from "./deals.js";
 import { clean } from "./format.js";
 import {
   choicesMade,
@@ -48,6 +49,8 @@ const quietLogger: GmLogger = { info: () => {}, warn: () => {}, error: () => {} 
 
 export interface GmServiceDeps {
   data: GmData;
+  /** Deals and counters (get_deals, stage_counter). Without it, those tools say they're off. */
+  deals?: DealDesk;
   model: ModelClient;
   prompts: GmPrompts;
   resolver?: TargetResolver;
@@ -116,6 +119,7 @@ export function conversationTitle(text: string): string {
 export class GmService {
   readonly registry: ToolRegistry;
   readonly #data: GmData;
+  readonly #deals: DealDesk | null;
   readonly #model: ModelClient;
   readonly #prompts: GmPrompts;
   readonly #resolver: TargetResolver;
@@ -130,6 +134,7 @@ export class GmService {
 
   constructor(deps: GmServiceDeps) {
     this.#data = deps.data;
+    this.#deals = deps.deals ?? null;
     this.#model = deps.model;
     this.#prompts = deps.prompts;
     this.#resolver =
@@ -517,6 +522,7 @@ export class GmService {
         userId,
         session,
         data: this.#data,
+        deals: this.#deals,
         resolver: this.#resolver,
         prompts: this.#prompts,
         now: this.#now,

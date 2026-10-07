@@ -5,6 +5,7 @@
  */
 export { buildRequest, buildSessionBlock, volatileBlock } from "./context.js";
 export * from "./data.js";
+export type { DealDesk } from "./deals.js";
 export { dollarAmounts, statusLine, toAskCard, toShelfItem, usd, usdRange } from "./format.js";
 export * from "./history.js";
 export { runTurn } from "./loop.js";

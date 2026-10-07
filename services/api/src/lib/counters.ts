@@ -1,5 +1,11 @@
 import { type CounterChange, MAX_COUNTER_ROUNDS } from "@throwin/shared";
-import type { CounterProposal, DealLegRecord, DealRecord, Repository } from "../repo/types.js";
+import type {
+  CounterProposal,
+  DealLegRecord,
+  DealRecord,
+  Repository,
+  ThrowInRecord,
+} from "../repo/types.js";
 import type { Balancer } from "./matcher.js";
 
 /** Why a counter can't go out, as codes the route and the GM turn into words. */
@@ -13,6 +19,9 @@ export type CounterProblem =
   | "empty_side"
   | "not_priced"
   | "unbalanced";
+
+/** What a counter would store, plus the Deal it makes in records, for previews. */
+export type CounterPlan = CounterProposal & { legs: DealLegRecord[]; throwIns: ThrowInRecord[] };
 
 /**
  * Turns a counter's changes into the Deal they'd make (docs/contracts/m3-deals.md,
@@ -30,7 +39,7 @@ export class Counters {
     userId: string,
     deal: DealRecord,
     changes: CounterChange[],
-  ): Promise<CounterProposal | CounterProblem> {
+  ): Promise<CounterPlan | CounterProblem> {
     if (deal.status !== "pending_approvals") return "closed";
     if (deal.counter) return "counter_open";
     if (deal.counterRounds >= MAX_COUNTER_ROUNDS) return "no_rounds_left";
@@ -126,6 +135,12 @@ export class Counters {
         cash_moved_cents: balanced.cash_moved_cents,
       },
       awaiting: [...touched].filter((u) => u !== userId),
+      legs,
+      throwIns: balanced.cash_legs.map((c) => ({
+        payerId: c.payer,
+        payeeId: c.payee,
+        amountCents: c.amount_cents,
+      })),
     };
   }
 }

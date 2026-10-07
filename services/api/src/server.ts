@@ -13,6 +13,7 @@ import { SupabaseSessionIssuer } from "./auth/sessions.js";
 import { createSupabaseVerifier } from "./auth/verifier.js";
 import { loadEnv } from "./env.js";
 import { Counters } from "./lib/counters.js";
+import { ApiDealDesk } from "./lib/deal-desk.js";
 import { createJsonLogger } from "./lib/logger.js";
 import { HttpBalancer } from "./lib/matcher.js";
 import { UnimplementedAppAttestVerifier } from "./middleware/app-attest.js";
@@ -28,6 +29,7 @@ const db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
 });
 
 const repo = new SupabaseRepository(db);
+const media = new SupabaseMediaStore(db);
 // Counters re-balance through the matcher over Railway's private network.
 const counters = env.MATCHER_URL ? new Counters(repo, new HttpBalancer(env.MATCHER_URL)) : null;
 if (!counters) logger.warn("counters_disabled", { reason: "MATCHER_URL is not set" });
@@ -48,6 +50,7 @@ const gm = env.ANTHROPIC_API_KEY
         userDailyCents: env.GM_USER_DAILY_BUDGET_CENTS,
         dailyCents: env.GM_DAILY_BUDGET_CENTS,
       },
+      deals: new ApiDealDesk(repo, media, counters),
       ...(env.BRAVE_SEARCH_API_KEY && {
         imageSearch: (query: string) => braveImageSearch(query, env.BRAVE_SEARCH_API_KEY as string),
       }),
@@ -68,7 +71,7 @@ const app = createApp({
   devAuthCode: env.DEV_AUTH_CODE,
   repo,
   counters,
-  media: new SupabaseMediaStore(db),
+  media,
   idempotency: new SupabaseIdempotencyStore(db),
   tokens: createSupabaseVerifier({
     ...(env.SUPABASE_JWT_SECRET && { jwtSecret: env.SUPABASE_JWT_SECRET }),

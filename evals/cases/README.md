@@ -43,7 +43,7 @@ Unit tests in `evals/runner/test/review.test.ts` and `services/workers/test/revi
 pnpm --filter @throwin/evals-runner eval:review --trials 3
 ```
 
-## GM cases (grounding, intake, ask_resolution, offer_building, safety)
+## GM cases (grounding, intake, ask_resolution, offer_building, negotiation, safety)
 
 GM cases are snapshot cases graded by `evals/runner/src/gm.ts`. The runner seeds an in-memory database from `state`, stores `conversation` as earlier turns, sends `message` through the real harness (`@throwin/harness`) and grades the final state, the tool calls and the rendered cards.
 
@@ -57,6 +57,7 @@ GM cases are snapshot cases graded by `evals/runner/src/gm.ts`. The runner seeds
 | `facts` | Always-on taste facts. |
 | `resolver_target` | A canned `resolve_target` result, so a case doesn't depend on live web prices. Without it the real resolver runs. |
 | `added_item_ids` | Shelf Items the new message says were just added (sent as the message's `added_item_ids`). |
+| `deals` | Open 2-person Deals from the user's side: `id`, `with` (`user_id`, `first_name`), `gives` and `gets` (`id`, `title`, `value_cents`), `pay_cents`, `receive_cents`, `counters_left`. A stand-in for the API's DealDesk serves them to `get_deals` and previews `stage_counter` with the same rules; cash moves by the value that changes hands. |
 
 | `expect` check | Passes when |
 | --- | --- |
@@ -70,6 +71,8 @@ GM cases are snapshot cases graded by `evals/runner/src/gm.ts`. The runner seeds
 | `mode` | The conversation mode afterwards. |
 | `max_choice_questions` | At most this many `present_choices` calls. |
 | `offer_items` | The first Ask's offer set, exactly. |
+| `ask_max_items` | How many Items the first Ask takes. |
+| `counter_changes` | The changes of the last counter card staged, in any order. |
 | `autonomy` | The user's profile setting afterwards (`every_deal` or `likely_yes`). |
 
 Run them with a real model (never in CI):
