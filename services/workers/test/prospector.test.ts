@@ -39,6 +39,7 @@ const candidate = (over: Partial<WantCandidate> = {}): WantCandidate => ({
   askId: "ask-jordan",
   wanterId: JORDAN,
   cashCeilingCents: 2000,
+  maxItems: 1,
   itemId: "item-bat",
   giverId: MAYA,
   giverAskId: "ask-maya",
@@ -199,6 +200,7 @@ function world(config: Partial<ProspectorConfig> = {}) {
       candidatesPerAsk: 25,
       maxEmbedsPerRun: 50,
       matcherTimeLimitSeconds: 5,
+      maxItemsPerLeg: 3,
       ...config,
     },
     logger: { info: () => {} },
@@ -318,7 +320,7 @@ describe("prospectAsk", () => {
 
     expect(w.requests).toHaveLength(1);
     const req = w.requests[0];
-    expect(req).toMatchObject({ anchor_user: JORDAN, time_limit_seconds: 5 });
+    expect(req).toMatchObject({ anchor_user: JORDAN, time_limit_seconds: 5, max_items_per_leg: 3 });
     expect(req?.edges).toEqual([
       {
         from_user: JORDAN,
@@ -331,6 +333,7 @@ describe("prospectAsk", () => {
         giver_ask_id: "ask-maya",
         value_cents: 21500,
         cash_ceiling_cents: 2000,
+        max_items: 1,
       },
       expect.objectContaining({ from_user: MAYA, item_id: "item-zelda", cash_ceiling_cents: 500 }),
     ]);
@@ -419,8 +422,8 @@ describe("prospectAsk", () => {
     expect(w.reviewed).toHaveLength(1);
     expect(w.reviewed[0]?.[0]).toMatchObject({
       userId: JORDAN,
-      gives: { title: "item-zelda" },
-      gets: { title: "item-bat" },
+      gives: [{ title: "item-zelda" }],
+      gets: [{ title: "item-bat" }],
       paysCents: 300,
       receivesCents: 0,
     });
@@ -432,6 +435,61 @@ describe("prospectAsk", () => {
         [JORDAN]: "You wanted a Batmobile, this is it.",
         [MAYA]: "Gets you Zelda for a set you listed.",
       },
+    ]);
+  });
+
+  it("reviews a bundle with every Item on each side, and drops it for 1 protected Item", async () => {
+    const w = world();
+    w.store.asks = [ask("ask-jordan", JORDAN)];
+    w.store.circles.set(JORDAN, ["circle-1"]);
+    w.store.candidatesByCircle.set("circle-1", [candidate({ model: null, brand: null })]);
+    const leg = (giver: string, receiver: string, item: string, ask: string, from: string) => ({
+      giver,
+      receiver,
+      item_id: item,
+      value_cents: 4000,
+      ask_id: ask,
+      giver_ask_id: from,
+      kind: "explicit" as const,
+    });
+    // Maya's Batmobile for 2 of Jordan's games; the second Deal also gives his Falcon.
+    const bundle = (score: number, extra: string) => ({
+      users: [JORDAN, MAYA],
+      item_legs: [
+        leg(MAYA, JORDAN, "item-bat", "a", "b"),
+        leg(JORDAN, MAYA, "item-zelda", "b", "a"),
+        leg(JORDAN, MAYA, extra, "b", "a"),
+      ],
+      cash_legs: [],
+      fairness: [],
+      cash_moved_cents: 0,
+      score,
+    });
+    w.respond({
+      ...EMPTY_MATCH,
+      deals: [bundle(1.2, "Millennium Falcon 75192"), bundle(0.8, "item-mario")],
+    });
+    w.store.facts.set(JORDAN, [
+      { key: "never_trade", value: "Millennium Falcon", category: "limits" },
+    ]);
+    w.reviewSays({
+      verdict: "keep",
+      drop_reason: null,
+      whys: [
+        { ref: "p1", why: "The Batmobile you wanted, for 2 games." },
+        { ref: "p2", why: "2 Switch games for a set you listed." },
+      ],
+    });
+    const outcome = await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(outcome.status === "matched" && outcome.deals.map((d) => d.staged)).toEqual([
+      { result: "dropped", by: "never_trade", reason: "jordan never trades Millennium Falcon" },
+      { result: "ok", dealId: "deal-1" },
+    ]);
+    expect(
+      w.reviewed[0]?.map((p) => [p.gives.map((i) => i.title), p.gets.map((i) => i.title)]),
+    ).toEqual([
+      [["item-zelda", "item-mario"], ["item-bat"]],
+      [["item-bat"], ["item-zelda", "item-mario"]],
     ]);
   });
 

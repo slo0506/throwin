@@ -164,7 +164,7 @@ struct HomeView: View {
             .filter { $0.status == .pendingApprovals && $0.myApproval == .pending && !model.approvedDealIDs.contains($0.id) }
             .map { deal in
                 NextUpItem(
-                    id: "deal:\(deal.id)", kind: .approveDeal, title: deal.receive.first?.title ?? "A trade",
+                    id: "deal:\(deal.id)", kind: .approveDeal, title: deal.getTitle ?? "A trade",
                     detail: "Waiting on you.", cta: "Review", dealId: deal.id, angles: []
                 )
             }
@@ -261,7 +261,7 @@ struct DealTeaserCard: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(deal.receive.first?.title ?? "A trade")
+                Text(deal.getTitle ?? "A trade")
                     .font(Typo.headline)
                     .foregroundStyle(Palette.ink)
                 Text(fairnessLine(deal))

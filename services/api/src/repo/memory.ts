@@ -89,6 +89,7 @@ export class MemoryRepository implements Repository {
     itemId: string | null;
     throwInCents: number;
     askId: string | null;
+    giverAskId: string | null;
   }[] = [];
   readonly dealParticipants: {
     dealId: string;
@@ -583,7 +584,13 @@ export class MemoryRepository implements Repository {
     status?: DealStatus;
     expiresAt?: Date;
     createdAt?: Date;
-    legs: { giverId: string; receiverId: string; itemId: string; askId?: string }[];
+    legs: {
+      giverId: string;
+      receiverId: string;
+      itemId: string;
+      askId?: string;
+      giverAskId?: string;
+    }[];
     throwIns?: { payerId: string; payeeId: string; amountCents: number }[];
     whys?: Record<string, string>;
   }) {
@@ -601,6 +608,7 @@ export class MemoryRepository implements Repository {
         itemId: leg.itemId,
         throwInCents: 0,
         askId: leg.askId ?? null,
+        giverAskId: leg.giverAskId ?? null,
       });
       const item = this.items.find((i) => i.id === leg.itemId);
       if (item) Object.assign(item, { status: "reserved", reservedByDealId: deal.id });
@@ -615,6 +623,7 @@ export class MemoryRepository implements Repository {
         itemId: null,
         throwInCents: t.amountCents,
         askId: null,
+        giverAskId: null,
       });
     }
     for (const userId of new Set(deal.legs.map((l) => l.receiverId))) {
@@ -751,6 +760,7 @@ export class MemoryRepository implements Repository {
             giverId: l.giverId,
             receiverId: l.receiverId,
             askId: l.askId,
+            giverAskId: l.giverAskId,
             item: {
               id: item.id,
               title: item.title,

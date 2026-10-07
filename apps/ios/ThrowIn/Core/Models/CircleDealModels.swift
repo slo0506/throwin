@@ -102,6 +102,9 @@ nonisolated struct APIDealSheet: Decodable, Sendable {
     var giveTo: APIDealPerson
     var youGet: APIDealItem
     var getFrom: APIDealPerson
+    /// Every Item on each side; several is a bundle. Older servers send only `youGive` and `youGet`.
+    var gives: [APIDealItem]?
+    var gets: [APIDealItem]?
     var cash: Cash
     var loop: [LoopLeg]
     var participants: [APIDealParticipant]
@@ -202,8 +205,8 @@ extension DealSheet {
         let people = d.participants.map { Person.live(id: $0.userId, firstName: $0.firstName, photoURL: $0.photoUrl) }
         self.init(
             id: d.id,
-            give: [ShelfItem(dealItem: d.youGive)],
-            receive: [ShelfItem(dealItem: d.youGet)],
+            give: (d.gives ?? [d.youGive]).map { ShelfItem(dealItem: $0) },
+            receive: (d.gets ?? [d.youGet]).map { ShelfItem(dealItem: $0) },
             throwInCents: d.cash.payCents - d.cash.receiveCents,
             participants: Self.loopOrder(d, people),
             why: d.why,

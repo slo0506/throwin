@@ -1,0 +1,75 @@
+{
+  "id": "deal-review-bundle-one-item-breaks-style",
+  "suite": "deal_explanation",
+  "description": "In a bundle, 1 of the 2 Items Maya would get is built and used while her style fact says sealed only; the model drops the whole Deal",
+  "state": {
+    "participants": [
+      {
+        "first_name": "Jordan",
+        "gives": [
+          {
+            "title": "LEGO Ghostbusters ECTO-1 10274 (sealed)",
+            "category": "toys/lego",
+            "condition_grade": "A",
+            "value_low_cents": 22000,
+            "value_high_cents": 28000
+          },
+          {
+            "title": "LEGO Hogwarts Clock Tower 75948 (built, no box)",
+            "category": "toys/lego",
+            "condition_grade": "C",
+            "value_low_cents": 8000,
+            "value_high_cents": 11000
+          }
+        ],
+        "gets": {
+          "title": "LEGO Titanic 10294 (sealed)",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 30000,
+          "value_high_cents": 38000
+        },
+        "facts": []
+      },
+      {
+        "first_name": "Maya",
+        "gives": {
+          "title": "LEGO Titanic 10294 (sealed)",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 30000,
+          "value_high_cents": 38000
+        },
+        "gets": [
+          {
+            "title": "LEGO Ghostbusters ECTO-1 10274 (sealed)",
+            "category": "toys/lego",
+            "condition_grade": "A",
+            "value_low_cents": 22000,
+            "value_high_cents": 28000
+          },
+          {
+            "title": "LEGO Hogwarts Clock Tower 75948 (built, no box)",
+            "category": "toys/lego",
+            "condition_grade": "C",
+            "value_low_cents": 8000,
+            "value_high_cents": 11000
+          }
+        ],
+        "facts": [
+          {
+            "key": "condition_standard",
+            "value": "Sealed sets only, never built",
+            "category": "style"
+          }
+        ]
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "verdict": "drop",
+    "dropped_by": "model"
+  }
+}

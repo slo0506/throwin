@@ -93,7 +93,7 @@ struct DealSheetView: View {
     private var title: some View {
         VStack(alignment: .leading, spacing: Space.xs) {
             Text("Deal Sheet").sectionLabel()
-            Text(deal.receive.first?.title ?? "Trade")
+            Text(deal.getTitle ?? "Trade")
                 .font(Typo.title)
                 .tracking(-0.4)
                 .foregroundStyle(Palette.ink)

@@ -170,6 +170,50 @@ describe("Deal Sheets", () => {
     expect(await errorCode(res)).toBe("deal_closed");
   });
 
+  it("shows a bundle: every Item on each side, summed, and the Ask it fills first", async () => {
+    const h = makeHarness();
+    const KIRBY = "aaaaaaaa-0000-4000-8000-000000000002";
+    const BOB_NIKE = "bbbbbbbb-0000-4000-8000-0000000000b2";
+    h.repo.addItem({ id: ZELDA, ownerId: ALICE, title: "Zelda", valueMidCents: 4200 });
+    h.repo.addItem({ id: KIRBY, ownerId: ALICE, title: "Kirby", valueMidCents: 6000 });
+    h.repo.addItem({ id: GALAXY, ownerId: BOB, title: "Galaxy Explorer", valueMidCents: 9500 });
+    h.repo.addAsk({ id: ALICE_ASK, userId: ALICE, status: "prospecting" });
+    h.repo.addAsk({ id: BOB_ASK, userId: BOB, status: "prospecting" });
+    h.repo.addAsk({ id: BOB_NIKE, userId: BOB, status: "prospecting" });
+    // Galaxy Explorer for Zelda (Bob's game Ask) and Kirby (his other Ask).
+    h.repo.addDeal({
+      id: DEAL,
+      legs: [
+        { giverId: BOB, receiverId: ALICE, itemId: GALAXY, askId: ALICE_ASK, giverAskId: BOB_ASK },
+        { giverId: ALICE, receiverId: BOB, itemId: ZELDA, askId: BOB_ASK, giverAskId: ALICE_ASK },
+        { giverId: ALICE, receiverId: BOB, itemId: KIRBY, askId: BOB_NIKE, giverAskId: ALICE_ASK },
+      ],
+    });
+    const sheetOf = async (as: string) =>
+      DealSheet.parse(await (await h.request(`/v1/deals/${DEAL}`, { as })).json());
+
+    const alice = await sheetOf(ALICE);
+    expect(alice.gives.map((i) => i.id)).toEqual([KIRBY, ZELDA]);
+    expect(alice.gets.map((i) => i.id)).toEqual([GALAXY]);
+    expect(alice).toMatchObject({
+      you_give: { id: KIRBY },
+      give_to: { user_id: BOB },
+      fairness: { give_cents: 10200, get_cents: 9500 },
+      your_ask_id: ALICE_ASK,
+    });
+
+    // Bob's game Ask is the 1 he gives for, so its Item leads even though Kirby is worth more.
+    const bob = await sheetOf(BOB);
+    expect(bob.gets.map((i) => i.id)).toEqual([ZELDA, KIRBY]);
+    expect(bob).toMatchObject({
+      you_get: { id: ZELDA },
+      get_from: { user_id: ALICE },
+      fairness: { give_cents: 9500, get_cents: 10200 },
+      your_ask_id: BOB_ASK,
+    });
+    expect(bob.loop).toHaveLength(3);
+  });
+
   it("shows a 3-person Loop with everyone in it", async () => {
     const h = makeHarness();
     h.repo.addUser(CAROL, { displayName: "Carol" });

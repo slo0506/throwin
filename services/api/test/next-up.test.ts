@@ -121,4 +121,25 @@ describe("GET /v1/next-up", () => {
     // Never another person's limits or anything about their Ask.
     expect(JSON.stringify(items)).not.toMatch(/cash_ceiling|ceiling/);
   });
+
+  it("names a bundle by its first Item and how many more", async () => {
+    const h = makeHarness();
+    const { repo } = h;
+    repo.addItem({ id: ITEM(1), ownerId: ALICE, title: "Zelda: Tears of the Kingdom" });
+    repo.addItem({ id: ITEM(2), ownerId: ALICE, title: "Kirby" });
+    repo.addItem({ id: ITEM(3), ownerId: BOB, title: "Galaxy Explorer" });
+    repo.addDeal({
+      id: DEAL(1),
+      legs: [
+        { giverId: BOB, receiverId: ALICE, itemId: ITEM(3) },
+        { giverId: ALICE, receiverId: BOB, itemId: ITEM(1) },
+        { giverId: ALICE, receiverId: BOB, itemId: ITEM(2) },
+      ],
+    });
+    const [deal] = await nextUp(h);
+    expect(deal).toMatchObject({
+      kind: "approve_deal",
+      title: "Bob's Galaxy Explorer for your Zelda: Tears of the Kingdom and 1 more",
+    });
+  });
 });

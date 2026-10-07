@@ -46,24 +46,36 @@ export function toDealSheet(
     photo_url: i.photoPath ? (urls.get(i.photoPath) ?? null) : null,
   });
 
-  const give = d.legs.find((l) => l.giverId === userId);
-  const get = d.legs.find((l) => l.receiverId === userId);
+  const gives = sides(
+    d.legs.filter((l) => l.giverId === userId),
+    null,
+  );
+  const yourAsk = gives[0]?.giverAskId ?? null;
+  const gets = sides(
+    d.legs.filter((l) => l.receiverId === userId),
+    yourAsk,
+  );
+  const [give] = gives;
+  const [get] = gets;
   const me = people.get(userId);
   if (!give || !get || !me) return null;
   const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const mids = (legs: DealRecord["legs"]) => sum(legs.map((l) => l.item.valueMidCents ?? 0));
   return {
     id: d.id,
     status: d.status,
     expires_at: d.expiresAt.toISOString(),
-    you_give: item(give.item),
+    gives: gives.map((l) => item(l.item)),
     give_to: person(give.receiverId),
-    you_get: item(get.item),
+    gets: gets.map((l) => item(l.item)),
     get_from: person(get.giverId),
+    you_give: item(give.item),
+    you_get: item(get.item),
     cash: {
       pay_cents: sum(d.throwIns.filter((t) => t.payerId === userId).map((t) => t.amountCents)),
       receive_cents: sum(d.throwIns.filter((t) => t.payeeId === userId).map((t) => t.amountCents)),
     },
-    fairness: { give_cents: give.item.valueMidCents ?? 0, get_cents: get.item.valueMidCents ?? 0 },
+    fairness: { give_cents: mids(gives), get_cents: mids(gets) },
     loop: d.legs.map((l) => ({
       giver: person(l.giverId),
       receiver: person(l.receiverId),
@@ -78,8 +90,19 @@ export function toDealSheet(
     your_approval: me.approval,
     // Each person's own why; nobody sees another participant's.
     why: me.why,
-    your_ask_id: get.askId,
+    your_ask_id: yourAsk ?? get.askId,
   };
+}
+
+/** 1 side of a Deal in a stable order: Items for `firstAsk` first, then by value. */
+function sides(legs: DealRecord["legs"], firstAsk: string | null): DealRecord["legs"] {
+  return [...legs].sort(
+    (a, b) =>
+      Number(b.askId === firstAsk && firstAsk !== null) -
+        Number(a.askId === firstAsk && firstAsk !== null) ||
+      (b.item.valueMidCents ?? 0) - (a.item.valueMidCents ?? 0) ||
+      a.item.id.localeCompare(b.item.id),
+  );
 }
 
 /**

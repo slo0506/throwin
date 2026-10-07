@@ -39,8 +39,9 @@ export interface ReviewFact {
 export interface ReviewParticipant {
   userId: string;
   firstName: string | null;
-  gives: ReviewItem;
-  gets: ReviewItem;
+  /** 1 Item, or several in a bundle. */
+  gives: ReviewItem[];
+  gets: ReviewItem[];
   paysCents: number;
   receivesCents: number;
   facts: ReviewFact[];
@@ -119,8 +120,8 @@ export function reviewText(participants: ReviewParticipant[]): string {
     ].filter(Boolean);
     return [
       `p${i + 1} (${p.firstName ?? "someone"}):`,
-      `gives:\n${itemText("item_title", p.gives)}`,
-      `gets:\n${itemText("item_title", p.gets)}`,
+      `gives:\n${p.gives.map((i) => itemText("item_title", i)).join("\n")}`,
+      `gets:\n${p.gets.map((i) => itemText("item_title", i)).join("\n")}`,
       cash.length ? `cash: ${cash.join(", ")}` : "cash: none",
       facts.length
         ? `facts:\n${facts.map((f) => `- ${f.category} / ${f.key}: ${fenceUntrusted("taste_fact", f.value, { maxLength: 200 })}`).join("\n")}`
@@ -168,7 +169,7 @@ export function matchesNeverTrade(title: string, fact: ReviewFact): boolean {
 
 /** Dollar amounts the reader saw on their own side: what they could fairly be told. */
 function ownAmounts(p: ReviewParticipant): Set<number> {
-  const amounts = [p.gives, p.gets].flatMap((i) => [i.valueLowCents, i.valueHighCents]);
+  const amounts = [...p.gives, ...p.gets].flatMap((i) => [i.valueLowCents, i.valueHighCents]);
   amounts.push(p.paysCents, p.receivesCents);
   return new Set(
     amounts.filter((a): a is number => a !== null && a > 0).map((a) => Math.round(a / 100)),
@@ -213,7 +214,7 @@ export async function reviewDeal(
   model: ReviewModel,
 ): Promise<ReviewResult> {
   for (const p of participants) {
-    const fact = p.facts.find((f) => matchesNeverTrade(p.gives.title, f));
+    const fact = p.facts.find((f) => p.gives.some((i) => matchesNeverTrade(i.title, f)));
     if (fact) {
       return {
         keep: false,

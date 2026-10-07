@@ -406,6 +406,12 @@ nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
     /// First names of the people who haven't approved yet.
     var waitingOn: [String] = []
 
+    /// What you get, by name: "Galaxy Explorer", or "Zelda and 1 more" for a bundle.
+    var getTitle: String? {
+        guard let first = receive.first else { return nil }
+        return receive.count > 1 ? "\(first.title) and \(receive.count - 1) more" : first.title
+    }
+
     var giveValue: Int { give.compactMap(\.value?.midCents).reduce(0, +) }
     var getValue: Int { receive.compactMap(\.value?.midCents).reduce(0, +) }
     var isLoop: Bool { participants.count > 2 }
