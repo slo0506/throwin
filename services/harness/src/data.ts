@@ -158,7 +158,9 @@ export interface CircleStats {
 export interface Conversation {
   id: string;
   userId: string;
+  title: string | null;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 /** A row of `messages`: API-native content blocks plus the server's record of the turn. */
@@ -234,14 +236,22 @@ export interface GmData {
   /** Active, always-on taste facts. Written only by the memory extractor. */
   listAlwaysOnFacts(userId: string): Promise<TasteFact[]>;
 
+  /** The most recently used conversation. */
   latestConversation(userId: string): Promise<Conversation | null>;
+  /** Null unless it's the user's own. */
+  getConversation(userId: string, conversationId: string): Promise<Conversation | null>;
+  /** The user's conversations, most recently used first. */
+  listConversations(userId: string, limit: number): Promise<Conversation[]>;
+  /** The user's first conversation (the intake's), or null. */
+  firstConversation(userId: string): Promise<Conversation | null>;
   createConversation(userId: string): Promise<Conversation>;
+  setConversationTitle(userId: string, conversationId: string, title: string): Promise<void>;
   /** The newest `limit` messages of the conversation, oldest first. */
   listMessages(userId: string, conversationId: string, limit: number): Promise<StoredMessage[]>;
   /** Inserts rows with caller-chosen IDs and timestamps, in 1 statement. */
   appendMessages(rows: StoredMessage[]): Promise<void>;
-  /** True once a `finish_intake` call succeeded in this conversation. */
-  intakeFinished(userId: string, conversationId: string): Promise<boolean>;
+  /** True once a `finish_intake` call succeeded in any of the user's conversations. */
+  intakeFinished(userId: string): Promise<boolean>;
 
   recordRun(run: AgentRun): Promise<void>;
   recordEvents(events: AgentEvent[]): Promise<void>;

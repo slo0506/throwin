@@ -199,6 +199,22 @@ const searchWords = (q: string | undefined) =>
 
 const isUuid = (id: string) => z.uuid().safeParse(id).success;
 
+const CONVERSATION_COLUMNS = "id, user_id, title, created_at, updated_at";
+const ConversationRow = z.object({
+  id: z.string(),
+  user_id: z.string(),
+  title: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+const toConversation = (r: z.infer<typeof ConversationRow>): Conversation => ({
+  id: r.id,
+  userId: r.user_id,
+  title: r.title,
+  createdAt: new Date(r.created_at),
+  updatedAt: new Date(r.updated_at),
+});
+
 function sniffImage(bytes: Uint8Array): LoadedImage["mediaType"] | null {
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
   if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
@@ -492,28 +508,64 @@ export class SupabaseGmData implements GmData {
   }
 
   async latestConversation(userId: string): Promise<Conversation | null> {
+    return (await this.listConversations(userId, 1))[0] ?? null;
+  }
+
+  async getConversation(userId: string, conversationId: string): Promise<Conversation | null> {
+    if (!isUuid(conversationId)) return null;
     const { data, error } = await this.db
       .from("conversations")
-      .select("id, user_id, created_at")
+      .select(CONVERSATION_COLUMNS)
       .eq("user_id", userId)
-      .order("created_at", { ascending: false })
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (error) throw new GmDataError("getConversation", error);
+    return data ? toConversation(ConversationRow.parse(data)) : null;
+  }
+
+  async listConversations(userId: string, limit: number): Promise<Conversation[]> {
+    const { data, error } = await this.db
+      .from("conversations")
+      .select(CONVERSATION_COLUMNS)
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+    if (error) throw new GmDataError("listConversations", error);
+    return z
+      .array(ConversationRow)
+      .parse(data ?? [])
+      .map(toConversation);
+  }
+
+  async firstConversation(userId: string): Promise<Conversation | null> {
+    const { data, error } = await this.db
+      .from("conversations")
+      .select(CONVERSATION_COLUMNS)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
-    if (error) throw new GmDataError("latestConversation", error);
-    if (!data) return null;
-    const row = data as { id: string; user_id: string; created_at: string };
-    return { id: row.id, userId: row.user_id, createdAt: new Date(row.created_at) };
+    if (error) throw new GmDataError("firstConversation", error);
+    return data ? toConversation(ConversationRow.parse(data)) : null;
   }
 
   async createConversation(userId: string): Promise<Conversation> {
     const { data, error } = await this.db
       .from("conversations")
       .insert({ user_id: userId })
-      .select("id, user_id, created_at")
+      .select(CONVERSATION_COLUMNS)
       .single();
     if (error) throw new GmDataError("createConversation", error);
-    const row = data as { id: string; user_id: string; created_at: string };
-    return { id: row.id, userId: row.user_id, createdAt: new Date(row.created_at) };
+    return toConversation(ConversationRow.parse(data));
+  }
+
+  async setConversationTitle(userId: string, conversationId: string, title: string) {
+    const { error } = await this.db
+      .from("conversations")
+      .update({ title })
+      .eq("user_id", userId)
+      .eq("id", conversationId);
+    if (error) throw new GmDataError("setConversationTitle", error);
   }
 
   async listMessages(
@@ -565,12 +617,11 @@ export class SupabaseGmData implements GmData {
     if (touched.error) throw new GmDataError("appendMessages.touch", touched.error);
   }
 
-  async intakeFinished(userId: string, conversationId: string): Promise<boolean> {
+  async intakeFinished(userId: string): Promise<boolean> {
     const { data, error } = await this.db
       .from("messages")
       .select("id")
       .eq("user_id", userId)
-      .eq("conversation_id", conversationId)
       .eq("role", "assistant")
       .contains("tool_calls", { calls: [{ name: "finish_intake", ok: true }] })
       .limit(1);

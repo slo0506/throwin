@@ -26,6 +26,8 @@ export const PostGmMessage = z
     added_item_ids: z.array(z.uuid()).min(1).max(30).optional(),
     /** The screen the user is on, for example "ask_detail". Volatile context only. */
     screen: z.string().trim().min(1).max(120).optional(),
+    /** Which conversation. Omitted: the most recently used 1 (created on first use). */
+    conversation_id: z.uuid().optional(),
   })
   .refine(
     (v) =>
@@ -171,8 +173,24 @@ export const GmConversation = z.object({
   conversation_id: z.uuid(),
   mode: GmMode,
   messages: z.array(GmMessage),
+  /** The user's first words in it, shortened. Null until they say something. */
+  title: z.string().nullable().default(null),
+  /** The user's first conversation, where the intake happened: pinned as "Your GM". */
+  is_main: z.boolean().default(true),
 });
 export type GmConversation = z.infer<typeof GmConversation>;
+
+/** 1 row of the conversation list, most recently used first, the main 1 included. */
+export const GmConversationSummary = z.object({
+  id: z.uuid(),
+  title: z.string().nullable(),
+  is_main: z.boolean(),
+  updated_at: z.iso.datetime({ offset: true }),
+});
+export type GmConversationSummary = z.infer<typeof GmConversationSummary>;
+
+export const GmConversationList = z.object({ conversations: z.array(GmConversationSummary) });
+export type GmConversationList = z.infer<typeof GmConversationList>;
 
 // ---------------------------------------------------------------------------
 // Stream events (GET /v1/gm/stream/{stream_id}): `event: <name>` plus `data: <json>`.

@@ -1,6 +1,7 @@
 import { GmInputError, type GmService } from "@throwin/harness";
 import {
   type GmConversation,
+  type GmConversationList,
   type GmStreamEvent,
   PostGmMessage,
   type PostGmMessageResponse,
@@ -35,8 +36,28 @@ export const gmRoutes = ({ gm, streams, logger, keepAliveMs = KEEP_ALIVE_MS }: G
     .get("/conversation", async (c) => {
       if (!gm) unavailable();
       try {
-        const body: GmConversation = await gm.getConversation(c.get("user").id);
+        // `?id=` opens 1 conversation; without it, the 1 used last.
+        const id = c.req.query("id") || undefined;
+        const body: GmConversation = await gm.getConversation(c.get("user").id, id);
         return c.json(body);
+      } catch (err) {
+        throw asHttp(err);
+      }
+    })
+    .get("/conversations", async (c) => {
+      if (!gm) unavailable();
+      try {
+        const body: GmConversationList = await gm.listConversations(c.get("user").id);
+        return c.json(body);
+      } catch (err) {
+        throw asHttp(err);
+      }
+    })
+    .post("/conversations", async (c) => {
+      if (!gm) unavailable();
+      try {
+        const body: GmConversation = await gm.createConversation(c.get("user").id);
+        return c.json(body, 201);
       } catch (err) {
         throw asHttp(err);
       }

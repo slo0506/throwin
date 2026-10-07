@@ -272,6 +272,8 @@ nonisolated struct GMSendRequest: Encodable, Hashable, Sendable {
     var mediaPaths: [String]?
     /// Items that just landed on the Shelf from photos the GM asked for.
     var addedItemIds: [String]?
+    /// Which conversation. Nil: the 1 used last.
+    var conversationId: String?
     /// Where the user opened the GM from, like `new_ask`.
     var screen: String?
 }
@@ -309,11 +311,15 @@ nonisolated struct GMConversation: Decodable, Sendable {
     var conversationId: String
     var mode: GMMode
     var messages: [GMHistoryMessage]
+    /// The user's first words in it, shortened. Nil until they say something.
+    var title: String?
+    /// The first conversation, where the intake happened: pinned as "Your GM".
+    var isMain: Bool
 }
 
 nonisolated extension GMConversation {
     enum CodingKeys: String, CodingKey {
-        case conversationId, mode, messages
+        case conversationId, mode, messages, title, isMain
     }
 
     init(from decoder: any Decoder) throws {
@@ -322,7 +328,23 @@ nonisolated extension GMConversation {
         mode = (try? c.decodeIfPresent(GMMode.self, forKey: .mode)) ?? .chat
         let lossy = (try? c.decodeIfPresent([Lossy<GMHistoryMessage>].self, forKey: .messages)) ?? []
         messages = lossy.compactMap(\.value)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        isMain = (try? c.decodeIfPresent(Bool.self, forKey: .isMain)) ?? true
     }
+}
+
+/// 1 row of the conversation list (`GET /v1/gm/conversations`).
+nonisolated struct GMConversationSummary: Decodable, Identifiable, Hashable, Sendable {
+    var id: String
+    var title: String?
+    var isMain: Bool
+    var updatedAt: String
+
+    var updated: Date { WireDate.parse(updatedAt) ?? .distantPast }
+}
+
+nonisolated struct GMConversationList: Decodable, Sendable {
+    var conversations: [GMConversationSummary]
 }
 
 /// Decodes 1 element of an array, or nil if it doesn't fit, so 1 bad row never sinks the rest.

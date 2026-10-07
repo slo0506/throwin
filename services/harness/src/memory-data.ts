@@ -242,14 +242,42 @@ export class MemoryGmData implements GmData {
   }
 
   async latestConversation(userId: string) {
-    const mine = this.conversations.filter((c) => c.userId === userId);
-    return mine[mine.length - 1] ?? null;
+    return (await this.listConversations(userId, 1))[0] ?? null;
+  }
+
+  async getConversation(userId: string, conversationId: string) {
+    return this.conversations.find((c) => c.id === conversationId && c.userId === userId) ?? null;
+  }
+
+  async listConversations(userId: string, limit: number) {
+    return this.conversations
+      .filter((c) => c.userId === userId)
+      .map((c, order) => ({ c, order }))
+      .sort((a, b) => b.c.updatedAt.getTime() - a.c.updatedAt.getTime() || b.order - a.order)
+      .map(({ c }) => c)
+      .slice(0, limit);
+  }
+
+  async firstConversation(userId: string) {
+    return this.conversations.find((c) => c.userId === userId) ?? null;
   }
 
   async createConversation(userId: string) {
-    const conversation: Conversation = { id: randomUUID(), userId, createdAt: this.now() };
+    const at = this.now();
+    const conversation: Conversation = {
+      id: randomUUID(),
+      userId,
+      title: null,
+      createdAt: at,
+      updatedAt: at,
+    };
     this.conversations.push(conversation);
     return conversation;
+  }
+
+  async setConversationTitle(userId: string, conversationId: string, title: string) {
+    const c = await this.getConversation(userId, conversationId);
+    if (c) c.title = title;
   }
 
   async listMessages(userId: string, conversationId: string, limit: number) {
@@ -261,13 +289,13 @@ export class MemoryGmData implements GmData {
 
   async appendMessages(rows: StoredMessage[]) {
     this.messages.push(...rows.map((r) => structuredClone(r)));
+    const touched = this.conversations.find((c) => c.id === rows[0]?.conversationId);
+    const last = rows.at(-1)?.createdAt;
+    if (touched && last && last > touched.updatedAt) touched.updatedAt = last;
   }
 
-  async intakeFinished(userId: string, conversationId: string) {
-    const rows = this.messages.filter(
-      (m) => m.userId === userId && m.conversationId === conversationId,
-    );
-    return finishedIntakeIn(rows);
+  async intakeFinished(userId: string) {
+    return finishedIntakeIn(this.messages.filter((m) => m.userId === userId));
   }
 
   async recordRun(run: AgentRun) {

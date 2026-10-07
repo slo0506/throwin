@@ -304,9 +304,20 @@ final class APIClient {
 
     // MARK: GM
 
-    /// The current conversation, created on the first call.
-    func gmConversation() async throws -> GMConversation {
-        try await send("GET", "v1/gm/conversation")
+    /// 1 conversation by ID, or the 1 used last (created on the very first call).
+    func gmConversation(id: String? = nil) async throws -> GMConversation {
+        try await send("GET", "v1/gm/conversation", query: id.map { [URLQueryItem(name: "id", value: $0)] } ?? [])
+    }
+
+    /// The user's conversations, most recently used first.
+    func gmConversations() async throws -> [GMConversationSummary] {
+        let list: GMConversationList = try await send("GET", "v1/gm/conversations")
+        return list.conversations
+    }
+
+    /// A new, empty conversation.
+    func createGMConversation() async throws -> GMConversation {
+        try await send("POST", "v1/gm/conversations", body: EmptyBody())
     }
 
     /// Starts a GM turn. Stream the reply with `gmStream(_:)`.

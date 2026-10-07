@@ -74,11 +74,17 @@ Categories: `interests`, `hunting`, `limits` (never trade), `preferences` (hando
 
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
-| GET | `/v1/gm/conversation` | | `{ "conversation_id", "mode": "intake" or "chat", "messages": [Message] }` for the user's current conversation, created on first call |
-| POST | `/v1/gm/messages` | `{ "text"?: string, "choice"?: { "component_id": string, "option_ids": [string] }, "media_paths"?: [string], "screen"?: string }` (at least 1 of text, choice, media) | 202 `{ "stream_id", "message_id" }` |
+| GET | `/v1/gm/conversation?id=` | | `{ "conversation_id", "mode": "intake" or "chat", "messages": [Message], "title", "is_main" }` for that conversation (404 `conversation_not_found` unless it's the user's), or without `id` the 1 used last. The very first is created on first call, with the intake greeting |
+| GET | `/v1/gm/conversations` | | `{ "conversations": [{ "id", "title", "is_main", "updated_at" }] }`, most recently used first, at most 50 |
+| POST | `/v1/gm/conversations` | | 201, a new empty conversation in the same shape as `GET /v1/gm/conversation` |
+| POST | `/v1/gm/messages` | `{ "text"?: string, "choice"?: { "component_id": string, "option_ids": [string] }, "media_paths"?: [string], "added_item_ids"?: [uuid], "screen"?: string, "conversation_id"?: uuid }` (at least 1 of text, choice, media, added Items) | 202 `{ "stream_id", "message_id" }` |
 | GET | `/v1/gm/stream/{stream_id}` | | `text/event-stream` |
 
-`mode` is `intake` until the intake finishes (the GM records it with a tool), then `chat`.
+`mode` is `intake` until the intake finishes (the GM records it with a tool), then `chat`. The intake happens once per person: a new conversation opens in `chat` mode once it's done.
+
+**Conversations.** The main conversation (`is_main`) is the user's first, where the intake happened; the app pins it as "Your GM". Others are titled from the user's first words in them (about 48 characters, cut at a word). Memory (taste facts, the Shelf, Asks) is the user's, so the GM knows them the same in every conversation; each keeps its own history. 1 turn runs at a time per user, across conversations.
+
+`added_item_ids` lists Items that just landed on the user's Shelf (for example from the GM's camera request), so the GM knows exactly which are new. Each must be the user's own (400 `invalid_item` otherwise).
 
 ### Message (history)
 
