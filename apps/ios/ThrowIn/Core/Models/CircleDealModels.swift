@@ -210,7 +210,8 @@ extension DealSheet {
             expiresAt: WireDate.parse(d.expiresAt) ?? .now,
             status: d.status,
             myApproval: d.yourApproval,
-            askID: d.yourAskId
+            askID: d.yourAskId,
+            waitingOn: d.participants.filter { $0.approval == .pending }.map { $0.firstName ?? "someone" }
         )
     }
 

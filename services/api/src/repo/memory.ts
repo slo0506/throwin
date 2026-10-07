@@ -31,6 +31,7 @@ import {
   type ItemUpdate,
   type MePatch,
   type MeRecord,
+  type PhotoRequestRecord,
   type QuestionRecord,
   type Repository,
   SHELF_STATUSES,
@@ -634,6 +635,33 @@ export class MemoryRepository implements Repository {
       .filter((d) => open.includes(d.status) && this.#inDeal(userId, d.id))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .map((d) => this.#dealRecord(d.id));
+  }
+
+  async listPhotoRequests(userId: string): Promise<PhotoRequestRecord[]> {
+    const mine = new Set(
+      this.dealParticipants.filter((p) => p.userId === userId).map((p) => p.dealId),
+    );
+    return this.deals
+      .filter((d) => mine.has(d.id) && d.status === "staged")
+      .flatMap((d) =>
+        this.dealLegs
+          .filter((l) => l.dealId === d.id && l.giverId === userId && l.itemId)
+          .flatMap((l) => {
+            const item = this.items.find((i) => i.id === l.itemId);
+            if (!item || item.readiness === "showcase") return [];
+            return [
+              {
+                dealId: d.id,
+                expiresAt: d.expiresAt,
+                itemId: item.id,
+                itemTitle: item.title,
+                missingAngles: item.missingAngles,
+                thumbnailPath: item.thumbnailPath,
+                wantedBy: this.users.get(l.receiverId)?.displayName ?? null,
+              },
+            ];
+          }),
+      );
   }
 
   async getDeal(userId: string, dealId: string): Promise<DealRecord | null> {

@@ -62,6 +62,8 @@ final class AppModel {
     private(set) var autonomy: AutonomyLevel = .everyDeal
     var notificationsOn = true
     var approvedDealIDs: Set<String> = []
+    /// Home's "Next up", from the server.
+    private(set) var nextUp: [NextUpItem] = []
 
     init() {
         let backend = AppConfig.backend
@@ -158,6 +160,7 @@ final class AppModel {
         questions = []
         asks = []
         dealsWaiting = []
+        nextUp = []
         circles = []
         tasteFacts = []
         approvedDealIDs = []
@@ -209,6 +212,7 @@ final class AppModel {
         guard isLive else { return }
         await refreshAsks()
         await refreshShelf()
+        await refreshNextUp()
     }
 
     // MARK: Asks
@@ -392,6 +396,7 @@ final class AppModel {
             await refreshShelf()
             guard case let .finished(items, _) = capture.phase else { return }
             await loadQuestions()
+            await refreshNextUp()
             onLanded?(items)
             // Items landed: stay long enough to see it and tap Tune up, then clear. "Nothing
             // to trade in these" stays until dismissed, so the advice isn't missed.
@@ -857,6 +862,13 @@ final class AppModel {
             dealsWaiting = fetched.map(DealSheet.init)
             approvedDealIDs = Set(dealsWaiting.filter { $0.myApproval == .approved }.map(\.id))
         }
+        await refreshNextUp()
+    }
+
+    /// Re-reads Home's "Next up". Called after anything that can change it.
+    func refreshNextUp() async {
+        guard let api, let items = try? await api.nextUp() else { return }
+        withAnimation(Motion.bouncy) { nextUp = items }
     }
 
     /// Call only after the device confirmation (Face ID or passcode) succeeded.

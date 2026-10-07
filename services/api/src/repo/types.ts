@@ -256,6 +256,21 @@ export interface DealRecord {
   participants: (DealPersonRecord & { approval: ApprovalState; why: string | null })[];
 }
 
+/**
+ * A staged Deal waiting for showcase photos of 1 of the user's Items (PRD "Demand-driven
+ * homework"): the Deal can't go out until every Item in it is ready to show.
+ */
+export interface PhotoRequestRecord {
+  dealId: string;
+  expiresAt: Date;
+  itemId: string;
+  itemTitle: string;
+  missingAngles: string[];
+  thumbnailPath: string | null;
+  /** First name of the person the Item would go to. */
+  wantedBy: string | null;
+}
+
 /** public.approve_deal and public.decline_deal results; on success, the Deal afterwards. */
 export type DealDecisionResult = DealRecord | "not_found" | "closed" | "decided";
 
@@ -360,6 +375,8 @@ export interface Repository {
   listDeals(userId: string): Promise<DealRecord[]>;
   /** Null unless the user is in it. Staged Deals are never shown, so they are null too. */
   getDeal(userId: string, dealId: string): Promise<DealRecord | null>;
+  /** Staged Deals waiting on showcase photos of the user's own Items. */
+  listPhotoRequests(userId: string): Promise<PhotoRequestRecord[]>;
   /** public.approve_deal, with the Deal Sheet the user saw as the snapshot. */
   approveDeal(userId: string, dealId: string, snapshot: unknown): Promise<DealDecisionResult>;
   /** public.decline_deal. */

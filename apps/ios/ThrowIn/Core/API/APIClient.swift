@@ -282,6 +282,14 @@ final class APIClient {
         try await send("POST", "v1/deals/\(id)/decline", body: DeclineRequest(reason: reason))
     }
 
+    // MARK: Next up
+
+    /// What needs the user, best first.
+    func nextUp() async throws -> [NextUpItem] {
+        let response: NextUpResponse = try await send("GET", "v1/next-up")
+        return response.items
+    }
+
     // MARK: Taste facts
 
     func tasteFacts() async throws -> [TasteFact] {
