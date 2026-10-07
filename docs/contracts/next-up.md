@@ -29,6 +29,7 @@
 | `answer_counter` | Someone countered a Deal and is waiting on the user's answer ("Maya asked for your Zelda too"), soonest to close first. | The Deal Sheet, which shows the counter |
 | `approve_deal` | A Deal Sheet waits on the user's approval, soonest to expire first. Not while a counter on it is open. | The Deal Sheet |
 | `showcase_photos` | A staged Deal waits for showcase photos of the user's Item ("Bob wants your LEGO Typewriter"). | The Showcase shoot, with `angles` |
+| `answer_inquiry` | The Liaison asks whether an Item close to what the user asked for would work: "Would PlayStation 5 Slim work for your Xbox Series X?" Their GM answers on its own only when their taste facts settle it. | A sheet with the Item and Yes / No (`POST /v1/inquiries/{id}/answer`) |
 | `offer_for_ask` | An Ask has a target but nothing offered: the GM can't look yet. | The Ask page |
 | `join_circle` | Open Asks but no Circle. | Circles |
 | `weak_offer` | The best single Item plus the cash ceiling can't reach the Ask's used price (`offerFit`, the same rules as the Ask page). "A long shot" below 60% of the target, else "a bit short". | The Ask page |

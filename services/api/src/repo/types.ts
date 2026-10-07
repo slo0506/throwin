@@ -299,6 +299,15 @@ export interface CounterRecord {
   expiresAt: Date;
 }
 
+/** The Liaison's question to the user: would this Item work for their Ask? */
+export interface InquiryRecord {
+  id: string;
+  askId: string;
+  askTitle: string;
+  item: DealItemRecord;
+  expiresAt: Date;
+}
+
 /** A want in the user's Circles, as a count (public.circle_demand). Never who. */
 export interface DemandRecord {
   label: string;
@@ -474,6 +483,14 @@ export interface Repository {
   declineDeal(userId: string, dealId: string, reason: string | null): Promise<DealDecisionResult>;
   /** What people in the user's Circles want, as counts only (public.circle_demand). */
   getDemand(userId: string): Promise<DemandRecord[]>;
+  /** Open questions the user is asked, soonest to close first. */
+  listInquiries(userId: string): Promise<InquiryRecord[]>;
+  /** public.answer_inquiry, as the user. */
+  answerInquiry(
+    userId: string,
+    inquiryId: string,
+    yes: boolean,
+  ): Promise<"ok" | "not_found" | "closed">;
   /** Items a counter may add, by ID. Missing IDs are skipped. */
   getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]>;
   /** Each Ask's cash ceiling, to re-balance a counter. Server only: never shown to others. */

@@ -6,6 +6,7 @@ export * from "./demand.js";
 export * from "./enums.js";
 export * from "./gm.js";
 export * from "./id-allow-list.js";
+export * from "./inquiries.js";
 export * from "./next-up.js";
 export * from "./offer-fit.js";
 export * from "./readiness.js";

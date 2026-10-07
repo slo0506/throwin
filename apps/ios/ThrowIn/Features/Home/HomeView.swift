@@ -10,6 +10,7 @@ struct HomeView: View {
     @State private var path: [AskRoute] = []
     @State private var shoot: HomeShootRoute?
     @State private var tuneUp: TuneUpRoute?
+    @State private var inquiry: Inquiry?
     @State private var isCapturing = false
 
     var body: some View {
@@ -95,6 +96,11 @@ struct HomeView: View {
             .sheet(isPresented: $isCapturing) {
                 CaptureSheet(capture: model.draftCapture())
             }
+            .sheet(item: $inquiry) { inquiry in
+                InquirySheet(inquiry: inquiry)
+                    .presentationDetents([.medium])
+                    .presentationCornerRadius(32)
+            }
         }
     }
 
@@ -145,6 +151,16 @@ struct HomeView: View {
             }
         case .joinCircle:
             withAnimation(Motion.bouncy) { model.tab = .circles }
+        case .answerInquiry:
+            let id = item.id.replacingOccurrences(of: "inquiry:", with: "")
+            if let found = model.inquiries.first(where: { $0.id == id }) {
+                inquiry = found
+            } else {
+                Task {
+                    await model.refreshNextUp()
+                    inquiry = model.inquiries.first(where: { $0.id == id })
+                }
+            }
         case .inDemand:
             // People want something this Item could fill: the GM turns it into an Ask.
             let title = model.shelf.first(where: { $0.id == item.itemId })?.title ?? "this"
@@ -524,6 +540,7 @@ struct NextUpRow: View {
         case .answerCounter: ("arrow.left.arrow.right", Palette.gold)
         case .approveDeal: ("arrow.triangle.2.circlepath", Palette.iris)
         case .showcasePhotos: ("camera.fill", Palette.give)
+        case .answerInquiry: ("questionmark.bubble.fill", Palette.iris)
         case .offerForAsk: ("hand.point.up.left.fill", Palette.iris)
         case .joinCircle: ("person.3.fill", Palette.receive)
         case .weakOffer: ("scalemass.fill", Palette.gold)

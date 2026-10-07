@@ -302,6 +302,18 @@ final class APIClient {
 
     // MARK: Next up
 
+    /// The Liaison's open questions to the user.
+    func inquiries() async throws -> [Inquiry] {
+        let response: InquiriesResponse = try await send("GET", "v1/inquiries")
+        return response.inquiries
+    }
+
+    func answerInquiry(_ id: String, yes: Bool) async throws {
+        let _: InquiryAnswerResult = try await send(
+            "POST", "v1/inquiries/\(id)/answer", body: InquiryAnswerRequest(answer: yes ? "yes" : "no")
+        )
+    }
+
     /// What needs the user, best first.
     func nextUp() async throws -> [NextUpItem] {
         let response: NextUpResponse = try await send("GET", "v1/next-up")
