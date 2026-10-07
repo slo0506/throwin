@@ -77,6 +77,11 @@ const EnvSchema = z.object({
   MATCHER_TIME_LIMIT_SECONDS: z.coerce.number().min(1).max(60).default(5),
   /** SDK retries per Anthropic call (429 and 5xx, with backoff). */
   ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(4),
+  /**
+   * Model spend the background agents may use in any 24 hours, in cents. Over it, jobs wait
+   * in the queue (docs/setup.md, "Spend caps"). GM chat has its own caps in the API.
+   */
+  WORKER_DAILY_BUDGET_CENTS: z.coerce.number().int().min(1).default(500),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

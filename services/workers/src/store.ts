@@ -73,6 +73,16 @@ export class SupabaseQueue {
     const { error } = await this.db.rpc("finish_job", { p_id: id, p_error: errorMessage ?? null });
     if (error) fail("finish_job", error);
   }
+
+  /** The background agents' model spend in cents since `since`. GM chat isn't counted. */
+  async spentSince(since: Date): Promise<number> {
+    const { data, error } = await this.db.rpc("model_spend_cents", {
+      p_since: since.toISOString(),
+      p_gm: false,
+    });
+    if (error) fail("model_spend_cents", error);
+    return Number(data ?? 0);
+  }
 }
 
 export class SupabaseAppraiserStore implements AppraiserStore {

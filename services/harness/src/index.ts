@@ -33,6 +33,7 @@ export {
 } from "./resolver.js";
 export {
   GM_FAILED_MESSAGE,
+  type GmBudget,
   GmInputError,
   type GmLogger,
   GmService,

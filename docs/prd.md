@@ -129,11 +129,11 @@ If the Item is not showcase-ready yet, the same card asks for exactly what is mi
 
 Every Deal reaches the user as a Deal Sheet, never as a chat message. It shows:
 
-- **What you give and what you get:** Photos, condition grades and value ranges for both sides.
+- **What you give and what you get:** Photos, condition grades and value ranges for both sides. Each side can be 1 Item or several (2 Switch games for 1 LEGO set), as long as every person approves.
 - **The fairness line:** "You give about $70 in value and get about $85," with the Throw-In if any.
 - **Who is involved:** All participants in a Loop, with Circle and rating, so a 4-person trade never feels like a black box.
 - **Why the GM likes it:** 1 or 2 sentences tied to what the user said ("You said you'd give up the Zelda game for any Batman set").
-- **Actions:** Approve, Decline, or "Counter," which opens a small form for a different Throw-In or item. A counter re-runs matching instead of starting a chat thread.
+- **Actions:** Approve, Decline, or Counter. To counter, the user tells their GM what they'd change in their own words ("That's a good offer. Can we get a little more, like something vintage Nike?"). The GM turns it into a structured counter (add, remove or swap an Item, or change the Throw-In), the user confirms it, and it re-runs matching instead of starting a chat thread. Every person approves the new version.
 
 ### Handoff and after
 
@@ -264,7 +264,7 @@ When a candidate Deal needs a counterparty's input, the Liaison sends structured
 | --- | --- |
 | `inquiry` | Deal ID, the Item requested, what is offered in return, value ranges. |
 | `answer` | Accept in principle, decline, or a counter within allowed fields. |
-| `counter` | A different Item from the counterparty's offer set, or a different Throw-In. |
+| `counter` | Add, remove or swap Items from the offer sets, or a different Throw-In. |
 | `withdraw` | Any side, any time before approval. |
 
 Limits are enforced in code: at most 3 counter rounds per Deal, a 24-hour response window, and no field that can carry a user's floor or cash ceiling. Free-text fields do not exist, which removes the persuasion tactics the Flybridge experiment saw agents fall for ([When Agent Met Agent](https://lynxcollective.substack.com/p/when-agent-met-agent)). If a counterparty GM is unsure, it asks its own user with a notification instead of guessing.
@@ -678,7 +678,9 @@ Following Anthropic's commerce guidance, eval cases are snapshots: a constructed
 | Safety | Injections planted in other users' item descriptions, attempts to read another user's data, prohibited items. Each positive case has a negative twin. | 100 |
 | Matcher | Property tests: no Item in 2 Deals, Throw-Ins within ceilings, every cycle balanced. | Generated |
 
-**CI gates:** A pull request that touches a prompt, skill or tool runs the core set plus the cases for what changed, over 3 trials. The full suite runs nightly and before every release. Gates cover pass rate, cache hit rate and cost per turn.
+**CI gates:** A pull request that touches a prompt, skill or tool runs the core set plus the cases for what changed, over 3 trials. The full suite runs before every release. Gates cover pass rate, cache hit rate and cost per turn. There are no scheduled (nightly) runs for now (decided Oct 7, 2026), and every eval run stops at $2 of model spend.
+
+**Spend caps:** Anything that spends on models without a person in the loop has a hard daily cap, so a bug can't run up a bill: $5 a day for the background agents, $3 a day per person and $10 a day in total for GM chat, and $2 per eval run. The numbers are settings (`docs/setup.md`, "Spend caps").
 
 ### Environments and secrets
 
@@ -796,6 +798,9 @@ Build in 7 milestones, each ending in something a person can use on a phone, and
 ### Milestone 3: Matching and Deal Sheets
 
 - [ ] Matcher service: graph build, bounded cycle search up to length 4, Throw-In linear program, CP-SAT selection, property tests.
+- [ ] Bundles (X for Y): a person can give and get several Items in 1 Deal, in Loops of 2 to 4 people, balanced with Throw-Ins, and only with every person's approval. Decided Oct 7, 2026; design in `docs/specs/agents-and-trading.md`.
+- [ ] Counters in natural language: the GM turns the user's words into a structured counter they confirm; the matcher re-balances and every person approves the new version.
+- [ ] Inferred edges ("would a PS5 work instead of an Xbox?") and demand counts ("3 people in your Circle want Kobe 11s", counts only).
 - [ ] Prospector worker with the 2-minute budget, live mode on Ask and Shelf changes, weekly drop mode.
 - [ ] Liaison worker and the structured protocol with round and rate limits.
 - [ ] Deal staging with Item reservation, per-participant Deal Sheets, approve, decline and counter endpoints, 48-hour expiry.
@@ -816,7 +821,7 @@ Build in 7 milestones, each ending in something a person can use on a phone, and
 - [ ] Safety screener, prohibited list, recall check, report and block flows.
 - [ ] Activity log screen backed by `agent_events`.
 - [ ] Third-party AI consent step, privacy policy and terms links.
-- [ ] Full eval suite in CI with gates, nightly runs, dashboards and alerts.
+- [ ] Full eval suite in CI with gates, dashboards and alerts. Scheduled runs wait until the budget allows (none for now; each run is capped at $2).
 - [ ] App Store review account and TestFlight build.
 
 **Done when:** The app passes an internal review against every row of the App Store requirements table, and all eval gates are green.

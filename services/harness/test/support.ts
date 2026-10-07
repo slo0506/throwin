@@ -5,7 +5,7 @@ import type { ResolvedTargetData } from "../src/history.js";
 import { MemoryGmData } from "../src/memory-data.js";
 import { type GmPrompts, loadGmPrompts } from "../src/prompts.js";
 import type { ResolveInput, ResolverRun, TargetResolver } from "../src/resolver.js";
-import { GmService } from "../src/service.js";
+import { GmService, type GmServiceDeps } from "../src/service.js";
 import { FakeModelClient, type FakeStep } from "../src/testing.js";
 
 export const ALICE = "11111111-1111-4111-8111-111111111111";
@@ -60,7 +60,10 @@ export interface World {
   gm: GmService;
 }
 
-export async function makeWorld(steps: FakeStep[] = []): Promise<World> {
+export async function makeWorld(
+  steps: FakeStep[] = [],
+  extra: Pick<GmServiceDeps, "budget"> = {},
+): Promise<World> {
   const data = new MemoryGmData();
   data.now = () => NOW;
   data.addUser(ALICE, { firstName: "Alice" });
@@ -96,6 +99,7 @@ export async function makeWorld(steps: FakeStep[] = []): Promise<World> {
     resolver,
     now: () => NOW,
     newId: () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`,
+    ...extra,
   });
   return { data, model, resolver, gm };
 }

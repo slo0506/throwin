@@ -10,6 +10,7 @@ import {
   VoyageEmbedder,
 } from "@throwin/workers/eval";
 import { noopEmbedder, runCapture } from "./appraise.js";
+import { parseMaxCents } from "./budget.js";
 import {
   type CaptureCase,
   isCaptureCase,
@@ -25,12 +26,13 @@ import { isReviewCase, runReviewCase } from "./review.js";
 import { scoreTrial, summarize, type TrialScore } from "./score.js";
 
 const USAGE = `Usage:
-  eval:appraisal --cases <dir> --media <dir> [--trials 3] [--out report.md] [--case <id>] [--allow-unreviewed]
+  eval:appraisal --cases <dir> --media <dir> [--trials 3] [--out report.md] [--case <id>] [--allow-unreviewed] [--max-cents 200]
   eval:label --media <capture dir or file> --out <case.json> [--root <media root>] [--force]
-  eval:gm [--cases evals/cases] [--suite safety] [--case <id>] [--trials 3]
-  eval:review [--cases evals/cases] [--case <id>] [--trials 3]
+  eval:gm [--cases evals/cases] [--suite safety] [--case <id>] [--trials 3] [--max-cents 200]
+  eval:review [--cases evals/cases] [--case <id>] [--trials 3] [--max-cents 200]
 
-Needs ANTHROPIC_API_KEY. Uses VOYAGE_API_KEY for embeddings when set.`;
+Needs ANTHROPIC_API_KEY. Uses VOYAGE_API_KEY for embeddings when set. Every run stops at
+--max-cents of model spend (default 200, $2).`;
 
 class UsageError extends Error {}
 
@@ -63,8 +65,10 @@ async function appraisal(argv: string[]) {
       out: { type: "string" },
       case: { type: "string" },
       "allow-unreviewed": { type: "boolean", default: false },
+      "max-cents": { type: "string" },
     },
   });
+  const budget = parseMaxCents(values["max-cents"]);
   if (!values.cases || !values.media) throw new UsageError("--cases and --media are required");
   const trials = Number.parseInt(values.trials, 10);
   if (!Number.isInteger(trials) || trials < 1) throw new UsageError("--trials must be 1 or more");
@@ -91,6 +95,7 @@ async function appraisal(argv: string[]) {
     const frames = await loadCaptureFrames(mediaRoot, c.media);
     log(`${c.id}: ${plural(frames.length, "frame")}, ${plural(c.items.length, "labeled Item")}`);
     for (let trial = 1; trial <= trials; trial++) {
+      if (budget.exhausted) break;
       const result = await runCapture(`${c.id}-${trial}`, frames, {
         makeVision: (onRun) => createClaudeVision(anthropicKey, onRun),
         embedder,
@@ -107,12 +112,17 @@ async function appraisal(argv: string[]) {
         error: result.error,
       });
       scores.push(score);
+      budget.add(score.costCents);
       log(
         `  trial ${trial}: ${score.correct} of ${score.labeled} correct, ${score.extra.length} extra, ${score.forbiddenHits.length} forbidden, ${(score.latencyMs / 1000).toFixed(1)} s${score.error ? `, error: ${score.error}` : ""}`,
       );
     }
   }
 
+  if (budget.exhausted) {
+    log(budget.message);
+    return 1;
+  }
   const summary = summarize(scores);
   const report = renderReport(summary, {
     casesDir: shown(casesDir),
@@ -180,8 +190,10 @@ async function gm(argv: string[]) {
       trials: { type: "string", default: "1" },
       case: { type: "string" },
       suite: { type: "string" },
+      "max-cents": { type: "string" },
     },
   });
+  const budget = parseMaxCents(values["max-cents"]);
   const trials = Number.parseInt(values.trials, 10);
   if (!Number.isInteger(trials) || trials < 1) throw new UsageError("--trials must be 1 or more");
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -198,10 +210,12 @@ async function gm(argv: string[]) {
   let failed = 0;
   let cost = 0;
   for (const c of cases) {
+    if (budget.exhausted) break;
     let passes = 0;
     for (let trial = 1; trial <= trials; trial++) {
       const result = await runGmCase(c, model);
       cost += result.costCents;
+      budget.add(result.costCents);
       if (result.pass) passes++;
       else
         log(
@@ -212,6 +226,10 @@ async function gm(argv: string[]) {
     const pass = passes * 2 > trials;
     if (!pass) failed++;
     log(`${pass ? "pass" : "FAIL"}  ${c.suite}/${c.id}: ${passes} of ${trials}`);
+  }
+  if (budget.exhausted) {
+    log(budget.message);
+    return 1;
   }
   log(`${cases.length - failed} of ${cases.length} cases passed, ${cost.toFixed(2)} cents`);
   return failed === 0 ? 0 : 1;
@@ -224,8 +242,10 @@ async function review(argv: string[]) {
       cases: { type: "string", default: "evals/cases" },
       trials: { type: "string", default: "1" },
       case: { type: "string" },
+      "max-cents": { type: "string" },
     },
   });
+  const budget = parseMaxCents(values["max-cents"]);
   const trials = Number.parseInt(values.trials, 10);
   if (!Number.isInteger(trials) || trials < 1) throw new UsageError("--trials must be 1 or more");
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -240,9 +260,11 @@ async function review(argv: string[]) {
   let cost = 0;
   const model = createReviewModel(anthropicKey, (run) => {
     cost += run.costCents;
+    budget.add(run.costCents);
   });
   let failed = 0;
   for (const c of cases) {
+    if (budget.exhausted) break;
     let passes = 0;
     for (let trial = 1; trial <= trials; trial++) {
       const result = await runReviewCase(c, model);
@@ -254,6 +276,10 @@ async function review(argv: string[]) {
     const pass = passes * 2 > trials;
     if (!pass) failed++;
     log(`${pass ? "pass" : "FAIL"}  ${c.id}: ${passes} of ${trials}`);
+  }
+  if (budget.exhausted) {
+    log(budget.message);
+    return 1;
   }
   log(`${cases.length - failed} of ${cases.length} cases passed, ${cost.toFixed(2)} cents`);
   return failed === 0 ? 0 : 1;

@@ -79,6 +79,8 @@ pnpm --filter @throwin/evals-runner eval:gm --trials 3
 pnpm --filter @throwin/evals-runner eval:gm --suite safety --case injection
 ```
 
+Every eval command stops at `--max-cents` of model spend (default 200, $2) and exits as failed, so a run can never run up a surprise bill. Raise it for a bigger run: `--max-cents 500`.
+
 A case passes when it passes in more than half of its trials. CI runs `evals/runner/test/gm.test.ts`, which checks every case parses, every safety case has a twin that points back, and the grader works against a scripted model.
 
 ## Capture cases (version 2, appraisal)

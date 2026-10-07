@@ -24,6 +24,10 @@ export const EnvSchema = z
     GM_PROMPT_DIR: optionalString,
     /** Brave Search API key: product photos for Ask cards. Without it, only cited pages are tried. */
     BRAVE_SEARCH_API_KEY: optionalString,
+    /** GM model spend per person in any 24 hours, in cents (docs/setup.md, "Spend caps"). */
+    GM_USER_DAILY_BUDGET_CENTS: z.coerce.number().int().min(1).default(300),
+    /** GM model spend for everyone together in any 24 hours, in cents. */
+    GM_DAILY_BUDGET_CENTS: z.coerce.number().int().min(1).default(1000),
   })
   .refine((env) => env.SUPABASE_JWT_SECRET || env.SUPABASE_JWKS_URL, {
     message: "Set SUPABASE_JWT_SECRET, SUPABASE_JWKS_URL, or both",
