@@ -2,9 +2,19 @@ import Observation
 import SwiftUI
 
 /// 1 trip to the camera: collect photos or a video, upload them, and follow the Appraiser
-/// until the Items are ready.
+/// until the Items are ready. The sheet collects; once sent, the AppModel follows it, so
+/// closing the sheet never stops anything.
 @Observable
-final class CaptureModel {
+final class CaptureModel: Identifiable {
+    /// Where the capture started: the Shelf's camera button, or a GM camera request.
+    enum Source: Sendable {
+        case shelf
+        case gm
+    }
+
+    let id = UUID()
+    var source: Source = .shelf
+
     enum Phase: Equatable {
         case collecting
         case uploading(done: Int, total: Int)

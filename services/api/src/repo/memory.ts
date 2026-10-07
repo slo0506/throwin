@@ -148,10 +148,12 @@ export class MemoryRepository implements Repository {
       openQuestions: 0,
       captureId: null,
       thumbnailPath: null,
+      photoPaths: [],
       createdAt: new Date("2026-10-03T00:00:00Z"),
       updatedAt: new Date("2026-10-03T00:00:00Z"),
       ...item,
     };
+    if (!item.photoPaths && record.thumbnailPath) record.photoPaths = [record.thumbnailPath];
     this.items.push(record);
     return this.#sync(record);
   }
@@ -194,7 +196,14 @@ export class MemoryRepository implements Repository {
     if (!user) return null;
     if (patch.displayName !== undefined) user.displayName = patch.displayName;
     if (patch.photoUrl !== undefined) user.photoUrl = patch.photoUrl;
-    if (patch.autonomyLevel !== undefined) user.autonomyLevel = patch.autonomyLevel;
+    if (patch.autonomyLevel !== undefined) {
+      user.autonomyLevel = patch.autonomyLevel;
+      for (const ask of this.asks) {
+        if (ask.userId === userId && ACTIVE_ASK_STATUSES.includes(ask.status)) {
+          ask.autonomy = patch.autonomyLevel;
+        }
+      }
+    }
     if (patch.notificationPrefs) {
       user.notificationPrefs = { ...user.notificationPrefs, ...patch.notificationPrefs };
     }
@@ -713,6 +722,7 @@ export class MemoryRepository implements Repository {
           {
             giverId: l.giverId,
             receiverId: l.receiverId,
+            askId: l.askId,
             item: {
               id: item.id,
               title: item.title,

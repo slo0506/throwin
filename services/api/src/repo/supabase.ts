@@ -145,8 +145,10 @@ const AnswerRow = z.object({
   item_id: z.string().optional(),
 });
 
+const photosInOrder = (media: { storage_path: string; position: number }[] | null) =>
+  [...(media ?? [])].sort((a, b) => a.position - b.position).map((m) => m.storage_path);
 const firstPhoto = (media: { storage_path: string; position: number }[] | null) =>
-  [...(media ?? [])].sort((a, b) => a.position - b.position)[0]?.storage_path ?? null;
+  photosInOrder(media)[0] ?? null;
 
 const CaptureRow = z.object({
   id: z.string(),
@@ -210,6 +212,7 @@ function toItem(r: z.infer<typeof ItemRow>): ItemRecord {
     openQuestions: open.length,
     captureId: r.capture_id,
     thumbnailPath: firstPhoto(r.item_media),
+    photoPaths: photosInOrder(r.item_media),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -342,6 +345,7 @@ const DealLegRow = z.object({
   giver_id: z.string(),
   receiver_id: z.string(),
   item_id: z.string().nullable(),
+  ask_id: z.string().nullable(),
   throw_in_cents: z.number().int(),
 });
 const DealItemRow = z.object({
@@ -477,6 +481,15 @@ export class SupabaseRepository implements Repository {
     if (Object.keys(profileFields).length > 0) {
       const { error } = await this.db.from("profiles").update(profileFields).eq("user_id", userId);
       if (error) throw new RepositoryError("updateMe.profiles", error);
+    }
+    if (patch.autonomyLevel !== undefined) {
+      // Which deals to bring you is 1 setting for every Ask: open Asks follow it.
+      const { error } = await this.db
+        .from("asks")
+        .update({ autonomy: patch.autonomyLevel })
+        .eq("user_id", userId)
+        .in("status", ACTIVE_ASK_STATUSES);
+      if (error) throw new RepositoryError("updateMe.asks", error);
     }
     return this.getMe(userId);
   }
@@ -956,7 +969,7 @@ export class SupabaseRepository implements Repository {
     const [legs, people] = await Promise.all([
       this.db
         .from("deal_legs")
-        .select("deal_id, giver_id, receiver_id, item_id, throw_in_cents")
+        .select("deal_id, giver_id, receiver_id, item_id, ask_id, throw_in_cents")
         .in("deal_id", shownIds),
       this.db
         .from("deal_participants")
@@ -997,6 +1010,7 @@ export class SupabaseRepository implements Repository {
             {
               giverId: l.giver_id,
               receiverId: l.receiver_id,
+              askId: l.ask_id,
               item: {
                 id: item.id,
                 title: item.title,

@@ -58,6 +58,7 @@ export const UserInputRecord = z.object({
   display_text: z.string(),
   choice: z.object({ component_id: z.string(), option_ids: z.array(z.string()) }).optional(),
   media_paths: z.array(z.string()).optional(),
+  added_item_ids: z.array(z.string()).optional(),
 });
 export type UserInputRecord = z.infer<typeof UserInputRecord>;
 

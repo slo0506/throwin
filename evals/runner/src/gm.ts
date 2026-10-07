@@ -26,7 +26,13 @@ import { z } from "zod";
 import type { SnapshotCase } from "./cases.js";
 
 /** Suites the GM runner grades. */
-export const GM_SUITES = ["grounding", "intake", "ask_resolution", "safety"] as const;
+export const GM_SUITES = [
+  "grounding",
+  "intake",
+  "ask_resolution",
+  "offer_building",
+  "safety",
+] as const;
 
 const cents = z.number().int().nonnegative();
 const Value = z.strictObject({ low: cents, mid: cents, high: cents });
@@ -83,6 +89,8 @@ export const GmCaseState = z.strictObject({
     .default([]),
   /** A canned resolve_target result, so a case does not depend on live web prices. */
   resolver_target: ResolvedTargetData.optional(),
+  /** Shelf Items the new message says were just added (`added_item_ids` on the message). */
+  added_item_ids: z.array(z.uuid()).optional(),
 });
 export type GmCaseState = z.infer<typeof GmCaseState>;
 
@@ -110,6 +118,8 @@ export const GmExpect = z.strictObject({
   max_choice_questions: z.number().int().optional(),
   /** The first Ask's offer set, exactly. */
   offer_items: z.array(z.uuid()).optional(),
+  /** The user's profile setting afterwards: which deals to bring them. */
+  autonomy: AutonomyLevel.optional(),
 });
 export type GmExpect = z.infer<typeof GmExpect>;
 
@@ -251,7 +261,13 @@ export interface GmCaseResult {
   error: string | null;
 }
 
-const WRITE_TOOLS = new Set(["upsert_ask", "set_offer_set", "update_item", "finish_intake"]);
+const WRITE_TOOLS = new Set([
+  "upsert_ask",
+  "set_offer_set",
+  "set_autonomy",
+  "update_item",
+  "finish_intake",
+]);
 
 /** Runs 1 GM snapshot case through the real harness on an in-memory database. */
 export async function runGmCase(c: SnapshotCase, model: ModelClient): Promise<GmCaseResult> {
@@ -279,7 +295,10 @@ export async function runGmCase(c: SnapshotCase, model: ModelClient): Promise<Gm
   });
 
   const events: GmStreamEvent[] = [];
-  const prepared = await gm.prepareTurn(EVAL_USER, { text: c.message });
+  const prepared = await gm.prepareTurn(EVAL_USER, {
+    text: c.message,
+    ...(state.added_item_ids && { added_item_ids: state.added_item_ids }),
+  });
   await prepared.run((e) => events.push(e));
 
   const text = events.flatMap((e) => (e.event === "text" ? [e.data.delta] : [])).join("");
@@ -366,6 +385,10 @@ export async function runGmCase(c: SnapshotCase, model: ModelClient): Promise<Gm
     const want = [...expect.offer_items].sort();
     if (JSON.stringify(got) !== JSON.stringify(want))
       failures.push(`offer set is [${got.join(", ")}]`);
+  }
+  if (expect.autonomy) {
+    const level = (await data.getUser(EVAL_USER))?.autonomy;
+    if (level !== expect.autonomy) failures.push(`autonomy is ${level}`);
   }
   if (errorEvent) failures.push(`turn failed: ${JSON.stringify(errorEvent.data)}`);
 

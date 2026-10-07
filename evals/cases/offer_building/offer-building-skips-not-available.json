@@ -1,0 +1,66 @@
+{
+  "id": "offer-building-skips-not-available",
+  "suite": "offer_building",
+  "description": "An Item marked not available is never suggested or offered, even when it's the closest match",
+  "state": {
+    "user": {
+      "first_name": "Sean"
+    },
+    "mode": "chat",
+    "shelf": [
+      {
+        "id": "aaaaaaaa-6666-4000-8000-000000000001",
+        "title": "Nintendo Switch Lite, turquoise",
+        "category": "electronics/consoles",
+        "condition_grade": "B",
+        "willingness": "not_available",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-6666-4000-8000-000000000002",
+        "title": "Insta360 X3 action camera",
+        "category": "electronics/cameras",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 20000,
+          "mid": 23000,
+          "high": 26000
+        }
+      }
+    ],
+    "asks": [
+      {
+        "id": "bbbbbbbb-6666-4000-8000-000000000001",
+        "raw_text": "a new or used PS4",
+        "title": "PlayStation 4",
+        "status": "offering",
+        "target": {
+          "kind": "exact",
+          "name": "PlayStation 4",
+          "brand": "Sony",
+          "category": "electronics/consoles",
+          "constraints": [],
+          "anchor": {
+            "retail_cents": 32500,
+            "used_low_cents": 10000,
+            "used_high_cents": 15000
+          },
+          "model": null,
+          "image_url": null
+        },
+        "offer_item_ids": [],
+        "cash_ceiling_cents": 0
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "Pick what to offer for the PS4 for me",
+  "expect": {
+    "unseen_id_unused": "aaaaaaaa-6666-4000-8000-000000000001",
+    "prices_grounded": true
+  }
+}

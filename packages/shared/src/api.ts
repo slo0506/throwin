@@ -111,6 +111,8 @@ export const ShelfItem = z.object({
   is_reserved: z.boolean(),
   /** Signed URL, filled in Milestone 1. */
   thumbnail_url: z.string().nullable(),
+  /** Signed URLs of every photo, the hero first, for the product page carousel. */
+  photo_urls: z.array(z.string()).default([]),
   /** Kept for older clients: the prompt of the Item's best open question, or null. */
   follow_up: z.string().nullable(),
   /** True while the Appraiser or Refiner is still pricing or re-reading this Item. Value may be null. */

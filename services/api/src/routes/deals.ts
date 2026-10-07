@@ -78,6 +78,7 @@ export function toDealSheet(
     your_approval: me.approval,
     // Each person's own why; nobody sees another participant's.
     why: me.why,
+    your_ask_id: get.askId,
   };
 }
 

@@ -15,10 +15,13 @@ import type { MediaStore } from "../repo/media.js";
 import type { ItemRecord, Repository } from "../repo/types.js";
 import type { AppEnv } from "../types.js";
 
-/** Signs every thumbnail in 1 round trip. */
+/** Signs every Item photo (the thumbnail and the rest of the carousel) in 1 round trip. */
 export async function thumbnailUrls(media: MediaStore, items: ItemRecord[]) {
-  const paths = items.map((i) => i.thumbnailPath).filter((p): p is string => p !== null);
-  return media.signedReadUrls(paths);
+  const paths = items.flatMap((i) => [
+    ...(i.thumbnailPath ? [i.thumbnailPath] : []),
+    ...i.photoPaths,
+  ]);
+  return media.signedReadUrls([...new Set(paths)]);
 }
 
 /** Storage layout for follow-up photos: {user}/items/{item}/{uuid}.jpg. */

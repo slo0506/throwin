@@ -1,0 +1,89 @@
+{
+  "id": "offer-building-just-added-goes-straight-in",
+  "suite": "offer_building",
+  "description": "Items the user just added for an Ask's offer go straight into it, with no pick card",
+  "state": {
+    "user": {
+      "first_name": "Sean"
+    },
+    "mode": "chat",
+    "shelf": [
+      {
+        "id": "aaaaaaaa-2222-4000-8000-000000000001",
+        "title": "Insta360 X3 action camera",
+        "category": "electronics/cameras",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 20000,
+          "mid": 23000,
+          "high": 26000
+        }
+      },
+      {
+        "id": "aaaaaaaa-2222-4000-8000-000000000002",
+        "title": "Anker PowerCore 20000 power bank",
+        "category": "electronics/accessories",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 1500,
+          "mid": 2000,
+          "high": 2500
+        }
+      },
+      {
+        "id": "aaaaaaaa-2222-4000-8000-000000000003",
+        "title": "Nintendo Switch Lite, turquoise",
+        "category": "electronics/consoles",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      }
+    ],
+    "asks": [
+      {
+        "id": "bbbbbbbb-2222-4000-8000-000000000001",
+        "raw_text": "a new or used PS4",
+        "title": "PlayStation 4",
+        "status": "offering",
+        "target": {
+          "kind": "exact",
+          "name": "PlayStation 4",
+          "brand": "Sony",
+          "category": "electronics/consoles",
+          "constraints": ["New or used is fine"],
+          "anchor": {
+            "retail_cents": 32500,
+            "used_low_cents": 10000,
+            "used_high_cents": 15000
+          },
+          "model": null,
+          "image_url": null
+        },
+        "offer_item_ids": [],
+        "cash_ceiling_cents": 0
+      }
+    ],
+    "added_item_ids": ["aaaaaaaa-2222-4000-8000-000000000003"]
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "I want to add something new to the PS4 offer"
+    },
+    {
+      "role": "assistant",
+      "content": "Camera's open. Snap it and tell me once it's up, and I'll add it to the PS4 offer."
+    }
+  ],
+  "message": "I added Nintendo Switch Lite, turquoise to my Shelf.",
+  "expect": {
+    "tools_called": ["set_offer_set"],
+    "components_absent": ["item_cards"],
+    "max_choice_questions": 0,
+    "offer_items": ["aaaaaaaa-2222-4000-8000-000000000003"],
+    "prices_grounded": true
+  }
+}

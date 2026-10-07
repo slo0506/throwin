@@ -186,9 +186,13 @@ extension View {
 
 // MARK: - Appraisal scan
 
+/// The scan means 1 thing: the GM is looking at this photo right now. It never plays just
+/// because a photo appeared on screen.
 struct AppraiseScanModifier: ViewModifier {
-    /// Changing this replays the scan.
-    var trigger: Int
+    /// Changing this to a positive number plays 1 sweep. 0 never plays.
+    var trigger: Int = 0
+    /// Sweeps on a loop while true, and lets the last sweep land when it turns false.
+    var isActive: Bool = false
     var duration: TimeInterval = 1.8
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -211,18 +215,44 @@ struct AppraiseScanModifier: ViewModifier {
             )
         }
         .task(id: trigger) {
-            guard !reduceMotion else { return }
-            startDate = Date()
-            try? await Task.sleep(for: .seconds(duration + 0.05))
-            startDate = nil
+            guard trigger > 0, !reduceMotion else { return }
+            await sweep()
+        }
+        .task(id: isActive) {
+            guard isActive, !reduceMotion else { return }
+            while !Task.isCancelled {
+                await sweep()
+                try? await Task.sleep(for: .milliseconds(350))
+            }
+        }
+    }
+
+    private func sweep() async {
+        let start = Date()
+        startDate = start
+        try? await Task.sleep(for: .seconds(duration + 0.05))
+        guard Task.isCancelled else {
+            if startDate == start { startDate = nil }
+            return
+        }
+        // Stopped mid-sweep: let the band land instead of cutting it off halfway down.
+        let remaining = duration + 0.05 - Date().timeIntervalSince(start)
+        Task {
+            if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+            if startDate == start { startDate = nil }
         }
     }
 }
 
 extension View {
-    /// Plays the holographic appraisal scan over this view (usually a photo).
+    /// Plays 1 holographic appraisal sweep each time `trigger` changes to a positive number.
     func appraiseScan(trigger: Int, duration: TimeInterval = 1.8) -> some View {
         modifier(AppraiseScanModifier(trigger: trigger, duration: duration))
+    }
+
+    /// Sweeps the appraisal scan for as long as the GM is working on this photo.
+    func appraiseScan(while isActive: Bool, duration: TimeInterval = 1.8) -> some View {
+        modifier(AppraiseScanModifier(isActive: isActive, duration: duration))
     }
 }
 

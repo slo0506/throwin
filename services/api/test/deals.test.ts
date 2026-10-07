@@ -66,6 +66,8 @@ describe("Deal Sheets", () => {
       fairness: { give_cents: 4200, get_cents: 8500 },
       your_approval: "pending",
       why: "You said Galaxy Explorer was your white whale.",
+      // Only the caller's own Ask: Bob's Ask is never on Alice's sheet.
+      your_ask_id: ALICE_ASK,
     });
     expect(alice.you_give.photo_url).toBe("https://storage.test/read/alice/zelda.jpg?token=t");
     expect(alice.loop).toHaveLength(2);
@@ -84,6 +86,7 @@ describe("Deal Sheets", () => {
       cash: { pay_cents: 0, receive_cents: 2000 },
       fairness: { give_cents: 8500, get_cents: 4200 },
       why: "Zelda, like you asked.",
+      your_ask_id: BOB_ASK,
     });
     expect(JSON.stringify(bob)).not.toContain("white whale");
 

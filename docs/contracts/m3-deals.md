@@ -72,7 +72,8 @@ All JSON is snake_case and money is integer cents. Someone else's Deal, or a `st
   "throw_ins": [{ "payer": DealPerson, "payee": DealPerson, "amount_cents": 2000 }],
   "participants": [{ "...DealPerson", "approval": "pending | approved | declined" }],
   "your_approval": "pending",
-  "why": null
+  "why": null,
+  "your_ask_id": "uuid or null"
 }
 ```
 
@@ -80,6 +81,7 @@ All JSON is snake_case and money is integer cents. Someone else's Deal, or a `st
 - `DealPerson` is `{ user_id, first_name, photo_url }`.
 - `fairness` holds the mid values of what the caller gives and gets, for "You give about $42 in value and get about $85". Everyone sees the same Items and ranges in `loop`, and nobody's cash ceiling ever appears.
 - `why` is the caller's own "why your GM likes it", written by the Prospector's review. Each person sees only their own, and it's null when the review wrote none.
+- `your_ask_id` is the caller's own Ask this Deal fills (the leg they receive through), so the app can link an Ask to its waiting Deal. Never anyone else's Ask.
 
 ### Decisions
 

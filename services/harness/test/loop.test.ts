@@ -325,6 +325,7 @@ describe("untrusted text", () => {
       "resolve_target",
       "upsert_ask",
       "set_offer_set",
+      "set_autonomy",
       "update_item",
       "get_ask_status",
       "present_items",

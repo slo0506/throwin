@@ -69,6 +69,8 @@ export interface ItemRecord {
   captureId: string | null;
   /** Storage path of the Item's first photo or crop, if any. */
   thumbnailPath: string | null;
+  /** Storage paths of every photo, the hero (position 0) first. */
+  photoPaths: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -248,7 +250,8 @@ export interface DealRecord {
   id: string;
   status: DealStatus;
   expiresAt: Date;
-  legs: { giverId: string; receiverId: string; item: DealItemRecord }[];
+  /** `askId` is the receiver's Ask the leg fills, when it fills 1. */
+  legs: { giverId: string; receiverId: string; askId: string | null; item: DealItemRecord }[];
   throwIns: { payerId: string; payeeId: string; amountCents: number }[];
   participants: (DealPersonRecord & { approval: ApprovalState; why: string | null })[];
 }

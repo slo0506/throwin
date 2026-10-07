@@ -22,8 +22,10 @@ struct GMChatView: View {
     @State private var sendCount = 0
     @State private var openAsk: AskRoute?
     @State private var isCapturing = false
-    @State private var shelfBeforeCapture: Set<String> = []
     @State private var shoot: ChatShootRoute?
+    @State private var position = ScrollPosition(edge: .bottom)
+    /// Following the newest message. The user's own scrolling turns it off and back on.
+    @State private var followsLatest = true
     @FocusState private var composerFocused: Bool
 
     private var chat: GMChatModel { model.gm }
@@ -53,8 +55,8 @@ struct GMChatView: View {
         .onChange(of: chat.intakeDone, initial: true) { _, done in
             if isIntake, done { onIntakeComplete() }
         }
-        .sheet(isPresented: $isCapturing, onDismiss: captureClosed) {
-            CaptureSheet(onFinish: {})
+        .sheet(isPresented: $isCapturing) {
+            CaptureSheet(capture: model.draftCapture(), source: .gm, onLanded: landed)
         }
         .fullScreenCover(item: $shoot) { route in
             ShowcaseShootView(itemID: route.itemID, angles: route.angles) { sent in
@@ -124,42 +126,105 @@ struct GMChatView: View {
 
     // MARK: Thread
 
+    /// Like Messages: anything you do in the thread (send, answer a card, come back from the
+    /// camera, try again) brings you to where the reply lands, and the thread follows the reply
+    /// while you're at the bottom. Scroll up to reread and it stops pulling you down; the arrow
+    /// brings you back.
     private var thread: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Space.lg) {
-                    ForEach(chat.rows) { row in
-                        rowView(row)
-                            .id(row.id)
-                            .transition(
-                                .asymmetric(
-                                    insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .bottomLeading)).combined(with: .offset(y: 12)),
-                                    removal: .opacity
-                                )
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Space.lg) {
+                ForEach(chat.rows) { row in
+                    rowView(row)
+                        .id(row.id)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .bottomLeading)).combined(with: .offset(y: 12)),
+                                removal: .opacity
                             )
-                    }
-                    activity
-                    if chat.failed != nil, !chat.isBusy {
-                        retryRow
-                            .transition(.opacity.combined(with: .offset(y: 6)))
-                    }
-                    if chat.loadFailed, chat.rows.isEmpty {
-                        loadFailedView
-                    }
-                    Color.clear.frame(height: 1).id("bottom")
+                        )
                 }
-                .padding(.horizontal, Space.gutter)
-                .padding(.vertical, Space.md)
+                // Photos the GM asked for, on their way to the Shelf.
+                ForEach(model.captures.filter { $0.source == .gm }) { capture in
+                    CaptureStatusCard(capture: capture)
+                        .transition(.opacity.combined(with: .offset(y: 8)))
+                }
+                activity
+                if chat.failed != nil, !chat.isBusy {
+                    retryRow
+                        .transition(.opacity.combined(with: .offset(y: 6)))
+                }
+                if chat.loadFailed, chat.rows.isEmpty {
+                    loadFailedView
+                }
             }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: scrollSignature) { _, _ in
-                withAnimation(Motion.soft) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .onAppear {
-                proxy.scrollTo("bottom", anchor: .bottom)
+            .padding(.horizontal, Space.gutter)
+            .padding(.vertical, Space.md)
+        }
+        .scrollPosition($position)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+        .onScrollPhaseChange { old, new, context in
+            if new == .interacting {
+                // The list is in the user's hands: don't pull it out from under them.
+                followsLatest = false
+            } else if new == .idle, old == .interacting || old == .decelerating {
+                followsLatest = Self.isNearBottom(context.geometry)
             }
         }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.height } action: { old, new in
+            // The keyboard or a taller composer: keep the latest message in view.
+            if followsLatest, old != new { scrollToLatest(animated: false) }
+        }
+        .onChange(of: chat.userActions) { _, _ in
+            followsLatest = true
+            scrollToLatest()
+        }
+        .onChange(of: scrollSignature) { _, _ in
+            if followsLatest { scrollToLatest() }
+        }
+        .overlay(alignment: .bottom) {
+            if !followsLatest {
+                jumpToLatest
+                    .padding(.bottom, Space.sm)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+        }
+        .animation(Motion.snappy, value: followsLatest)
+    }
+
+    private var jumpToLatest: some View {
+        Button {
+            followsLatest = true
+            scrollToLatest()
+        } label: {
+            Image(systemName: "arrow.down")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Palette.ink)
+                .frame(width: 40, height: 40)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel("Jump to the latest message")
+    }
+
+    private func scrollToLatest(animated: Bool = true) {
+        if animated {
+            withAnimation(Motion.soft) { position.scrollTo(edge: .bottom) }
+        } else {
+            position.scrollTo(edge: .bottom)
+        }
+        // A card answered in the same tap changes height as it settles, and lazy rows measure
+        // late: land again once the layout has caught up.
+        Task {
+            try? await Task.sleep(for: .milliseconds(380))
+            guard followsLatest else { return }
+            withAnimation(Motion.soft) { position.scrollTo(edge: .bottom) }
+        }
+    }
+
+    private static func isNearBottom(_ geometry: ScrollGeometry) -> Bool {
+        geometry.visibleRect.maxY >= geometry.contentSize.height - 60
     }
 
     /// Changes whenever the thread grows, so the list follows the stream.
@@ -201,9 +266,13 @@ struct GMChatView: View {
         let canAct = !chat.isBusy
         switch component.body {
         case let .itemCards(data):
-            ItemCardsComponentView(data: data, answer: answer, isEnabled: canAct) { ids, echo in
-                chat.choose(component, optionIDs: ids, echo: echo)
-            }
+            ItemCardsComponentView(
+                data: data,
+                answer: answer,
+                isEnabled: canAct,
+                onConfirm: { ids, echo in chat.choose(component, optionIDs: ids, echo: echo) },
+                onNone: { chat.answerInWords(component, text: "None of these") }
+            )
         case let .choices(data):
             ChoicesComponentView(data: data, answer: answer, isEnabled: canAct) { ids, echo in
                 chat.choose(component, optionIDs: ids, echo: echo)
@@ -341,19 +410,17 @@ struct GMChatView: View {
             chat.send(text: "I snapped 3 things.")
             return
         }
-        shelfBeforeCapture = Set(model.shelf.map(\.id))
         isCapturing = true
     }
 
-    /// Tells the GM what the capture added, so it can carry on.
-    private func captureClosed() {
-        let before = shelfBeforeCapture
-        Task {
-            await model.refreshShelf()
-            let added = model.shelf.filter { !before.contains($0.id) }.count
-            guard added > 0 else { return }
-            chat.send(text: added == 1 ? "I added 1 thing to my Shelf." : "I added \(added) things to my Shelf.")
-        }
+    /// Tells the GM exactly which Items the photos it asked for became, so it can carry on
+    /// with them (for example, straight into an Ask's offer) instead of asking which.
+    private func landed(_ items: [ShelfItem]) {
+        guard !items.isEmpty else { return }
+        let text = items.count == 1
+            ? "I added \(items[0].title) to my Shelf."
+            : "I added \(items.count) things to my Shelf."
+        chat.sendWhenIdle(text: text, addedItemIDs: items.map(\.id))
     }
 }
 

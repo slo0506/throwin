@@ -2,23 +2,26 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Add to Shelf: take photos, film a shelf or choose from the library, then watch the Items
-/// land on the Shelf.
+/// Add to Shelf: take photos, film a shelf or choose from the library, then send them. The
+/// sheet only collects. "Add to Shelf" hands the photos to the AppModel and closes at once:
+/// the GM's work shows where its result lands, as a live card on the Shelf (and in the chat
+/// when the GM asked for the photo). Closing the sheet early keeps the photos as a draft.
 struct CaptureSheet: View {
-    var onFinish: () -> Void
-    /// Set by the Shelf: closes this sheet and opens Tune up on the new Items.
-    var onTuneUp: (() -> Void)?
+    /// The tray: the AppModel's unsent draft, so nothing is lost on a swipe down.
+    var capture: CaptureModel
+    /// Who asked: the Shelf's camera button or the GM. Decides where progress shows.
+    var source: CaptureModel.Source = .shelf
+    /// Gets the new Items once they land, for example so the GM can carry on with them.
+    var onLanded: (([ShelfItem]) -> Void)?
 
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    @State private var capture = CaptureModel()
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var isPickerPresented = false
     @State private var isCameraPresented = false
     /// The camera opens for video (Film a shelf) or for stills (Take photos).
     @State private var cameraFilms = true
-    @State private var scanTick = 0
-    @State private var burst = 0
+    @State private var sent = 0
 
     private var cameraAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
 
@@ -26,20 +29,15 @@ struct CaptureSheet: View {
         NavigationStack {
             ZStack {
                 Palette.canvas.ignoresSafeArea()
-                content
+                collecting
                     .padding(.horizontal, Space.gutter)
-                CelebrationBurst(trigger: burst, origin: UnitPoint(x: 0.5, y: 0.3))
-                    .allowsHitTesting(false)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if !capture.phase.isBusy {
-                        Button("Close", systemImage: "xmark") { close() }
-                    }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close", systemImage: "xmark") { dismiss() }
                 }
             }
         }
-        .interactiveDismissDisabled(capture.phase.isBusy)
         .photosPicker(
             isPresented: $isPickerPresented,
             selection: $pickerItems,
@@ -67,42 +65,7 @@ struct CaptureSheet: View {
             }
             .ignoresSafeArea()
         }
-        .task(id: capture.phase.isBusy) {
-            // Keep the scan sweeping while the GM works.
-            while capture.phase.isBusy, !Task.isCancelled {
-                scanTick += 1
-                try? await Task.sleep(for: .seconds(2.1))
-            }
-        }
-        .onChange(of: capture.phase) { _, phase in
-            if case let .finished(items, _) = phase, !items.isEmpty { burst += 1 }
-        }
-        .sensoryFeedback(.success, trigger: burst)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch capture.phase {
-        case .collecting:
-            collecting
-                .transition(.blurReplace)
-        case .uploading, .working:
-            // 1 branch for both, so the deck stays put and only the caption changes.
-            working(detail: workingDetail)
-                .transition(.blurReplace)
-        case let .finished(items, summary):
-            CaptureResults(
-                items: items,
-                summary: summary,
-                onDone: close,
-                onAgain: startOver,
-                onTuneUp: tuneUpAction
-            )
-                .transition(.blurReplace)
-        case let .failed(message):
-            failed(message)
-                .transition(.blurReplace)
-        }
+        .sensoryFeedback(.success, trigger: sent)
     }
 
     // MARK: Collecting
@@ -146,10 +109,7 @@ struct CaptureSheet: View {
                     .disabled(capture.isFull)
                     .accessibilityLabel("Add more")
 
-                    Button {
-                        guard let api = app.api else { return }
-                        Task { await capture.submit(using: api) }
-                    } label: {
+                    Button(action: send) {
                         PrimaryLabel("Add to Shelf", symbol: "plus")
                             .frame(height: 48)
                     }
@@ -250,70 +210,17 @@ struct CaptureSheet: View {
         }
     }
 
-    // MARK: Working
-
-    private var workingDetail: String {
-        switch capture.phase {
-        case let .uploading(done, total): "Sending \(done) of \(total) photos"
-        case let .working(detail): detail
-        default: ""
-        }
-    }
-
-    private func working(detail: String) -> some View {
-        let hasItems = !capture.arrivedItems.isEmpty
-        return VStack(spacing: hasItems ? Space.lg : Space.xxl) {
-            Spacer()
-            FrameDeck(images: capture.frames.prefix(5).compactMap { capture.thumbnails[$0.id] }, scanTick: scanTick)
-                .frame(height: hasItems ? 200 : 260)
-                .scaleEffect(hasItems ? 0.82 : 1)
-            if hasItems {
-                ArrivedItemsStrip(items: capture.arrivedItems)
-                    .transition(.opacity.combined(with: .offset(y: -24)))
-            }
-            VStack(spacing: Space.sm) {
-                LoopIndicator(people: 3, size: 28)
-                Text(detail)
-                    .font(Typo.headline)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Palette.ink)
-                    .id(detail)
-                    .transition(.blurReplace.combined(with: .offset(y: 6)))
-                Text("You can close this. Items land on your Shelf either way.")
-                    .font(Typo.footnote)
-                    .foregroundStyle(Palette.inkTertiary)
-            }
-            .animation(Motion.soft, value: detail)
-            Spacer()
-            Spacer()
-        }
-        .animation(Motion.bouncy, value: hasItems)
-    }
-
-    // MARK: Failed
-
-    private func failed(_ message: String) -> some View {
-        VStack(spacing: Space.lg) {
-            Spacer()
-            Image(systemName: "camera.metering.unknown")
-                .font(.system(size: 44, weight: .semibold))
-                .foregroundStyle(Palette.tangerine)
-            Text(message)
-                .font(Typo.headline)
-                .multilineTextAlignment(.center)
-            Button {
-                capture.retry()
-            } label: {
-                PrimaryLabel("Try again", symbol: "arrow.clockwise")
-            }
-            .buttonStyle(.glassProminent)
-            .tint(Palette.ink)
-            .padding(.horizontal, Space.xxl)
-            Spacer()
-        }
-    }
-
     // MARK: Actions
+
+    /// Hands the photos to the AppModel, which sends them and follows the GM's work, and
+    /// closes. Nothing here waits.
+    private func send() {
+        guard capture.canSubmit else { return }
+        sent += 1
+        capture.source = source
+        app.submitCapture(capture, onLanded: onLanded)
+        dismiss()
+    }
 
     private func load(_ items: [PhotosPickerItem]) async {
         for item in items {
@@ -325,25 +232,6 @@ struct CaptureSheet: View {
                 await capture.add(imageData: [data])
             }
             capture.settle()
-        }
-    }
-
-    private func startOver() {
-        capture = CaptureModel()
-        onFinish()
-    }
-
-    private func close() {
-        onFinish()
-        dismiss()
-    }
-
-    /// Offered on the results only when the Shelf can open Tune up.
-    private var tuneUpAction: (() -> Void)? {
-        guard let onTuneUp else { return nil }
-        return {
-            onTuneUp()
-            close()
         }
     }
 }
@@ -406,264 +294,6 @@ private struct SourceTile: View {
             .opacity(isEnabled ? 1 : 0.45)
         }
         .buttonStyle(.pressable)
-    }
-}
-
-// MARK: - Frame deck
-
-/// The photos fanned like a hand of cards, with the appraisal scan sweeping across them in
-/// turn while the GM works.
-private struct FrameDeck: View {
-    var images: [UIImage]
-    var scanTick: Int
-
-    @State private var breathe = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack {
-            ForEach(Array(images.enumerated()), id: \.offset) { index, image in
-                let offset = Double(index) - Double(images.count - 1) / 2
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 170, height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-                    // Cards take turns: this trigger only changes on ticks that land on this card.
-                    .appraiseScan(trigger: max(0, (scanTick - index + images.count) / max(images.count, 1)), duration: 1.8)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
-                            .strokeBorder(.white.opacity(0.6), lineWidth: 2)
-                    }
-                    .shadow(color: .black.opacity(0.14), radius: 20, y: 12)
-                    .rotationEffect(.degrees(offset * (breathe ? 9 : 7)))
-                    .offset(x: offset * (breathe ? 34 : 28), y: abs(offset) * 10)
-                    .zIndex(-abs(offset))
-            }
-        }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) { breathe = true }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-// MARK: - Arrived items
-
-/// Items as the Appraiser names them, dealt in under the deck 1 at a time while it keeps
-/// working. Each shows Pricing until its range lands.
-private struct ArrivedItemsStrip: View {
-    var items: [ShelfItem]
-
-    @State private var dealt: Set<String> = []
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            HStack(alignment: .top, spacing: Space.sm) {
-                ForEach(items.filter { dealt.contains($0.id) }) { item in
-                    ArrivedItemCard(item: item)
-                        .transition(
-                            .asymmetric(
-                                insertion: .scale(scale: 0.7, anchor: .top)
-                                    .combined(with: .opacity)
-                                    .combined(with: .offset(y: -48)),
-                                removal: .opacity
-                            )
-                        )
-                }
-            }
-            .padding(.horizontal, Space.gutter)
-            .padding(.vertical, Space.xs)
-        }
-        .scrollIndicators(.hidden)
-        .scrollClipDisabled()
-        .padding(.horizontal, -Space.gutter)
-        .frame(height: 188)
-        .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.5), trigger: dealt.count)
-        .task(id: items.map(\.id)) {
-            for item in items where !dealt.contains(item.id) {
-                withAnimation(Motion.bouncy) { _ = dealt.insert(item.id) }
-                do {
-                    try await Task.sleep(for: .milliseconds(140))
-                } catch {
-                    break
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Found so far")
-    }
-}
-
-private struct ArrivedItemCard: View {
-    var item: ShelfItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ItemArtwork(item: item, cornerRadius: Radius.small)
-                .frame(width: 112, height: 104)
-            Text(item.title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(Palette.ink)
-                .lineLimit(2, reservesSpace: true)
-            ZStack(alignment: .leading) {
-                if let value = item.value {
-                    Text(value.label)
-                        .font(Typo.caption.monospacedDigit())
-                        .foregroundStyle(Palette.inkSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .transition(.blurReplace)
-                } else if item.isPricing {
-                    Text("Pricing")
-                        .font(Typo.caption)
-                        .foregroundStyle(Palette.inkSecondary)
-                        .loopShimmer()
-                        .transition(.blurReplace)
-                }
-            }
-            .animation(Motion.soft, value: item.value)
-        }
-        .frame(width: 112)
-        .padding(Space.xs)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
-                .strokeBorder(Palette.hairline, lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 6)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-// MARK: - Results
-
-private struct CaptureResults: View {
-    var items: [ShelfItem]
-    var summary: String
-    var onDone: () -> Void
-    var onAgain: () -> Void
-    var onTuneUp: (() -> Void)?
-
-    @State private var shown = 0
-
-    var body: some View {
-        VStack(spacing: Space.lg) {
-            if items.isEmpty {
-                Spacer()
-                Image(systemName: "eye.trianglebadge.exclamationmark")
-                    .font(.system(size: 52, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(Palette.iris)
-                    .symbolEffect(.bounce, value: shown)
-            }
-            VStack(spacing: Space.xs) {
-                Text(items.isEmpty ? "Nothing to trade here" : summary)
-                    .font(Typo.title2)
-                    .multilineTextAlignment(.center)
-                if !items.isEmpty, onTuneUp != nil {
-                    Text("A few quick answers help your GM pin each one down.")
-                        .font(Typo.callout)
-                        .foregroundStyle(Palette.inkSecondary)
-                        .multilineTextAlignment(.center)
-                } else if items.isEmpty {
-                    Text(summary)
-                        .font(Typo.callout)
-                        .foregroundStyle(Palette.inkSecondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .padding(.top, Space.xl)
-
-            if items.isEmpty {
-                Spacer()
-            }
-            ScrollView {
-                VStack(spacing: Space.sm) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        if index < shown {
-                            ResultRow(item: item)
-                                .transition(.scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 12)))
-                        }
-                    }
-                }
-                .padding(.vertical, Space.xs)
-            }
-            .scrollIndicators(.hidden)
-            .frame(maxHeight: items.isEmpty ? 0 : .infinity)
-
-            VStack(spacing: Space.sm) {
-                if let onTuneUp, !items.isEmpty {
-                    Button(action: onTuneUp) {
-                        PrimaryLabel("Tune up now, about 1 minute", symbol: "wand.and.stars")
-                            .frame(height: 48)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .tint(Palette.ink)
-                    Button(action: onDone) {
-                        Text("See your Shelf")
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(Palette.ink)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 40)
-                    }
-                    .buttonStyle(.glass)
-                } else {
-                    Button(action: onDone) {
-                        PrimaryLabel(items.isEmpty ? "Close" : "See your Shelf", symbol: items.isEmpty ? nil : "square.grid.2x2")
-                            .frame(height: 48)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .tint(Palette.ink)
-                }
-                Button(items.isEmpty ? "Try other photos" : "Add more", action: onAgain)
-                    .font(Typo.callout)
-                    .foregroundStyle(Palette.inkSecondary)
-            }
-            .padding(.bottom, Space.lg)
-        }
-        .task {
-            // Deal the cards in 1 at a time.
-            for i in 1...max(items.count, 1) {
-                withAnimation(Motion.bouncy) { shown = i }
-                try? await Task.sleep(for: .milliseconds(140))
-            }
-        }
-    }
-}
-
-private struct ResultRow: View {
-    var item: ShelfItem
-
-    var body: some View {
-        HStack(spacing: Space.md) {
-            ItemArtwork(item: item, cornerRadius: Radius.small)
-                .frame(width: 64, height: 64)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .lineLimit(2)
-                if let value = item.value {
-                    Text(value.label)
-                        .font(Typo.value)
-                        .foregroundStyle(Palette.inkSecondary)
-                } else if item.isPricing {
-                    Text("Pricing")
-                        .font(Typo.value)
-                        .foregroundStyle(Palette.inkSecondary)
-                        .loopShimmer()
-                }
-                ReadinessMark(readiness: item.readiness, isWorking: item.isAppraising)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(Space.sm)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
-                .strokeBorder(Palette.hairline, lineWidth: 1)
-        }
     }
 }
 

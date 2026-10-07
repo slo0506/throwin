@@ -107,6 +107,8 @@ nonisolated struct APIDealSheet: Decodable, Sendable {
     var participants: [APIDealParticipant]
     var yourApproval: ApprovalState
     var why: String?
+    /// The caller's own Ask this Deal fills. Older servers don't send it.
+    var yourAskId: String?
 }
 
 nonisolated struct DealSheetsResponse: Decodable, Sendable {
@@ -207,7 +209,8 @@ extension DealSheet {
             why: d.why,
             expiresAt: WireDate.parse(d.expiresAt) ?? .now,
             status: d.status,
-            myApproval: d.yourApproval
+            myApproval: d.yourApproval,
+            askID: d.yourAskId
         )
     }
 

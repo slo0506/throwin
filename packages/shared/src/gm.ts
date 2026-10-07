@@ -19,12 +19,22 @@ export const PostGmMessage = z
       })
       .optional(),
     media_paths: z.array(z.string().min(1).max(300)).min(1).max(10).optional(),
+    /**
+     * Items the user just added to their Shelf, for example from the GM's camera request,
+     * so the GM knows exactly which ones are new. Each must be the user's own.
+     */
+    added_item_ids: z.array(z.uuid()).min(1).max(30).optional(),
     /** The screen the user is on, for example "ask_detail". Volatile context only. */
     screen: z.string().trim().min(1).max(120).optional(),
   })
-  .refine((v) => v.text !== undefined || v.choice !== undefined || v.media_paths !== undefined, {
-    message: "Send at least 1 of text, choice or media_paths",
-  });
+  .refine(
+    (v) =>
+      v.text !== undefined ||
+      v.choice !== undefined ||
+      v.media_paths !== undefined ||
+      v.added_item_ids !== undefined,
+    { message: "Send at least 1 of text, choice, media_paths or added_item_ids" },
+  );
 export type PostGmMessage = z.infer<typeof PostGmMessage>;
 
 export const PostGmMessageResponse = z.object({

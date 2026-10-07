@@ -8,9 +8,7 @@ struct ShelfView: View {
     @Environment(AppModel.self) private var model
     @Namespace private var itemNamespace
     @State private var isCapturing = false
-    @State private var scanGeneration = 0
     @State private var isCaptureSheetPresented = false
-    @State private var tuneUpAfterCapture = false
     @State private var filter: ShelfFilter = .all
     @State private var openItem: ItemRoute?
     @State private var tuneUp: TuneUpRoute?
@@ -24,7 +22,7 @@ struct ShelfView: View {
         NavigationStack {
             ZStack {
                 Palette.canvas.ignoresSafeArea()
-                if model.shelf.isEmpty {
+                if model.shelf.isEmpty, model.captures.isEmpty {
                     ShelfEmptyState(isCapturing: isCapturing, onCapture: capture)
                         .transition(.blurReplace)
                 } else {
@@ -32,28 +30,16 @@ struct ShelfView: View {
                         .transition(.blurReplace)
                 }
             }
-            .animation(Motion.soft, value: model.shelf.isEmpty)
+            .animation(Motion.soft, value: model.shelf.isEmpty && model.captures.isEmpty)
             .task {
                 await model.refreshShelf()
                 await model.loadQuestions()
             }
-            .sheet(isPresented: $isCaptureSheetPresented, onDismiss: {
-                guard tuneUpAfterCapture else { return }
-                tuneUpAfterCapture = false
-                tuneUp = TuneUpRoute(itemID: nil)
-            }) {
-                CaptureSheet(
-                    onFinish: {
-                        Task {
-                            await model.refreshShelf()
-                            scanGeneration += 1
-                        }
-                    },
-                    onTuneUp: { tuneUpAfterCapture = true }
-                )
+            .sheet(isPresented: $isCaptureSheetPresented) {
+                CaptureSheet(capture: model.draftCapture())
             }
             .sheet(item: $openItem) { route in
-                ProductCardSheet(itemID: route.id)
+                ProductPage(itemID: route.id)
                     .navigationTransition(.zoom(sourceID: route.id, in: itemNamespace))
             }
             .fullScreenCover(item: $tuneUp) { route in
@@ -72,9 +58,17 @@ struct ShelfView: View {
             VStack(alignment: .leading, spacing: Space.lg) {
                 header
 
+                // Photos on their way: the GM's work shows here, where the Items will land.
+                ForEach(model.captures) { capture in
+                    CaptureStatusCard(capture: capture) {
+                        tuneUp = TuneUpRoute(itemID: nil)
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 ShelfFilterBar(selection: $filter)
 
-                if visibleItems.isEmpty {
+                if visibleItems.isEmpty, !model.shelf.isEmpty {
                     Text(filter == .ready
                          ? "Nothing ready to show yet. A quick Tune up gets you there."
                          : "Everything here is ready to show.")
@@ -87,13 +81,13 @@ struct ShelfView: View {
                 }
 
                 LazyVGrid(columns: columns, spacing: Space.md) {
-                    ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
+                    ForEach(visibleItems) { item in
                         // A plain Button, so a tap opens the card and a drag scrolls the grid.
                         // The long press belongs to the system context menu, which lifts the card.
                         Button {
                             openItem = ItemRoute(id: item.id)
                         } label: {
-                            ItemCard(item: item, scanTrigger: scanGeneration, scanDelay: Double(index) * 0.12)
+                            ItemCard(item: item)
                         }
                         .buttonStyle(.pressable)
                         .matchedTransitionSource(id: item.id, in: itemNamespace)
@@ -204,7 +198,6 @@ struct ShelfView: View {
         isCapturing = true
         Task {
             try? await Task.sleep(for: .seconds(1.4))
-            scanGeneration += 1
             model.loadDemoShelf()
             isCapturing = false
         }
@@ -324,19 +317,16 @@ private struct TuneUpButton: View {
 
 /// A Shelf card: photo, readiness mark, at most 1 tag, title, condition and range. Taps and
 /// long presses belong to the Button and context menu around it, never to the card, so
-/// nothing here competes with the ScrollView for touches.
+/// nothing here competes with the ScrollView for touches. The scan plays only while the GM
+/// is pricing or re-reading the Item.
 struct ItemCard: View {
     var item: ShelfItem
-    var scanTrigger: Int = 0
-    var scanDelay: Double = 0
-
-    @State private var localScan = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             ItemArtwork(item: item, studio: item.studioAllowed ? .ifReady : .off)
                 .aspectRatio(1, contentMode: .fit)
-                .appraiseScan(trigger: localScan, duration: 1.5)
+                .appraiseScan(while: item.isAppraising, duration: 1.5)
                 .overlay(alignment: .topLeading) {
                     if item.hasInventoryPhoto {
                         InventoryPhotoTag()
@@ -384,11 +374,6 @@ struct ItemCard: View {
         }
         .animation(Motion.bouncy, value: item.readiness)
         .animation(Motion.bouncy, value: item.hasInventoryPhoto)
-        .task(id: scanTrigger) {
-            guard scanTrigger > 0 else { return }
-            try? await Task.sleep(for: .seconds(scanDelay))
-            localScan += 1
-        }
         .accessibilityElement(children: .combine)
     }
 }

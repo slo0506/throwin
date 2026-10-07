@@ -107,6 +107,10 @@ export function toShelfItem(r: ItemRecord, urls?: Map<string, string | null>): S
     condition_confidence: r.conditionConf,
     is_reserved: r.reservedByDealId !== null,
     thumbnail_url: r.thumbnailPath ? (urls?.get(r.thumbnailPath) ?? null) : null,
+    photo_urls: r.photoPaths.flatMap((p) => {
+      const url = urls?.get(p);
+      return url ? [url] : [];
+    }),
     follow_up: r.followUp,
     is_appraising: r.appraising,
     readiness: r.readiness,

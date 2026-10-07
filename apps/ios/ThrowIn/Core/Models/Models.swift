@@ -106,6 +106,8 @@ nonisolated struct ShelfItem: Codable, Identifiable, Hashable, Sendable {
     var conditionConfidence: Double?
     var isReserved: Bool
     var thumbnailUrl: String?
+    /// Every photo, the best first, for the product page carousel. Empty from older servers.
+    var photoUrls: [String] = []
     /// A specific photo the Appraiser needs, e.g. "Photo of the size tag".
     var followUp: String?
     /// True while the Appraiser is still pricing or re-reading the Item. `value` may be nil then.
@@ -150,7 +152,7 @@ nonisolated extension ShelfItem {
     enum CodingKeys: String, CodingKey {
         case id, status, title, willingness, category, brand, model, variant, conditionGrade, defects, value
         case identityConfidence, conditionConfidence, isReserved, thumbnailUrl, followUp, isAppraising
-        case readiness, photoScore, photoIssues, missingAngles, studioAllowed, openQuestions
+        case readiness, photoScore, photoIssues, missingAngles, studioAllowed, openQuestions, photoUrls
         case itemDescription = "description"
     }
 
@@ -174,6 +176,7 @@ nonisolated extension ShelfItem {
         conditionConfidence = try c.decodeIfPresent(Double.self, forKey: .conditionConfidence)
         isReserved = try c.decode(Bool.self, forKey: .isReserved)
         thumbnailUrl = try c.decodeIfPresent(String.self, forKey: .thumbnailUrl)
+        photoUrls = (try? c.decodeIfPresent([String].self, forKey: .photoUrls)) ?? []
         followUp = try c.decodeIfPresent(String.self, forKey: .followUp)
         isAppraising = try c.decodeIfPresent(Bool.self, forKey: .isAppraising) ?? false
         readiness = (try? c.decodeIfPresent(ItemReadiness.self, forKey: .readiness)) ?? .logged
@@ -398,6 +401,8 @@ nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
     var expiresAt: Date
     var status: DealPhase = .pendingApprovals
     var myApproval: ApprovalState = .pending
+    /// The caller's own Ask this Deal fills, when the server says.
+    var askID: String?
 
     var giveValue: Int { give.compactMap(\.value?.midCents).reduce(0, +) }
     var getValue: Int { receive.compactMap(\.value?.midCents).reduce(0, +) }

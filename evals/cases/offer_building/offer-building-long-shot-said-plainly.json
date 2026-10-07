@@ -1,0 +1,67 @@
+{
+  "id": "offer-building-long-shot-said-plainly",
+  "suite": "offer_building",
+  "description": "When nothing on the Shelf comes close, the GM says it's a long shot with both ranges instead of stacking small Items",
+  "state": {
+    "user": {
+      "first_name": "Sean"
+    },
+    "mode": "chat",
+    "shelf": [
+      {
+        "id": "aaaaaaaa-4444-4000-8000-000000000001",
+        "title": "Crocs Classic Clog, navy",
+        "category": "sneakers",
+        "condition_grade": "C",
+        "value_cents": {
+          "low": 1500,
+          "mid": 2000,
+          "high": 2500
+        }
+      },
+      {
+        "id": "aaaaaaaa-4444-4000-8000-000000000002",
+        "title": "Half gallon water jug with strap",
+        "category": "home",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 400,
+          "mid": 900,
+          "high": 1500
+        }
+      }
+    ],
+    "asks": [
+      {
+        "id": "bbbbbbbb-4444-4000-8000-000000000001",
+        "raw_text": "a Gucci Marmont shoulder bag",
+        "title": "Gucci GG Marmont Small Shoulder Bag",
+        "status": "offering",
+        "target": {
+          "kind": "exact",
+          "name": "Gucci GG Marmont Small Shoulder Bag",
+          "brand": "Gucci",
+          "category": "bags",
+          "constraints": [],
+          "anchor": {
+            "retail_cents": 259000,
+            "used_low_cents": 90000,
+            "used_high_cents": 140000
+          },
+          "model": null,
+          "image_url": null
+        },
+        "offer_item_ids": [],
+        "cash_ceiling_cents": 0
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "What can I offer for the Gucci bag?",
+  "expect": {
+    "tools_not_called": ["set_offer_set"],
+    "text_includes_any": ["long shot", "unlikely", "won't", "not close", "far short", "way short"],
+    "text_excludes": ["together", "combined", "bundle", "add up"],
+    "prices_grounded": true
+  }
+}

@@ -40,6 +40,9 @@ final class GMChatModel {
     private(set) var screen: String?
     /// Set when the GM opens for a new Ask, so the composer takes focus.
     var wantsComposerFocus = false
+    /// Bumped by everything the user does in the thread (send, a card answer, a retry), so the
+    /// view can bring them to where the reply will land.
+    private(set) var userActions = 0
 
     /// The reference date for the bloom. History is stamped far before it, so it reads settled.
     let epoch = Date()
@@ -188,11 +191,26 @@ final class GMChatModel {
 
     // MARK: Sending
 
-    func send(text raw: String) {
+    func send(text raw: String, addedItemIDs: [String] = []) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isBusy else { return }
         appendUser(text)
-        start(GMSendRequest(text: text, screen: takeScreen()), demoInput: .text(text))
+        start(
+            GMSendRequest(text: text, addedItemIds: addedItemIDs.isEmpty ? nil : addedItemIDs, screen: takeScreen()),
+            demoInput: .text(text)
+        )
+    }
+
+    /// Sends once the GM is free, for news that arrives on its own, like photos landing on
+    /// the Shelf while a reply is still streaming. Gives up after a minute.
+    func sendWhenIdle(text: String, addedItemIDs: [String] = []) {
+        Task {
+            let deadline = Date.now.addingTimeInterval(60)
+            while isBusy || !hasLoaded, Date.now < deadline {
+                try? await Task.sleep(for: .milliseconds(400))
+            }
+            send(text: text, addedItemIDs: addedItemIDs)
+        }
     }
 
     /// Answers a card. `echo` is what shows on your side of the thread.
@@ -206,8 +224,16 @@ final class GMChatModel {
         )
     }
 
+    /// Answers a card with words instead of a pick, like "None of these".
+    func answerInWords(_ component: GMComponent, text: String) {
+        guard !isBusy, answers[component.id] == nil else { return }
+        answers[component.id] = []
+        send(text: text)
+    }
+
     func retry() {
         guard let request = failed, !isBusy else { return }
+        userActions += 1
         start(request, demoInput: lastDemoInput ?? .text(request.text ?? ""))
     }
 
@@ -228,6 +254,7 @@ final class GMChatModel {
 
     private func appendUser(_ text: String) {
         openTextRowID = nil
+        userActions += 1
         withAnimation(Motion.bouncy) {
             rows.append(GMRow(id: UUID().uuidString, kind: .user(text)))
         }

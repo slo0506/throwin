@@ -38,6 +38,24 @@ describe("GET /v1/me", () => {
 });
 
 describe("PATCH /v1/me", () => {
+  it("applies which deals to bring you to every open Ask, not finished ones", async () => {
+    const { request, repo } = makeHarness();
+    const open = repo.addAsk({ id: "a1", userId: ALICE, status: "prospecting" });
+    const done = repo.addAsk({ id: "a2", userId: ALICE, status: "fulfilled" });
+    const bobs = repo.addAsk({ id: "a3", userId: BOB, status: "prospecting" });
+    const res = await request("/v1/me", {
+      as: ALICE,
+      method: "PATCH",
+      body: JSON.stringify({ autonomy_level: "likely_yes" }),
+    });
+    expect(res.status).toBe(200);
+    expect([open.autonomy, done.autonomy, bobs.autonomy]).toEqual([
+      "likely_yes",
+      "every_deal",
+      "every_deal",
+    ]);
+  });
+
   it("updates profile fields and merges notification prefs", async () => {
     const { request } = makeHarness();
     const res = await request("/v1/me", {

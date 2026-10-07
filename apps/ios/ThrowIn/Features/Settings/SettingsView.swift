@@ -52,15 +52,15 @@ struct SettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: Space.sm) {
-                        SectionHeader(title: "How hands-off")
+                        SectionHeader(title: "Which deals to bring you")
                         VStack(spacing: Space.xs) {
                             ForEach(AutonomyLevel.allCases, id: \.self) { level in
                                 AutonomyOption(level: level, isSelected: model.autonomy == level) {
-                                    withAnimation(Motion.bouncy) { model.autonomy = level }
+                                    model.setAutonomy(level)
                                 }
                             }
                         }
-                        Text("Your GM never approves a trade for you.")
+                        Text("For every Ask. Your GM never approves a trade for you.")
                             .font(Typo.footnote)
                             .foregroundStyle(Palette.inkTertiary)
                             .padding(.horizontal, 4)

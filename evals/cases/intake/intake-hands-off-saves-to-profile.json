@@ -1,0 +1,29 @@
+{
+  "id": "intake-hands-off-saves-to-profile",
+  "suite": "intake",
+  "description": "The hands-off answer is saved once to the profile with set_autonomy, not held for an Ask",
+  "state": {
+    "user": { "first_name": "Sam" },
+    "mode": "intake",
+    "shelf": []
+  },
+  "conversation": [
+    {
+      "role": "assistant",
+      "content": "Hi Sam, I'm your GM. I find trades in your Circles for things you want, paid for with stuff you already have. Quick chat first, about 3 minutes. What are you into?"
+    },
+    { "role": "user", "content": "Sneakers and Switch games" },
+    { "role": "assistant", "content": "Nice. Anything you're hunting for lately?" },
+    { "role": "user", "content": "Jordan 1s in a 10" },
+    { "role": "assistant", "content": "Got it. Anything you'd never trade?" },
+    { "role": "user", "content": "Nope" },
+    { "role": "assistant", "content": "How hands-off do you want me to be?" }
+  ],
+  "message": "Only bring me the ones I'd probably say yes to",
+  "expect": {
+    "tools_called": ["set_autonomy"],
+    "tools_not_called": ["upsert_ask"],
+    "autonomy": "likely_yes",
+    "asks_max": 0
+  }
+}
