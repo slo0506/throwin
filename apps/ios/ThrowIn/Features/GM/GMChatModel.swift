@@ -40,6 +40,9 @@ final class GMChatModel {
     private(set) var screen: String?
     /// Set when the GM opens for a new Ask, so the composer takes focus.
     var wantsComposerFocus = false
+    /// Bumped by everything the user does in the thread (send, a card answer, a retry), so the
+    /// view can bring them to where the reply will land.
+    private(set) var userActions = 0
 
     /// The reference date for the bloom. History is stamped far before it, so it reads settled.
     let epoch = Date()
@@ -208,6 +211,7 @@ final class GMChatModel {
 
     func retry() {
         guard let request = failed, !isBusy else { return }
+        userActions += 1
         start(request, demoInput: lastDemoInput ?? .text(request.text ?? ""))
     }
 
@@ -228,6 +232,7 @@ final class GMChatModel {
 
     private func appendUser(_ text: String) {
         openTextRowID = nil
+        userActions += 1
         withAnimation(Motion.bouncy) {
             rows.append(GMRow(id: UUID().uuidString, kind: .user(text)))
         }

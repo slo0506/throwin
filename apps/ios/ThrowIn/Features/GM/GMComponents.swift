@@ -135,8 +135,8 @@ struct ItemCardsComponentView: View {
         VStack(alignment: .leading, spacing: Space.sm) {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: Space.sm) {
-                    ForEach(Array(data.items.enumerated()), id: \.element.id) { index, entry in
-                        card(entry, index: index)
+                    ForEach(data.items) { entry in
+                        card(entry)
                     }
                 }
                 .padding(.vertical, Space.xs)
@@ -167,10 +167,10 @@ struct ItemCardsComponentView: View {
         }
     }
 
-    private func card(_ entry: GMItem, index: Int) -> some View {
+    private func card(_ entry: GMItem) -> some View {
         let isPicked = selection.contains(entry.id)
         return VStack(alignment: .leading, spacing: 6) {
-            ItemCard(item: entry.item, scanTrigger: 1, scanDelay: Double(index) * 0.12)
+            ItemCard(item: entry.item)
                 .overlay(alignment: .topTrailing) {
                     if data.selectable {
                         Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")

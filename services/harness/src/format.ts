@@ -36,6 +36,7 @@ const PHOTO_ISSUES = new Set<string>(PhotoIssue.options);
 export function toShelfItem(r: OwnItem, urls?: Map<string, string | null>): ShelfItem {
   const hasValue =
     r.valueLowCents !== null && r.valueMidCents !== null && r.valueHighCents !== null;
+  const thumbnail = r.thumbnailPath ? (urls?.get(r.thumbnailPath) ?? null) : null;
   return {
     id: r.id,
     status: r.status,
@@ -58,7 +59,9 @@ export function toShelfItem(r: OwnItem, urls?: Map<string, string | null>): Shel
     identity_confidence: r.identityConf,
     condition_confidence: r.conditionConf,
     is_reserved: r.reserved,
-    thumbnail_url: r.thumbnailPath ? (urls?.get(r.thumbnailPath) ?? null) : null,
+    thumbnail_url: thumbnail,
+    // Chat cards show 1 photo; the product page asks the API for the rest.
+    photo_urls: thumbnail ? [thumbnail] : [],
     follow_up: r.followUp,
     is_appraising: r.appraising,
     readiness: r.readiness,

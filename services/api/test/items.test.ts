@@ -56,6 +56,28 @@ describe("GET /v1/items", () => {
     expect(JSON.stringify(body)).not.toContain("dddddddd");
   });
 
+  it("signs every photo for the carousel, the hero first", async () => {
+    const { request, repo } = makeHarness();
+    repo.addItem({
+      id: "aaaaaaaa-0000-4000-8000-000000000004",
+      ownerId: ALICE,
+      thumbnailPath: `${ALICE}/items/x/hero.jpg`,
+      photoPaths: [`${ALICE}/items/x/hero.jpg`, `${ALICE}/c/crops/0.jpg`],
+    });
+    repo.addItem({ id: "aaaaaaaa-0000-4000-8000-000000000005", ownerId: ALICE });
+    const body = ShelfResponse.parse(await (await request("/v1/items", { as: ALICE })).json());
+    const [withPhotos, without] = [
+      body.items.find((i) => i.id.endsWith("4")),
+      body.items.find((i) => i.id.endsWith("5")),
+    ];
+    expect(withPhotos?.photo_urls).toEqual([
+      `https://storage.test/read/${ALICE}/items/x/hero.jpg?token=t`,
+      `https://storage.test/read/${ALICE}/c/crops/0.jpg?token=t`,
+    ]);
+    expect(withPhotos?.thumbnail_url).toBe(withPhotos?.photo_urls[0]);
+    expect(without?.photo_urls).toEqual([]);
+  });
+
   it("requires auth", async () => {
     const { request } = makeHarness();
     expect((await request("/v1/items")).status).toBe(401);

@@ -56,6 +56,8 @@ export const DealSheet = z.object({
   your_approval: ApprovalState,
   /** Why the GM likes it, from the user's side. Null until the Prospector's review writes it. */
   why: z.string().nullable(),
+  /** The caller's own Ask this Deal fills. Null for a Drop leg that isn't tied to an Ask. */
+  your_ask_id: z.uuid().nullable(),
 });
 export type DealSheet = z.infer<typeof DealSheet>;
 

@@ -58,7 +58,8 @@ final class AppModel {
     var dealsWaiting: [DealSheet] = []
     var circles: [TradeCircle] = []
     var tasteFacts: [TasteFact] = []
-    var autonomy: AutonomyLevel = .everyDeal
+    /// Which deals the GM brings you, for every Ask. Lives on the profile, not on each Ask.
+    private(set) var autonomy: AutonomyLevel = .everyDeal
     var notificationsOn = true
     var approvedDealIDs: Set<String> = []
 
@@ -178,6 +179,7 @@ final class AppModel {
                 await refreshAsks()
                 await loadTasteFacts()
             }
+            Task { await refreshMe() }
             Task { await refreshCircles() }
             Task { await refreshDeals() }
         } else {
@@ -347,6 +349,51 @@ final class AppModel {
         guard let api else { return }
         if let items = try? await api.shelf() {
             withAnimation(Motion.bouncy) { shelf = items }
+            followShelfAppraisals()
+        }
+    }
+
+    private var followingShelf = false
+
+    /// While anything on the Shelf is being priced or re-read, keeps the Shelf fresh (every
+    /// 3 seconds, for up to 3 minutes) so each card's scan stops when the GM is done with it.
+    private func followShelfAppraisals() {
+        guard !followingShelf, shelf.contains(where: \.isAppraising) else { return }
+        followingShelf = true
+        Task {
+            defer { followingShelf = false }
+            let deadline = Date.now.addingTimeInterval(180)
+            while Date.now < deadline {
+                try? await Task.sleep(for: .seconds(3))
+                guard let api, let items = try? await api.shelf() else { continue }
+                withAnimation(Motion.bouncy) { shelf = items }
+                if !items.contains(where: \.isAppraising) { return }
+            }
+        }
+    }
+
+    // MARK: Profile
+
+    func refreshMe() async {
+        guard let api, let me = try? await api.me() else { return }
+        autonomy = me.profile.autonomyLevel
+    }
+
+    /// Saves which deals the GM brings you. Rolls back if the server says no.
+    func setAutonomy(_ level: AutonomyLevel) {
+        guard level != autonomy else { return }
+        let previous = autonomy
+        withAnimation(Motion.bouncy) { autonomy = level }
+        guard let api else { return }
+        Task {
+            do {
+                let me = try await api.updateMe(PatchMe(autonomyLevel: level))
+                autonomy = me.profile.autonomyLevel
+                await refreshAsks()
+            } catch {
+                withAnimation(Motion.snappy) { autonomy = previous }
+                shelfError = "Couldn't save that. Try again."
+            }
         }
     }
 

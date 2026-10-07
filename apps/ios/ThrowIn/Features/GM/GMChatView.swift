@@ -24,6 +24,9 @@ struct GMChatView: View {
     @State private var isCapturing = false
     @State private var shelfBeforeCapture: Set<String> = []
     @State private var shoot: ChatShootRoute?
+    @State private var position = ScrollPosition(edge: .bottom)
+    /// Following the newest message. The user's own scrolling turns it off and back on.
+    @State private var followsLatest = true
     @FocusState private var composerFocused: Bool
 
     private var chat: GMChatModel { model.gm }
@@ -124,42 +127,100 @@ struct GMChatView: View {
 
     // MARK: Thread
 
+    /// Like Messages: anything you do in the thread (send, answer a card, come back from the
+    /// camera, try again) brings you to where the reply lands, and the thread follows the reply
+    /// while you're at the bottom. Scroll up to reread and it stops pulling you down; the arrow
+    /// brings you back.
     private var thread: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Space.lg) {
-                    ForEach(chat.rows) { row in
-                        rowView(row)
-                            .id(row.id)
-                            .transition(
-                                .asymmetric(
-                                    insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .bottomLeading)).combined(with: .offset(y: 12)),
-                                    removal: .opacity
-                                )
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Space.lg) {
+                ForEach(chat.rows) { row in
+                    rowView(row)
+                        .id(row.id)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .bottomLeading)).combined(with: .offset(y: 12)),
+                                removal: .opacity
                             )
-                    }
-                    activity
-                    if chat.failed != nil, !chat.isBusy {
-                        retryRow
-                            .transition(.opacity.combined(with: .offset(y: 6)))
-                    }
-                    if chat.loadFailed, chat.rows.isEmpty {
-                        loadFailedView
-                    }
-                    Color.clear.frame(height: 1).id("bottom")
+                        )
                 }
-                .padding(.horizontal, Space.gutter)
-                .padding(.vertical, Space.md)
+                activity
+                if chat.failed != nil, !chat.isBusy {
+                    retryRow
+                        .transition(.opacity.combined(with: .offset(y: 6)))
+                }
+                if chat.loadFailed, chat.rows.isEmpty {
+                    loadFailedView
+                }
             }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: scrollSignature) { _, _ in
-                withAnimation(Motion.soft) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .onAppear {
-                proxy.scrollTo("bottom", anchor: .bottom)
+            .padding(.horizontal, Space.gutter)
+            .padding(.vertical, Space.md)
+        }
+        .scrollPosition($position)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+        .onScrollPhaseChange { old, new, context in
+            if new == .interacting {
+                // The list is in the user's hands: don't pull it out from under them.
+                followsLatest = false
+            } else if new == .idle, old == .interacting || old == .decelerating {
+                followsLatest = Self.isNearBottom(context.geometry)
             }
         }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.height } action: { old, new in
+            // The keyboard or a taller composer: keep the latest message in view.
+            if followsLatest, old != new { scrollToLatest(animated: false) }
+        }
+        .onChange(of: chat.userActions) { _, _ in
+            followsLatest = true
+            scrollToLatest()
+        }
+        .onChange(of: scrollSignature) { _, _ in
+            if followsLatest { scrollToLatest() }
+        }
+        .overlay(alignment: .bottom) {
+            if !followsLatest {
+                jumpToLatest
+                    .padding(.bottom, Space.sm)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+        }
+        .animation(Motion.snappy, value: followsLatest)
+    }
+
+    private var jumpToLatest: some View {
+        Button {
+            followsLatest = true
+            scrollToLatest()
+        } label: {
+            Image(systemName: "arrow.down")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Palette.ink)
+                .frame(width: 40, height: 40)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel("Jump to the latest message")
+    }
+
+    private func scrollToLatest(animated: Bool = true) {
+        if animated {
+            withAnimation(Motion.soft) { position.scrollTo(edge: .bottom) }
+        } else {
+            position.scrollTo(edge: .bottom)
+        }
+        // A card answered in the same tap changes height as it settles, and lazy rows measure
+        // late: land again once the layout has caught up.
+        Task {
+            try? await Task.sleep(for: .milliseconds(380))
+            guard followsLatest else { return }
+            withAnimation(Motion.soft) { position.scrollTo(edge: .bottom) }
+        }
+    }
+
+    private static func isNearBottom(_ geometry: ScrollGeometry) -> Bool {
+        geometry.visibleRect.maxY >= geometry.contentSize.height - 60
     }
 
     /// Changes whenever the thread grows, so the list follows the stream.
