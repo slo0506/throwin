@@ -6,6 +6,7 @@ import {
   AutonomyLevel,
   CircleRole,
   ConditionGrade,
+  CounterChange,
   compareQuestions,
   DEFAULT_NOTIFICATION_PREFS,
   DealStatus,
@@ -32,7 +33,11 @@ import {
   type CaptureStatus,
   type CircleMemberRecord,
   type CircleRecord,
+  type CounterItemRecord,
+  type CounterProposal,
   type DealDecisionResult,
+  type DealItemRecord,
+  type DealLegRecord,
   type DealRecord,
   type InvitePreviewRecord,
   type InviteRecord,
@@ -41,13 +46,17 @@ import {
   type MePatch,
   type MeRecord,
   type PhotoRequestRecord,
+  type ProposeCounterResult,
   type QuestionRecord,
   type Repository,
+  type RespondCounterResult,
   SHELF_STATUSES,
   type TasteFactRecord,
+  type WithdrawCounterResult,
 } from "./types.js";
 
 const ts = z.string().transform((s) => new Date(s));
+const isUuid = (id: string) => z.uuid().safeParse(id).success;
 
 const ProfileRow = z.object({
   autonomy_level: AutonomyLevel,
@@ -342,7 +351,14 @@ const AcceptInviteRow = z.object({
   circle_id: z.string().optional(),
 });
 
-const DealRow = z.object({ id: z.string(), status: DealStatus, expires_at: ts, created_at: ts });
+const DealRow = z.object({
+  id: z.string(),
+  status: DealStatus,
+  expires_at: ts,
+  created_at: ts,
+  counter_rounds: z.number().int(),
+  superseded_by: z.string().nullable(),
+});
 const DealLegRow = z.object({
   deal_id: z.string(),
   giver_id: z.string(),
@@ -371,7 +387,50 @@ const DealParticipantRow = z.object({
   why: z.string().nullable(),
   users: z.object({ display_name: z.string().nullable(), photo_url: z.string().nullable() }),
 });
-const DecisionRow = z.object({ result: z.enum(["ok", "not_found", "closed", "decided"]) });
+const DecisionRow = z.object({
+  result: z.enum(["ok", "not_found", "closed", "decided", "counter_open"]),
+});
+const CounterRow = z.object({
+  id: z.string(),
+  deal_id: z.string(),
+  proposed_by: z.string(),
+  changes: z.array(CounterChange),
+  proposal: z.object({
+    item_legs: z.array(
+      z.object({
+        giver: z.string(),
+        receiver: z.string(),
+        item_id: z.string(),
+        ask_id: z.string().nullable().optional(),
+        giver_ask_id: z.string().nullable().optional(),
+      }),
+    ),
+    cash_legs: z.array(
+      z.object({ payer: z.string(), payee: z.string(), amount_cents: z.number() }),
+    ),
+  }),
+  awaiting: z.array(z.string()),
+  answers: z.record(z.string(), z.enum(["accepted", "declined"])),
+  expires_at: ts,
+});
+const DEAL_ITEM_SELECT =
+  "id, title, category, brand, model, condition_grade, value_low_cents, value_mid_cents, value_high_cents, item_media(storage_path, position)";
+
+function toDealItem(i: z.infer<typeof DealItemRow>): DealItemRecord {
+  const photo = [...(i.item_media ?? [])].sort((a, b) => a.position - b.position)[0];
+  return {
+    id: i.id,
+    title: i.title,
+    category: i.category,
+    brand: i.brand,
+    model: i.model,
+    conditionGrade: i.condition_grade,
+    valueLowCents: i.value_low_cents,
+    valueMidCents: i.value_mid_cents,
+    valueHighCents: i.value_high_cents,
+    photoPath: photo?.storage_path ?? null,
+  };
+}
 
 /** Deal Sheets show Deals from awaiting approval onward; staged ones stay hidden. */
 const SHOWN_DEAL_STATUSES = [
@@ -1036,7 +1095,7 @@ export class SupabaseRepository implements Repository {
     return (await this.getDeal(userId, dealId)) ?? "not_found";
   }
 
-  /** The user's Deals in these statuses (1 when dealId is set), assembled in 4 reads. */
+  /** The user's Deals in these statuses (1 when dealId is set), assembled in 5 reads. */
   async #deals(userId: string, dealId: string | null, statuses: string[]): Promise<DealRecord[]> {
     let mine = this.db.from("deal_participants").select("deal_id").eq("user_id", userId);
     if (dealId) mine = mine.eq("deal_id", dealId);
@@ -1047,7 +1106,7 @@ export class SupabaseRepository implements Repository {
 
     const deals = await this.db
       .from("deals")
-      .select("id, status, expires_at, created_at")
+      .select("id, status, expires_at, created_at, counter_rounds, superseded_by")
       .in("id", ids)
       .in("status", statuses)
       .order("created_at", { ascending: false });
@@ -1056,7 +1115,7 @@ export class SupabaseRepository implements Repository {
     if (dealRows.length === 0) return [];
     const shownIds = dealRows.map((d) => d.id);
 
-    const [legs, people] = await Promise.all([
+    const [legs, people, counters] = await Promise.all([
       this.db
         .from("deal_legs")
         .select("deal_id, giver_id, receiver_id, item_id, ask_id, giver_ask_id, throw_in_cents")
@@ -1065,75 +1124,238 @@ export class SupabaseRepository implements Repository {
         .from("deal_participants")
         .select("deal_id, user_id, approval, why, users(display_name, photo_url)")
         .in("deal_id", shownIds),
+      this.db
+        .from("deal_counters")
+        .select("id, deal_id, proposed_by, changes, proposal, awaiting, answers, expires_at")
+        .in("deal_id", shownIds)
+        .eq("status", "pending")
+        .gt("expires_at", new Date().toISOString()),
     ]);
     if (legs.error) throw new RepositoryError("deals.legs", legs.error);
     if (people.error) throw new RepositoryError("deals.participants", people.error);
+    if (counters.error) throw new RepositoryError("deals.counters", counters.error);
     const legRows = z.array(DealLegRow).parse(legs.data ?? []);
     const peopleRows = z.array(DealParticipantRow).parse(people.data ?? []);
+    const counterRows = z.array(CounterRow).parse(counters.data ?? []);
 
-    const itemIds = [...new Set(legRows.flatMap((l) => (l.item_id ? [l.item_id] : [])))];
-    const items = await this.db
-      .from("items")
-      .select(
-        "id, title, category, brand, model, condition_grade, value_low_cents, value_mid_cents, value_high_cents, item_media(storage_path, position)",
-      )
-      .in("id", itemIds);
+    const itemIds = [
+      ...new Set([
+        ...legRows.flatMap((l) => (l.item_id ? [l.item_id] : [])),
+        ...counterRows.flatMap((c) => c.proposal.item_legs.map((l) => l.item_id)),
+      ]),
+    ];
+    const items = await this.db.from("items").select(DEAL_ITEM_SELECT).in("id", itemIds);
     if (items.error) throw new RepositoryError("deals.items", items.error);
     const itemById = new Map(
       z
         .array(DealItemRow)
         .parse(items.data ?? [])
-        .map((i) => [i.id, i]),
+        .map((i) => [i.id, toDealItem(i)]),
     );
-
-    return dealRows.map((d) => ({
-      id: d.id,
-      status: d.status,
-      expiresAt: d.expires_at,
-      legs: legRows
-        .filter((l) => l.deal_id === d.id && l.item_id)
-        .flatMap((l) => {
-          const item = itemById.get(l.item_id as string);
-          if (!item) return [];
-          const photo = [...(item.item_media ?? [])].sort((a, b) => a.position - b.position)[0];
-          return [
+    const leg = (l: {
+      giverId: string;
+      receiverId: string;
+      itemId: string;
+      askId: string | null;
+      giverAskId: string | null;
+    }): DealLegRecord[] => {
+      const item = itemById.get(l.itemId);
+      return item
+        ? [
             {
+              giverId: l.giverId,
+              receiverId: l.receiverId,
+              askId: l.askId,
+              giverAskId: l.giverAskId,
+              item,
+            },
+          ]
+        : [];
+    };
+
+    return dealRows.map((d) => {
+      const c = counterRows.find((r) => r.deal_id === d.id);
+      return {
+        id: d.id,
+        status: d.status,
+        expiresAt: d.expires_at,
+        legs: legRows
+          .filter((l) => l.deal_id === d.id && l.item_id)
+          .flatMap((l) =>
+            leg({
               giverId: l.giver_id,
               receiverId: l.receiver_id,
+              itemId: l.item_id as string,
               askId: l.ask_id,
               giverAskId: l.giver_ask_id,
-              item: {
-                id: item.id,
-                title: item.title,
-                category: item.category,
-                brand: item.brand,
-                model: item.model,
-                conditionGrade: item.condition_grade,
-                valueLowCents: item.value_low_cents,
-                valueMidCents: item.value_mid_cents,
-                valueHighCents: item.value_high_cents,
-                photoPath: photo?.storage_path ?? null,
-              },
-            },
-          ];
+            }),
+          ),
+        throwIns: legRows
+          .filter((l) => l.deal_id === d.id && !l.item_id && l.throw_in_cents > 0)
+          .map((l) => ({
+            payerId: l.giver_id,
+            payeeId: l.receiver_id,
+            amountCents: l.throw_in_cents,
+          })),
+        participants: peopleRows
+          .filter((p) => p.deal_id === d.id)
+          .map((p) => ({
+            userId: p.user_id,
+            displayName: p.users.display_name,
+            photoUrl: p.users.photo_url,
+            approval: p.approval,
+            why: p.why,
+          })),
+        counterRounds: d.counter_rounds,
+        supersededBy: d.superseded_by,
+        counter: c
+          ? {
+              id: c.id,
+              proposedBy: c.proposed_by,
+              changes: c.changes,
+              legs: c.proposal.item_legs.flatMap((l) =>
+                leg({
+                  giverId: l.giver,
+                  receiverId: l.receiver,
+                  itemId: l.item_id,
+                  askId: l.ask_id ?? null,
+                  giverAskId: l.giver_ask_id ?? null,
+                }),
+              ),
+              throwIns: c.proposal.cash_legs.map((t) => ({
+                payerId: t.payer,
+                payeeId: t.payee,
+                amountCents: t.amount_cents,
+              })),
+              awaiting: c.awaiting,
+              answers: c.answers,
+              expiresAt: c.expires_at,
+            }
+          : null,
+      };
+    });
+  }
+
+  async getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]> {
+    const ids = itemIds.filter(isUuid);
+    if (ids.length === 0) return [];
+    const { data, error } = await this.db
+      .from("items")
+      .select(`${DEAL_ITEM_SELECT}, owner_id, status, willingness, reserved_by_deal_id`)
+      .in("id", ids);
+    if (error) throw new RepositoryError("getCounterItems", error);
+    return z
+      .array(
+        DealItemRow.extend({
+          owner_id: z.string(),
+          status: ItemStatus,
+          willingness: ItemWillingness,
+          reserved_by_deal_id: z.string().nullable(),
         }),
-      throwIns: legRows
-        .filter((l) => l.deal_id === d.id && !l.item_id && l.throw_in_cents > 0)
-        .map((l) => ({
-          payerId: l.giver_id,
-          payeeId: l.receiver_id,
-          amountCents: l.throw_in_cents,
-        })),
-      participants: peopleRows
-        .filter((p) => p.deal_id === d.id)
-        .map((p) => ({
-          userId: p.user_id,
-          displayName: p.users.display_name,
-          photoUrl: p.users.photo_url,
-          approval: p.approval,
-          why: p.why,
-        })),
-    }));
+      )
+      .parse(data ?? [])
+      .map((r) => ({
+        ownerId: r.owner_id,
+        status: r.status,
+        reserved: r.reserved_by_deal_id !== null,
+        willingness: r.willingness,
+        item: toDealItem(r),
+      }));
+  }
+
+  async getAskCeilings(askIds: string[]): Promise<Map<string, number>> {
+    const ids = askIds.filter(isUuid);
+    if (ids.length === 0) return new Map();
+    const { data, error } = await this.db
+      .from("asks")
+      .select("id, cash_ceiling_cents")
+      .in("id", ids);
+    if (error) throw new RepositoryError("getAskCeilings", error);
+    return new Map(
+      z
+        .array(z.object({ id: z.string(), cash_ceiling_cents: z.number().int() }))
+        .parse(data ?? [])
+        .map((r) => [r.id, r.cash_ceiling_cents]),
+    );
+  }
+
+  async proposeCounter(
+    userId: string,
+    dealId: string,
+    counter: CounterProposal,
+  ): Promise<ProposeCounterResult> {
+    const { data, error } = await this.db.rpc("propose_counter", {
+      p_user_id: userId,
+      p_deal_id: dealId,
+      p_changes: counter.changes,
+      p_proposal: counter.proposal,
+      p_awaiting: counter.awaiting,
+    });
+    if (error) throw new RepositoryError("proposeCounter", error);
+    const { result } = z
+      .object({
+        result: z.enum(["ok", "not_found", "closed", "counter_open", "no_rounds_left", "invalid"]),
+      })
+      .parse(data);
+    if (result !== "ok") return result;
+    return (await this.getDeal(userId, dealId)) ?? "not_found";
+  }
+
+  async respondCounter(
+    userId: string,
+    dealId: string,
+    counterId: string,
+    accept: boolean,
+  ): Promise<RespondCounterResult> {
+    if (!(await this.#counterOf(counterId, dealId))) return "not_found";
+    const { data, error } = await this.db.rpc("respond_counter", {
+      p_user_id: userId,
+      p_counter_id: counterId,
+      p_accept: accept,
+    });
+    if (error) throw new RepositoryError("respondCounter", error);
+    const row = z
+      .object({
+        result: z.enum(["ok", "not_found", "closed", "decided", "items_taken"]),
+        deal_id: z.string().optional(),
+      })
+      .parse(data);
+    if (row.result !== "ok") return row.result;
+    // A new version that waits for photos is staged and hidden, so show the old one, which
+    // now points at it.
+    return (
+      (row.deal_id && (await this.getDeal(userId, row.deal_id))) ||
+      (await this.getDeal(userId, dealId)) ||
+      "not_found"
+    );
+  }
+
+  async withdrawCounter(
+    userId: string,
+    dealId: string,
+    counterId: string,
+  ): Promise<WithdrawCounterResult> {
+    if (!(await this.#counterOf(counterId, dealId))) return "not_found";
+    const { data, error } = await this.db.rpc("withdraw_counter", {
+      p_user_id: userId,
+      p_counter_id: counterId,
+    });
+    if (error) throw new RepositoryError("withdrawCounter", error);
+    const { result } = z.object({ result: z.enum(["ok", "not_found", "closed"]) }).parse(data);
+    if (result !== "ok") return result;
+    return (await this.getDeal(userId, dealId)) ?? "not_found";
+  }
+
+  /** True when the counter belongs to that Deal, so a URL can't pair them up wrong. */
+  async #counterOf(counterId: string, dealId: string): Promise<boolean> {
+    if (!isUuid(counterId)) return false;
+    const { data, error } = await this.db
+      .from("deal_counters")
+      .select("deal_id")
+      .eq("id", counterId)
+      .maybeSingle();
+    if (error) throw new RepositoryError("counterOf", error);
+    return (data as { deal_id: string } | null)?.deal_id === dealId;
   }
 
   async #memberCounts(circleIds: string[]): Promise<Map<string, number>> {

@@ -1,6 +1,7 @@
 import type { GmService } from "@throwin/harness";
 import type { SessionIssuer } from "./auth/sessions.js";
 import type { TokenVerifier } from "./auth/verifier.js";
+import type { Counters } from "./lib/counters.js";
 import type { Logger } from "./lib/logger.js";
 import type { AppAttestMode, AppAttestVerifier } from "./middleware/app-attest.js";
 import type { IdempotencyStore } from "./repo/idempotency.js";
@@ -22,6 +23,8 @@ export interface AppDeps {
   gm?: GmService | null;
   /** SSE keep-alive interval for /v1/gm/stream, 15 s by default. Tests shorten it. */
   gmKeepAliveMs?: number;
+  /** Counters, re-balanced by the matcher. Omitted without MATCHER_URL: counters answer 503. */
+  counters?: Counters | null;
 }
 
 export interface AuthUser {

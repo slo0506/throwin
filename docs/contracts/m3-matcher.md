@@ -75,6 +75,21 @@ All JSON is snake_case. Money is integer cents. IDs are strings (UUIDs in practi
 - `item_legs` has 1 entry per Item, grouped by receiver in Loop order. A bundle is several entries with the same giver and receiver; the first of them fills the Ask the Loop fills for that receiver, and the rest fill that Ask again (when it takes several) or another of the receiver's Asks. `fairness` sums each side.
 - `truncated` means the search stopped at `max_cycles`. `optimal` is false when selection hit its time limit; the deals are still valid, just possibly not the best set.
 
+## POST /v1/balance
+
+The least cash that brings everyone close to even when a Deal's Items are already decided, as when a counter changes them (`docs/contracts/m3-deals.md`, "Counters"). The API calls it; the rules are the same as for `/v1/match`: the tolerance, each person's ceiling, least cash, ties to the split closest to even.
+
+```json
+{
+  "people": [{ "user": "a", "cash_ceiling_cents": 6000 }, { "user": "b", "cash_ceiling_cents": 0 }],
+  "item_legs": [{ "giver": "b", "receiver": "a", "item_id": "uuid", "value_cents": 8000 }],
+  "tolerance_pct": 0.15,
+  "tolerance_floor_cents": 1000
+}
+```
+
+It returns `{ "balanced", "cash_legs", "fairness", "cash_moved_cents" }`, with `balanced: false` (and nothing else) when no Throw-Ins within the ceilings work. A malformed Deal (someone who doesn't give and get, a leg to or from someone outside it, an Item twice) is a 422. 2 to 4 people, at most 20 Items.
+
 ## Rules the matcher guarantees
 
 These are property-tested in `services/matcher/tests/test_properties.py` on 320 random Circles per run, 120 of them with bundles.

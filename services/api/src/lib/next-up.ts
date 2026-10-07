@@ -39,6 +39,27 @@ const hoursLeft = (until: Date, now: Date) =>
   Math.max(1, Math.round((until.getTime() - now.getTime()) / 3_600_000));
 const askName = (a: AskRecord) => short(a.title ?? a.target?.name ?? a.rawText);
 
+/** "Maya asked for your Zelda too": the first change in an open counter, from the user's side. */
+function counterTitle(d: DealRecord, userId: string, from: string): string {
+  const counter = d.counter;
+  const first = counter?.changes[0];
+  if (!counter || !first) return `${from} wants to change your trade`;
+  const leg = (first.op === "remove" ? d.legs : counter.legs).find(
+    (l) => l.item.id === first.item_id,
+  );
+  if (!leg) return `${from} wants to change your trade`;
+  const title = short(leg.item.title);
+  const more = counter.changes.length > 1 ? ", and more" : "";
+  if (first.op === "add") {
+    return leg.giverId === userId
+      ? `${from} asked for your ${title} too${more}`
+      : `${from} offered their ${title} too${more}`;
+  }
+  return leg.giverId === userId
+    ? `${from} asked to leave out your ${title}${more}`
+    : `${from} wants to keep their ${title}${more}`;
+}
+
 const blank = {
   deal_id: null,
   ask_id: null,
@@ -53,11 +74,38 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
   const out: NextUpItem[] = [];
   const photo = (path: string | null) => (path ? (urls.get(path) ?? null) : null);
 
-  // 1. Deal Sheets waiting on this user's approval, soonest to expire first.
+  // 1. Counters waiting on this user's answer, soonest to expire first. Nobody can approve
+  //    while 1 is open, so their Deal Sheets wait too.
+  const countered = input.deals
+    .filter(
+      (d) =>
+        d.status === "pending_approvals" &&
+        d.counter?.awaiting.includes(userId) &&
+        !d.counter.answers[userId],
+    )
+    .sort((a, b) => (a.counter?.expiresAt.getTime() ?? 0) - (b.counter?.expiresAt.getTime() ?? 0));
+  for (const d of countered) {
+    const counter = d.counter;
+    if (!counter) continue;
+    const from = d.participants.find((p) => p.userId === counter.proposedBy)?.displayName;
+    out.push({
+      ...blank,
+      id: `counter:${counter.id}`,
+      kind: "answer_counter",
+      title: counterTitle(d, userId, from ?? "Someone"),
+      detail: `Waiting on your answer. Open for ${plural(hoursLeft(counter.expiresAt, now), "hour")}.`,
+      cta: "Review",
+      deal_id: d.id,
+      expires_at: counter.expiresAt.toISOString(),
+    });
+  }
+
+  // 2. Deal Sheets waiting on this user's approval, soonest to expire first.
   const waiting = input.deals
     .filter(
       (d) =>
         d.status === "pending_approvals" &&
+        !d.counter &&
         d.participants.find((p) => p.userId === userId)?.approval === "pending",
     )
     .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime());
@@ -80,7 +128,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 2. Someone's waiting on photos of the user's Item before a Deal can go out.
+  // 3. Someone's waiting on photos of the user's Item before a Deal can go out.
   for (const r of [...input.photoRequests].sort(
     (a, b) => a.expiresAt.getTime() - b.expiresAt.getTime(),
   )) {
@@ -109,7 +157,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     ]),
   );
 
-  // 3. Asks the GM can't work on until the user picks something to offer.
+  // 4. Asks the GM can't work on until the user picks something to offer.
   for (const a of openAsks.filter((a) => a.target && a.offerItems.length === 0)) {
     out.push({
       ...blank,
@@ -123,7 +171,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 4. Open Asks but nowhere to trade.
+  // 5. Open Asks but nowhere to trade.
   if (openAsks.length > 0 && input.circles.length === 0) {
     out.push({
       ...blank,
@@ -135,7 +183,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 5. Offers that can't land as they stand.
+  // 6. Offers that can't land as they stand.
   for (const a of openAsks) {
     const anchor = a.target?.anchor;
     if (!anchor || a.offerItems.length === 0) continue;
@@ -165,7 +213,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 6. Tune up: the cheapest way to tighten the Shelf.
+  // 7. Tune up: the cheapest way to tighten the Shelf.
   const asking = input.items.filter((i) => i.openQuestions > 0 && !i.appraising);
   const questions = asking.reduce((n, i) => n + i.openQuestions, 0);
   if (questions > 0) {
@@ -179,7 +227,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 7. Identified Items a few photos from ready to show, most valuable first.
+  // 8. Identified Items a few photos from ready to show, most valuable first.
   const nearlyReady = input.items
     .filter((i) => i.readiness === "identified" && !i.appraising && i.status === "on_shelf")
     .sort((a, b) => (b.valueMidCents ?? 0) - (a.valueMidCents ?? 0))
@@ -199,7 +247,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 8. Getting started.
+  // 9. Getting started.
   if (input.items.length === 0) {
     out.push({
       ...blank,

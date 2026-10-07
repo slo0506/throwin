@@ -40,7 +40,7 @@ export function createApp(deps: AppDeps) {
   v1.route("/asks", askRoutes(deps.repo));
   v1.route("/circles", circleRoutes(deps.repo, now));
   v1.route("/invites", inviteRoutes(deps.repo, now));
-  v1.route("/deals", dealRoutes(deps.repo, deps.media));
+  v1.route("/deals", dealRoutes(deps.repo, deps.media, deps.counters ?? null));
   v1.route("/items", itemRoutes(deps.repo, deps.media));
   v1.route("/media", mediaRoutes(deps.repo, deps.media));
   v1.route("/captures", captureRoutes(deps.repo, deps.media));

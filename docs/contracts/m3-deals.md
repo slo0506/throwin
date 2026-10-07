@@ -87,6 +87,33 @@ All JSON is snake_case and money is integer cents. Someone else's Deal, or a `st
 - `why` is the caller's own "why your GM likes it", written by the Prospector's review. Each person sees only their own, and it's null when the review wrote none.
 - `your_ask_id` is the caller's own Ask this Deal fills: the 1 they give for (`giver_ask_id` of their legs, or the Ask they receive through on Deals from before bundles), so the app can link an Ask to its waiting Deal. Never anyone else's Ask.
 
+### Counters
+
+Decided Oct 7, 2026 (`docs/specs/agents-and-trading.md`, "Counters in natural language"). A participant asks to change a Deal's Items, usually by telling their GM ("can we get a little more, like something vintage Nike?"). The GM turns that into structured changes and shows them as a card, and the app sends them when the user taps Send. Nothing in a counter is free text.
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| POST | `/v1/deals/{id}/counters` | `{ "changes": [CounterChange] }` (1 to 3) | 201 DealSheet with `counter` |
+| POST | `/v1/deals/{id}/counters/{counter_id}/accept` | | DealSheet: the new version once everyone has accepted, else the same Deal |
+| POST | `/v1/deals/{id}/counters/{counter_id}/decline` | | DealSheet, as it was |
+| POST | `/v1/deals/{id}/counters/{counter_id}/withdraw` | | DealSheet, as it was (the proposer only) |
+
+- **Changes:** `{ "op": "add", "item_id" }` hands over 1 more Item: a participant's own Item that's on their Shelf, not held by a Deal and not marked not available. It goes to the person its owner gives to in the Loop, so a user can ask for something of the other side's or sweeten with something of their own. `{ "op": "remove", "item_id" }` takes 1 out. Everyone must still give at least 1 Item.
+- **Re-balancing:** the API sends the changed Items to the matcher's `/v1/balance` with each person's ceiling (the Ask they give for). A counter that can't be evened out within the ceilings is refused (`unbalanced`, 422) before anyone sees it.
+- **Who answers:** everyone else whose side changes (the givers and receivers of changed Items). All of them must accept. While it's open, nobody can approve the Deal (`approve` is a 409 `counter_open`), and Next up asks them with `answer_counter`.
+- **Accepting** makes a new version of the Deal: it keeps the Items the counter keeps, releases dropped ones, holds added ones, carries the whys over, and everyone approves again (Face ID as usual). The old Deal becomes `cancelled` with `superseded_by` set; its Asks stay `proposed` unless the new version no longer fills them. If an added Item still needs showcase photos, the new version is `staged` until they're in, and accept returns the old Deal pointing at it.
+- **Declining** or **withdrawing** leaves the Deal as it was. **Expiry:** a counter is open for 24 hours or until its Deal expires, whichever is first; closing the Deal closes it too.
+- **Limits:** 3 counters per Deal, version to version (`counters_left` on the Deal Sheet), and 1 open at a time. Nobody's ceiling ever appears; the API only says whether a counter balances.
+- **Deal Sheet fields:** `counter` is the open counter from the caller's side: who proposed it, each change with its Item and people, the caller's `gives`, `gets`, `cash` and `fairness` as they would be, `your_answer` (`pending`, `accepted`, `declined`, or null when not asked), `waiting_on` and `expires_at`.
+- **Database:** `deal_counters` (server only) and `propose_counter`, `respond_counter` and `withdraw_counter`, which re-check everything the API planned (`supabase/migrations/20261018000100_counters.sql`).
+
+| Error | HTTP | When |
+| --- | --- | --- |
+| `not_in_deal`, `already_in_deal` | 400 | A remove of an Item not in the Deal, or an add of 1 already in it |
+| `unavailable`, `empty_side`, `not_priced`, `unbalanced` | 422 | The Item isn't free to trade; someone would give nothing; an Item has no value yet; no cash within the ceilings evens it out |
+| `counter_open`, `no_rounds_left`, `deal_closed`, `counter_closed`, `items_taken` | 409 | Another counter is open; 3 already; the Deal isn't awaiting approvals; the counter is settled; an added Item went elsewhere first |
+| `counters_unavailable` | 503 | The API has no `MATCHER_URL` |
+
 ### Decisions
 
 `approve_deal(user, deal, snapshot)` and `decline_deal(user, deal, reason)` run in 1 transaction each and return:
@@ -96,6 +123,7 @@ All JSON is snake_case and money is integer cents. Someone else's Deal, or a `st
 | `ok` | 200 | Recorded |
 | `not_found` | 404 | Not the caller's Deal, or still staged |
 | `closed` | 409 `deal_closed` | Not awaiting approvals, or expired |
+| `counter_open` | 409 `counter_open` | Approve only: a counter on the Deal is waiting for answers |
 | `decided` | 409 `already_decided` | The caller already approved or declined |
 
 - **Approve** stores the caller's Deal Sheet as it was at that moment in `deal_participants.sheet_snapshot`. When the last person approves, the Deal becomes `approved` and its Asks `accepted`. Items stay reserved for the handoff, and approved Deals never expire.

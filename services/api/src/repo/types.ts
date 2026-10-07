@@ -5,6 +5,7 @@ import type {
   AutonomyLevel,
   CircleRole,
   ConditionGrade,
+  CounterChange,
   DealStatus,
   ItemReadiness,
   ItemStatus,
@@ -249,26 +250,93 @@ export interface DealItemRecord {
   photoPath: string | null;
 }
 
+/**
+ * 1 Item changing hands. `askId` is the receiver's Ask the leg fills, when it fills 1.
+ * `giverAskId` is the giver's Ask whose offer set held the Item (the 1 the Deal fills for
+ * the giver); null on legs staged before bundles and on Items a counter added.
+ */
+export interface DealLegRecord {
+  giverId: string;
+  receiverId: string;
+  askId: string | null;
+  giverAskId: string | null;
+  item: DealItemRecord;
+}
+
+export interface ThrowInRecord {
+  payerId: string;
+  payeeId: string;
+  amountCents: number;
+}
+
 /** A Deal as every participant sees it; the route turns it into 1 person's Deal Sheet. */
 export interface DealRecord {
   id: string;
   status: DealStatus;
   expiresAt: Date;
-  /**
-   * `askId` is the receiver's Ask the leg fills, when it fills 1. `giverAskId` is the giver's
-   * Ask whose offer set held the Item (the 1 the Deal fills for the giver); null on legs
-   * staged before bundles.
-   */
-  legs: {
-    giverId: string;
-    receiverId: string;
-    askId: string | null;
-    giverAskId: string | null;
-    item: DealItemRecord;
-  }[];
-  throwIns: { payerId: string; payeeId: string; amountCents: number }[];
+  legs: DealLegRecord[];
+  throwIns: ThrowInRecord[];
   participants: (DealPersonRecord & { approval: ApprovalState; why: string | null })[];
+  /** Counters it has had, of MAX_COUNTER_ROUNDS. */
+  counterRounds: number;
+  /** The open counter, if any. While it's open, nobody can approve. */
+  counter: CounterRecord | null;
+  /** The version that replaced it, when a counter was accepted. */
+  supersededBy: string | null;
 }
+
+/** An open counter (docs/contracts/m3-deals.md, "Counters"). */
+export interface CounterRecord {
+  id: string;
+  proposedBy: string;
+  changes: CounterChange[];
+  /** The Deal as it would be. */
+  legs: DealLegRecord[];
+  throwIns: ThrowInRecord[];
+  /** Everyone else whose side changes; all must accept. */
+  awaiting: string[];
+  answers: Record<string, "accepted" | "declined">;
+  expiresAt: Date;
+}
+
+/** An Item a counter may add: who owns it, whether it's free, and what a Deal Sheet shows. */
+export interface CounterItemRecord {
+  ownerId: string;
+  status: ItemStatus;
+  reserved: boolean;
+  willingness: ItemWillingness;
+  item: DealItemRecord;
+}
+
+/** What public.propose_counter stores: the changes, the balanced Deal they make, and who's asked. */
+export interface CounterProposal {
+  changes: CounterChange[];
+  proposal: {
+    item_legs: {
+      giver: string;
+      receiver: string;
+      item_id: string;
+      ask_id: string | null;
+      giver_ask_id: string | null;
+      value_cents: number;
+    }[];
+    cash_legs: { payer: string; payee: string; amount_cents: number }[];
+    fairness: unknown[];
+    cash_moved_cents: number;
+  };
+  awaiting: string[];
+}
+
+export type ProposeCounterResult =
+  | DealRecord
+  | "not_found"
+  | "closed"
+  | "counter_open"
+  | "no_rounds_left"
+  | "invalid";
+/** The Deal to show next: the new version once everyone accepted, else the same Deal. */
+export type RespondCounterResult = DealRecord | "not_found" | "closed" | "decided" | "items_taken";
+export type WithdrawCounterResult = DealRecord | "not_found" | "closed";
 
 /**
  * A staged Deal waiting for showcase photos of 1 of the user's Items (PRD "Demand-driven
@@ -286,7 +354,7 @@ export interface PhotoRequestRecord {
 }
 
 /** public.approve_deal and public.decline_deal results; on success, the Deal afterwards. */
-export type DealDecisionResult = DealRecord | "not_found" | "closed" | "decided";
+export type DealDecisionResult = DealRecord | "not_found" | "closed" | "decided" | "counter_open";
 
 /** Statuses shown on the Shelf. Removed and traded Items are history, not inventory. */
 export const SHELF_STATUSES: readonly ItemStatus[] = [
@@ -395,4 +463,27 @@ export interface Repository {
   approveDeal(userId: string, dealId: string, snapshot: unknown): Promise<DealDecisionResult>;
   /** public.decline_deal. */
   declineDeal(userId: string, dealId: string, reason: string | null): Promise<DealDecisionResult>;
+  /** Items a counter may add, by ID. Missing IDs are skipped. */
+  getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]>;
+  /** Each Ask's cash ceiling, to re-balance a counter. Server only: never shown to others. */
+  getAskCeilings(askIds: string[]): Promise<Map<string, number>>;
+  /** public.propose_counter. */
+  proposeCounter(
+    userId: string,
+    dealId: string,
+    counter: CounterProposal,
+  ): Promise<ProposeCounterResult>;
+  /** public.respond_counter. `dealId` must be the counter's Deal. */
+  respondCounter(
+    userId: string,
+    dealId: string,
+    counterId: string,
+    accept: boolean,
+  ): Promise<RespondCounterResult>;
+  /** public.withdraw_counter. `dealId` must be the counter's Deal. */
+  withdrawCounter(
+    userId: string,
+    dealId: string,
+    counterId: string,
+  ): Promise<WithdrawCounterResult>;
 }

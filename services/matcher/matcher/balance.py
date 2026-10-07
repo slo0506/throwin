@@ -173,22 +173,53 @@ def balance_bundle(
     return _finish(legs, [solver.value(c) for c in cash], tolerance_pct, floor_cents)
 
 
-def _finish(
-    legs: list[list[Edge]], cash: list[int], tolerance_pct: float, floor_cents: int
-) -> Balanced | None:
-    n = len(legs)
-    gets = [sum(e.value_cents for e in leg) for leg in legs]
-    fairness = []
-    for i in range(n):
-        gives = gets[i - 1]
-        tol = _tolerance(gets[i], gives, tolerance_pct, floor_cents)
-        net = gets[i] - gives + cash[i]
-        if abs(net) > tol or -cash[i] > legs[i][0].cash_ceiling_cents:
+def balance_fixed(
+    users: list[str],
+    gets: list[int],
+    gives: list[int],
+    ceilings: list[int],
+    tolerance_pct: float,
+    floor_cents: int,
+) -> tuple[list[CashLeg], list[Fairness]] | None:
+    """Throw-Ins when each person's Items are already decided (a counter): person i gets
+    `gets[i]` and gives `gives[i]` in value. None when no Throw-Ins within the ceilings
+    bring everyone close to even."""
+    n = len(users)
+    tols = [_tolerance(gets[i], gives[i], tolerance_pct, floor_cents) for i in range(n)]
+    surplus = [gets[i] - gives[i] for i in range(n)]
+    if all(abs(s) <= t for s, t in zip(surplus, tols, strict=True)):
+        cash = [0] * n
+    else:
+        solved = _solve(surplus, tols, ceilings)
+        if solved is None:
             return None
-        fairness.append(
+        cash = solved
+    fairness = _fairness(users, gets, gives, ceilings, cash, tolerance_pct, floor_cents)
+    if fairness is None:
+        return None
+    return _settle(users, cash), fairness
+
+
+def _fairness(
+    users: list[str],
+    gets: list[int],
+    gives: list[int],
+    ceilings: list[int],
+    cash: list[int],
+    tolerance_pct: float,
+    floor_cents: int,
+) -> list[Fairness] | None:
+    """Each person's side, or None if anyone is outside tolerance or over their ceiling."""
+    out = []
+    for i, user in enumerate(users):
+        tol = _tolerance(gets[i], gives[i], tolerance_pct, floor_cents)
+        net = gets[i] - gives[i] + cash[i]
+        if abs(net) > tol or -cash[i] > ceilings[i]:
+            return None
+        out.append(
             Fairness(
-                user=legs[i][0].from_user,
-                gives_cents=gives,
+                user=user,
+                gives_cents=gives[i],
                 gets_cents=gets[i],
                 cash_in_cents=max(cash[i], 0),
                 cash_out_cents=max(-cash[i], 0),
@@ -196,7 +227,20 @@ def _finish(
                 tolerance_cents=tol,
             )
         )
-    cash_legs = _settle([leg[0].from_user for leg in legs], cash)
+    return out
+
+
+def _finish(
+    legs: list[list[Edge]], cash: list[int], tolerance_pct: float, floor_cents: int
+) -> Balanced | None:
+    users = [leg[0].from_user for leg in legs]
+    gets = [sum(e.value_cents for e in leg) for leg in legs]
+    gives = [gets[i - 1] for i in range(len(legs))]
+    ceilings = [leg[0].cash_ceiling_cents for leg in legs]
+    fairness = _fairness(users, gets, gives, ceilings, cash, tolerance_pct, floor_cents)
+    if fairness is None:
+        return None
+    cash_legs = _settle(users, cash)
     return Balanced(
         legs=legs,
         cash_legs=cash_legs,

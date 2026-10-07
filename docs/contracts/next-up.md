@@ -26,7 +26,8 @@
 
 | Kind | When | Button goes to |
 | --- | --- | --- |
-| `approve_deal` | A Deal Sheet waits on the user's approval, soonest to expire first. | The Deal Sheet |
+| `answer_counter` | Someone countered a Deal and is waiting on the user's answer ("Maya asked for your Zelda too"), soonest to close first. | The Deal Sheet, which shows the counter |
+| `approve_deal` | A Deal Sheet waits on the user's approval, soonest to expire first. Not while a counter on it is open. | The Deal Sheet |
 | `showcase_photos` | A staged Deal waits for showcase photos of the user's Item ("Bob wants your LEGO Typewriter"). | The Showcase shoot, with `angles` |
 | `offer_for_ask` | An Ask has a target but nothing offered: the GM can't look yet. | The Ask page |
 | `join_circle` | Open Asks but no Circle. | Circles |

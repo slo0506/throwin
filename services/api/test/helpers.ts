@@ -3,7 +3,9 @@ import { ErrorBody } from "@throwin/shared";
 import { SignJWT } from "jose";
 import { createApp } from "../src/app.js";
 import { createSupabaseVerifier, type TokenVerifier } from "../src/auth/verifier.js";
+import { Counters } from "../src/lib/counters.js";
 import { silentLogger } from "../src/lib/logger.js";
+import type { Balancer } from "../src/lib/matcher.js";
 import {
   type AppAttestMode,
   type AppAttestVerifier,
@@ -49,6 +51,8 @@ export function makeHarness(
     devAuthCode?: string;
     gm?: GmService;
     gmKeepAliveMs?: number;
+    /** Turns counters on, re-balancing with this instead of the matcher. */
+    balancer?: Balancer;
   } = {},
 ): Harness {
   const repo = new MemoryRepository();
@@ -73,6 +77,7 @@ export function makeHarness(
     now: () => NOW,
     ...(options.gm && { gm: options.gm }),
     ...(options.gmKeepAliveMs !== undefined && { gmKeepAliveMs: options.gmKeepAliveMs }),
+    ...(options.balancer && { counters: new Counters(repo, options.balancer) }),
   });
 
   const request = async (path: string, init: RequestInit & { as?: string } = {}) => {
