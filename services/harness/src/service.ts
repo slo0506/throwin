@@ -307,6 +307,25 @@ export class GmService {
       if (display.length === 0) display.push(`Sent ${n} photo${n === 1 ? "" : "s"}`);
     }
 
+    if (body.added_item_ids) {
+      const ids = [...new Set(body.added_item_ids)];
+      const own = await this.#data.getOwnItems(session.userId, ids);
+      if (own.length !== ids.length) {
+        throw new GmInputError(400, "invalid_item", "Those Items aren't on your Shelf");
+      }
+      session.allow.remember(ids);
+      const lines = own.map(
+        (i) => `- ${i.id}: ${clean(i.title, 120)}${i.appraising ? " (still being priced)" : ""}`,
+      );
+      content.push({
+        type: "text",
+        text: `[The user just added ${own.length} Item${own.length === 1 ? "" : "s"} to their Shelf:\n${lines.join("\n")}]`,
+      });
+      if (display.length === 0) {
+        display.push(`Added ${own.length} thing${own.length === 1 ? "" : "s"} to my Shelf`);
+      }
+    }
+
     return {
       content,
       meta: {
@@ -314,6 +333,7 @@ export class GmService {
         display_text: display.join("\n"),
         ...(body.choice && { choice: body.choice }),
         ...(body.media_paths && { media_paths: body.media_paths }),
+        ...(body.added_item_ids && { added_item_ids: body.added_item_ids }),
       },
     };
   }

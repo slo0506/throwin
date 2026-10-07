@@ -1,0 +1,87 @@
+{
+  "id": "offer-building-saves-exact-picks",
+  "suite": "offer_building",
+  "description": "The offer set is exactly the Items the user named, with the cash they gave",
+  "state": {
+    "user": {
+      "first_name": "Sean"
+    },
+    "mode": "chat",
+    "shelf": [
+      {
+        "id": "aaaaaaaa-5555-4000-8000-000000000001",
+        "title": "Insta360 X3 action camera",
+        "category": "electronics/cameras",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 20000,
+          "mid": 23000,
+          "high": 26000
+        }
+      },
+      {
+        "id": "aaaaaaaa-5555-4000-8000-000000000002",
+        "title": "Nintendo Switch Lite, turquoise",
+        "category": "electronics/consoles",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      },
+      {
+        "id": "aaaaaaaa-5555-4000-8000-000000000003",
+        "title": "Crocs Classic Clog, navy",
+        "category": "sneakers",
+        "condition_grade": "C",
+        "value_cents": {
+          "low": 1500,
+          "mid": 2000,
+          "high": 2500
+        }
+      }
+    ],
+    "asks": [
+      {
+        "id": "bbbbbbbb-5555-4000-8000-000000000001",
+        "raw_text": "a new or used PS4",
+        "title": "PlayStation 4",
+        "status": "offering",
+        "target": {
+          "kind": "exact",
+          "name": "PlayStation 4",
+          "brand": "Sony",
+          "category": "electronics/consoles",
+          "constraints": [],
+          "anchor": {
+            "retail_cents": 32500,
+            "used_low_cents": 10000,
+            "used_high_cents": 15000
+          },
+          "model": null,
+          "image_url": null
+        },
+        "offer_item_ids": [],
+        "cash_ceiling_cents": 0
+      }
+    ]
+  },
+  "conversation": [
+    {
+      "role": "user",
+      "content": "What should I offer for the PS4?"
+    },
+    {
+      "role": "assistant",
+      "content": "Your Switch Lite is the closest match on its own, and the Insta360 is worth more than a used PS4. Which would you offer?"
+    }
+  ],
+  "message": "The Switch Lite or the camera are both fine. Up to $20 cash.",
+  "expect": {
+    "tools_called": ["set_offer_set"],
+    "offer_items": ["aaaaaaaa-5555-4000-8000-000000000001", "aaaaaaaa-5555-4000-8000-000000000002"],
+    "unseen_id_unused": "aaaaaaaa-5555-4000-8000-000000000003",
+    "prices_grounded": true
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "id": "offer-building-alternatives-not-bundles",
+  "suite": "offer_building",
+  "description": "Suggestions are alternatives that each cover the target; small Items are never added up into a bundle",
+  "state": {
+    "user": {
+      "first_name": "Sean"
+    },
+    "mode": "chat",
+    "shelf": [
+      {
+        "id": "aaaaaaaa-3333-4000-8000-000000000001",
+        "title": "Insta360 X3 action camera",
+        "category": "electronics/cameras",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 20000,
+          "mid": 23000,
+          "high": 26000
+        }
+      },
+      {
+        "id": "aaaaaaaa-3333-4000-8000-000000000002",
+        "title": "ASICS Gel-Kayano 29, size 10",
+        "category": "sneakers",
+        "condition_grade": "C",
+        "value_cents": {
+          "low": 2000,
+          "mid": 3000,
+          "high": 4000
+        }
+      },
+      {
+        "id": "aaaaaaaa-3333-4000-8000-000000000003",
+        "title": "Crocs Classic Clog, navy",
+        "category": "sneakers",
+        "condition_grade": "C",
+        "value_cents": {
+          "low": 1500,
+          "mid": 2000,
+          "high": 2500
+        }
+      },
+      {
+        "id": "aaaaaaaa-3333-4000-8000-000000000004",
+        "title": "Pothos plant in a ceramic pot",
+        "category": "home",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 1000,
+          "mid": 1500,
+          "high": 2000
+        }
+      }
+    ],
+    "asks": [
+      {
+        "id": "bbbbbbbb-3333-4000-8000-000000000001",
+        "raw_text": "a new or used PS4",
+        "title": "PlayStation 4",
+        "status": "offering",
+        "target": {
+          "kind": "exact",
+          "name": "PlayStation 4",
+          "brand": "Sony",
+          "category": "electronics/consoles",
+          "constraints": [],
+          "anchor": {
+            "retail_cents": 32500,
+            "used_low_cents": 10000,
+            "used_high_cents": 15000
+          },
+          "model": null,
+          "image_url": null
+        },
+        "offer_item_ids": [],
+        "cash_ceiling_cents": 0
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "What should I offer for the PS4?",
+  "expect": {
+    "tools_not_called": ["set_offer_set"],
+    "text_excludes": ["together", "combined", "bundle", "add up"],
+    "prices_grounded": true
+  }
+}

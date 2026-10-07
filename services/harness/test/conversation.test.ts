@@ -6,6 +6,7 @@ import {
   ALICE,
   ALICE_LEGO,
   ALICE_ZELDA,
+  BOB_ITEM,
   idFromLastResult,
   lastToolResults,
   makeWorld,
@@ -341,6 +342,44 @@ describe("offers", () => {
         title: "LEGO Batman Batmobile Tumbler 76240",
       },
     });
+  });
+
+  it("tells the GM exactly which Items were just added, and lets it use them right away", async () => {
+    const world = await makeWorld();
+    const ask = await world.data.createAsk(ALICE, {
+      rawText: "a PS4",
+      title: null,
+      target: null,
+      status: "offering",
+      autonomy: "every_deal",
+      deadline: null,
+    });
+    world.model.push(
+      {
+        tools: [
+          {
+            name: "set_offer_set",
+            input: { ask_id: ask.id, item_ids: [ALICE_ZELDA], cash_ceiling_cents: 0 },
+          },
+        ],
+      },
+      { text: "Added it to the offer." },
+    );
+    // The Ask's ID comes from the session block; the Item's only from added_item_ids.
+    await turn(world, { text: "I added Zelda to my Shelf.", added_item_ids: [ALICE_ZELDA] });
+    const first = world.model.requests[0];
+    const sent = JSON.stringify(first?.messages.at(-1)?.content);
+    expect(sent).toContain(`${ALICE_ZELDA}: Zelda: Tears of the Kingdom (Switch)`);
+    expect(ask.offerItemIds).toEqual([ALICE_ZELDA]);
+    const stored = world.data.messages.find((m) => m.role === "user");
+    expect(stored?.toolCalls).toMatchObject({ added_item_ids: [ALICE_ZELDA] });
+  });
+
+  it("refuses added Items that aren't the user's", async () => {
+    const world = await makeWorld();
+    await expect(
+      world.gm.prepareTurn(ALICE, { text: "I added this", added_item_ids: [BOB_ITEM] }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_item" });
   });
 
   it("saves which deals to bring on the profile and every open Ask, never per Ask", async () => {

@@ -43,7 +43,7 @@ Unit tests in `evals/runner/test/review.test.ts` and `services/workers/test/revi
 pnpm --filter @throwin/evals-runner eval:review --trials 3
 ```
 
-## GM cases (grounding, intake, ask_resolution, safety)
+## GM cases (grounding, intake, ask_resolution, offer_building, safety)
 
 GM cases are snapshot cases graded by `evals/runner/src/gm.ts`. The runner seeds an in-memory database from `state`, stores `conversation` as earlier turns, sends `message` through the real harness (`@throwin/harness`) and grades the final state, the tool calls and the rendered cards.
 
@@ -56,6 +56,7 @@ GM cases are snapshot cases graded by `evals/runner/src/gm.ts`. The runner seeds
 | `asks` | The user's Asks, with `target`, `offer_item_ids`, `cash_ceiling_cents`. |
 | `facts` | Always-on taste facts. |
 | `resolver_target` | A canned `resolve_target` result, so a case doesn't depend on live web prices. Without it the real resolver runs. |
+| `added_item_ids` | Shelf Items the new message says were just added (sent as the message's `added_item_ids`). |
 
 | `expect` check | Passes when |
 | --- | --- |
@@ -69,6 +70,7 @@ GM cases are snapshot cases graded by `evals/runner/src/gm.ts`. The runner seeds
 | `mode` | The conversation mode afterwards. |
 | `max_choice_questions` | At most this many `present_choices` calls. |
 | `offer_items` | The first Ask's offer set, exactly. |
+| `autonomy` | The user's profile setting afterwards (`every_deal` or `likely_yes`). |
 
 Run them with a real model (never in CI):
 

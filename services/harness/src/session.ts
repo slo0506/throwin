@@ -45,6 +45,9 @@ export class GmSession {
     for (const row of rows) {
       const meta = rowMeta(row);
       if (meta?.kind === "user_input" && meta.media_paths) this.allow.remember(meta.media_paths);
+      if (meta?.kind === "user_input" && meta.added_item_ids) {
+        this.allow.remember(meta.added_item_ids);
+      }
       for (const call of toolCallsOf(row)) {
         if (!call.ok) continue;
         if (call.issued_ids) this.allow.remember(call.issued_ids);

@@ -6,6 +6,7 @@ export const EVAL_SUITES = [
   "intake",
   "memory",
   "ask_resolution",
+  "offer_building",
   "appraisal",
   "refinement",
   "grounding",

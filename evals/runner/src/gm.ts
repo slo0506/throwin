@@ -26,7 +26,13 @@ import { z } from "zod";
 import type { SnapshotCase } from "./cases.js";
 
 /** Suites the GM runner grades. */
-export const GM_SUITES = ["grounding", "intake", "ask_resolution", "safety"] as const;
+export const GM_SUITES = [
+  "grounding",
+  "intake",
+  "ask_resolution",
+  "offer_building",
+  "safety",
+] as const;
 
 const cents = z.number().int().nonnegative();
 const Value = z.strictObject({ low: cents, mid: cents, high: cents });
@@ -83,6 +89,8 @@ export const GmCaseState = z.strictObject({
     .default([]),
   /** A canned resolve_target result, so a case does not depend on live web prices. */
   resolver_target: ResolvedTargetData.optional(),
+  /** Shelf Items the new message says were just added (`added_item_ids` on the message). */
+  added_item_ids: z.array(z.uuid()).optional(),
 });
 export type GmCaseState = z.infer<typeof GmCaseState>;
 
@@ -287,7 +295,10 @@ export async function runGmCase(c: SnapshotCase, model: ModelClient): Promise<Gm
   });
 
   const events: GmStreamEvent[] = [];
-  const prepared = await gm.prepareTurn(EVAL_USER, { text: c.message });
+  const prepared = await gm.prepareTurn(EVAL_USER, {
+    text: c.message,
+    ...(state.added_item_ids && { added_item_ids: state.added_item_ids }),
+  });
   await prepared.run((e) => events.push(e));
 
   const text = events.flatMap((e) => (e.event === "text" ? [e.data.delta] : [])).join("");
