@@ -35,7 +35,7 @@ def e(
 
 def test_even_swap_needs_no_cash():
     # a gets b's $50 game, b gets a's $55 game: $5 apart, inside the $10 floor.
-    b = balance([e("a", "b", "b1", 5000), e("b", "a", "a1", 5500)], 0.15, 1000)
+    b = balance([[e("a", "b", "b1", 5000)], [e("b", "a", "a1", 5500)]], 0.15, 1000)
     assert b is not None
     assert b.cash_legs == [] and b.cash_moved_cents == 0
     assert {f.user: f.net_cents for f in b.fairness} == {"a": -500, "b": 500}
@@ -43,7 +43,9 @@ def test_even_swap_needs_no_cash():
 
 def test_uneven_swap_adds_the_smallest_throw_in():
     # a gets a $200 Batmobile for a $150 set. Tolerance is 15% of $200 = $30, so a pays $20.
-    b = balance([e("a", "b", "bat", 20000, ceiling=5000), e("b", "a", "set", 15000)], 0.15, 1000)
+    b = balance(
+        [[e("a", "b", "bat", 20000, ceiling=5000)], [e("b", "a", "set", 15000)]], 0.15, 1000
+    )
     assert b is not None
     assert [(c.payer, c.payee, c.amount_cents) for c in b.cash_legs] == [("a", "b", 2000)]
     a, bb = sorted(b.fairness, key=lambda f: f.user)
@@ -53,13 +55,13 @@ def test_uneven_swap_adds_the_smallest_throw_in():
 
 def test_cash_ceiling_too_low_drops_the_cycle():
     edges = [e("a", "b", "bat", 20000, ceiling=1000), e("b", "a", "set", 15000)]
-    assert balance(edges, 0.15, 1000) is None
+    assert balance([[x] for x in edges], 0.15, 1000) is None
 
 
 def test_only_the_person_coming_out_ahead_pays():
     # b would gladly pay but is behind; only a, who is ahead, can close the gap.
     edges = [e("a", "b", "bat", 20000), e("b", "a", "set", 15000, ceiling=100_000)]
-    assert balance(edges, 0.15, 1000) is None
+    assert balance([[x] for x in edges], 0.15, 1000) is None
 
 
 def test_three_person_loop_settles_with_transfers():
@@ -69,7 +71,7 @@ def test_three_person_loop_settles_with_transfers():
         e("b", "c", "c1", 10000),
         e("c", "a", "a1", 10000),
     ]
-    b = balance(edges, 0.15, 1000)
+    b = balance([[x] for x in edges], 0.15, 1000)
     assert b is not None
     assert sum(f.cash_in_cents - f.cash_out_cents for f in b.fairness) == 0
     for f in b.fairness:
