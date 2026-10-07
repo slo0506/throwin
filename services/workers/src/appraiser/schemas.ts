@@ -1,3 +1,4 @@
+import { ProhibitedReason } from "@throwin/shared";
 import { z } from "zod";
 
 /** A box in normalized frame coordinates: [x0, y0, x1, y1], each 0 to 1. */
@@ -40,6 +41,14 @@ export const Detection = z.object({
       }),
     )
     .max(20),
+  /**
+   * Things seen that Throw-In can't trade, by reason only: no labels, so a person or a
+   * private thing is never described. Optional in code; always requested from the model.
+   */
+  not_tradeable: z
+    .array(z.object({ reason: ProhibitedReason }))
+    .transform((r) => r.slice(0, 20))
+    .optional(),
 });
 export type Detection = z.infer<typeof Detection>;
 export type DetectedObject = Detection["objects"][number];
@@ -47,6 +56,8 @@ export type DetectedObject = Detection["objects"][number];
 /** Identification and grading (PRD "Appraisal output", minus value). */
 export const Identification = z.object({
   is_tradeable_item: z.boolean(),
+  /** Set when the item is something Throw-In can't trade. Optional in code (stored Items have none). */
+  prohibited_reason: ProhibitedReason.nullable().optional(),
   title: text(120).pipe(z.string().min(1)),
   category: text(60),
   brand: optionalText(60),
@@ -161,8 +172,18 @@ export const detectionJsonSchema = strict({
         required: ["label", "category", "appearances"],
       },
     },
+    not_tradeable: {
+      type: "array",
+      description:
+        "1 entry per thing you saw but left out because Throw-In can't trade it. Reason only, no label.",
+      items: {
+        type: "object",
+        properties: { reason: { type: "string", enum: ProhibitedReason.options } },
+        required: ["reason"],
+      },
+    },
   },
-  required: ["objects"],
+  required: ["objects", "not_tradeable"],
 } as const);
 
 export const identificationJsonSchema = strict({
@@ -171,8 +192,13 @@ export const identificationJsonSchema = strict({
     is_tradeable_item: {
       type: "boolean",
       description:
-        "False for furniture, fixtures, people, pets, medications, supplements, medical devices, personal hygiene items, documents, IDs, bank or credit cards, or anything not a tradeable possession",
+        "False for furniture, fixtures, people, pets, medications, supplements, medical devices, personal hygiene items, documents, IDs, bank or credit cards, anything Throw-In can't trade, or anything not a tradeable possession",
     },
+    prohibited_reason: nullable({
+      type: "string",
+      enum: ProhibitedReason.options,
+      description: "Set only when the item is something Throw-In can't trade; null otherwise",
+    }),
     title: {
       type: "string",
       description:
@@ -230,6 +256,7 @@ export const identificationJsonSchema = strict({
   },
   required: [
     "is_tradeable_item",
+    "prohibited_reason",
     "title",
     "category",
     "brand",

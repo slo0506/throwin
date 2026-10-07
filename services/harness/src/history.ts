@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { GmComponentKind } from "@throwin/shared";
+import { GmComponentKind, ProhibitedReason } from "@throwin/shared";
 import { z } from "zod";
 import type { StoredMessage } from "./data.js";
 
@@ -24,6 +24,8 @@ export const ResolvedTargetData = z.object({
   alternatives: z.array(z.object({ name: z.string(), detail: z.string() })),
   /** A reference product photo from a cited page (product-image.ts). Older rows have none. */
   image_url: z.string().nullable().default(null),
+  /** Set when the want is something Throw-In can't trade. Older rows have none. */
+  prohibited_reason: ProhibitedReason.nullish(),
 });
 export type ResolvedTargetData = z.infer<typeof ResolvedTargetData>;
 

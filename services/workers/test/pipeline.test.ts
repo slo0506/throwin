@@ -119,6 +119,99 @@ describe("appraiseCapture", () => {
   });
 });
 
+describe("things Throw-In can't trade", () => {
+  it("answers a photo of a pet plainly, without a close-up read", async () => {
+    const store = await setup();
+    const vision = fakeVision({ objects: [], not_tradeable: [{ reason: "live_animal" }] }, []);
+    const saved = await appraiseCapture(CAPTURE, {
+      store,
+      vision,
+      embedder,
+      logger: silentLogger,
+    });
+    expect(saved).toBe(0);
+    expect(vision.identifyCalls).toBe(0);
+    expect(store.finished?.progress.detail).toBe(
+      "Pets can't be traded. Snap the things you'd trade.",
+    );
+  });
+
+  it("drops a weapon caught by the backstop or flagged on the close-up, and says so", async () => {
+    const store = await setup();
+    const vision = fakeVision(
+      {
+        objects: [
+          {
+            label: "handgun",
+            category: "other",
+            appearances: [{ frame: 0, box: [0, 0, 0.3, 0.3] }],
+          },
+          {
+            label: "long box",
+            category: "other",
+            appearances: [{ frame: 0, box: [0.4, 0.4, 0.6, 0.6] }],
+          },
+          {
+            label: "game",
+            category: "video_games",
+            appearances: [{ frame: 1, box: [0.6, 0.6, 0.9, 0.9] }],
+          },
+        ],
+        // A child walked through the frame: never mentioned when Items landed.
+        not_tradeable: [{ reason: "person" }],
+      },
+      [
+        identification({
+          is_tradeable_item: false,
+          prohibited_reason: "weapon",
+          title: "Can't be traded",
+        }),
+        identification({ title: "Mario Kart 8" }),
+      ],
+    );
+    const saved = await appraiseCapture(CAPTURE, {
+      store,
+      vision,
+      embedder,
+      logger: silentLogger,
+    });
+    expect(saved).toBe(1);
+    // The handgun never got a close-up read; the box did, and was flagged.
+    expect(vision.identifyCalls).toBe(2);
+    expect(store.items.map((i) => i.title)).toEqual(["Mario Kart 8"]);
+    expect(store.finished?.progress.detail).toBe(
+      "Added 1 item to your Shelf. Left out 2 things Throw-In can't trade",
+    );
+  });
+
+  it("says what can't be traded when that's all there was", async () => {
+    const store = await setup();
+    const vision = fakeVision(
+      {
+        objects: [
+          {
+            label: "bottle",
+            category: "other",
+            appearances: [{ frame: 0, box: [0.1, 0.1, 0.3, 0.5] }],
+          },
+        ],
+      },
+      [
+        identification({
+          is_tradeable_item: false,
+          prohibited_reason: "alcohol",
+          title: "Can't be traded",
+        }),
+      ],
+    );
+    await appraiseCapture(CAPTURE, { store, vision, embedder, logger: silentLogger });
+    expect(store.items).toHaveLength(0);
+    expect(store.finished?.progress.detail).toBe(
+      "Throw-In can't trade alcohol. Snap something else.",
+    );
+  });
+});
+
 describe("progressive Items", () => {
   const threeThings: Detection = {
     objects: [0, 1, 2].map((n) => ({

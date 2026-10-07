@@ -163,6 +163,22 @@ describe("reappraiseItem", () => {
     expect(item.appraising).toBe(false);
   });
 
+  it("takes the Item off the Shelf when new photos show it can't be traded", async () => {
+    const { store, itemId } = await itemWithNewPhotos();
+    const vision = fakeVision({ objects: [] }, []);
+    vision.reidentifyImpl = async (previous) => ({
+      ...previous,
+      title: "Can't be traded",
+      is_tradeable_item: false,
+      prohibited_reason: "weapon",
+    });
+    expect(
+      await reappraiseItem(itemId, USER, { store, vision, embedder, logger: silentLogger }),
+    ).toBe("skipped");
+    expect(store.removed).toEqual([itemId]);
+    expect(store.item(itemId).appraising).toBe(false);
+  });
+
   it("skips Items that are not appraising or not the user's", async () => {
     const { store, itemId } = await itemWithNewPhotos();
     const vision = fakeVision({ objects: [] }, []);

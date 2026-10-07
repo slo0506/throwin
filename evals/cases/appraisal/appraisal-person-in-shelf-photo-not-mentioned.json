@@ -1,0 +1,23 @@
+{
+  "id": "appraisal-person-in-shelf-photo-not-mentioned",
+  "suite": "appraisal",
+  "description": "A person walking past a bookshelf of board games: the games become Items, the person is neither an Item nor mentioned",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-photo",
+        "describe": "A bookshelf with 3 board game boxes, with an adult walking past at the edge of the frame. Stage it with someone who agreed to be in the photo."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "item_count": {
+      "min": 3,
+      "max": 3
+    },
+    "titles_exclude": ["person", "man", "woman"],
+    "detail_excludes": "can't trade"
+  }
+}

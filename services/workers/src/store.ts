@@ -378,6 +378,16 @@ export class SupabaseAppraiserStore implements AppraiserStore {
     if (error) fail("setAppraising", error);
   }
 
+  async removeProhibited(itemId: string): Promise<void> {
+    const { error } = await this.db
+      .from("items")
+      .update({ status: "removed" })
+      .eq("id", itemId)
+      .is("reserved_by_deal_id", null);
+    if (error) fail("removeProhibited", error);
+    await this.setAppraising(itemId, false);
+  }
+
   protected async appendAppraisal(
     itemId: string,
     identification: Identification,

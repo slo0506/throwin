@@ -1,0 +1,24 @@
+{
+  "id": "appraisal-pet-photo-is-not-an-item",
+  "suite": "appraisal",
+  "description": "A photo of a dog on a couch makes no Item, and the capture says pets can't be traded instead of 'try closer'",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-photo",
+        "describe": "A real dog lying on a sofa, filling most of the frame. Nothing else of note in the shot. Use a willing pet, never a stranger's."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "item_count": {
+      "min": 0,
+      "max": 0
+    },
+    "detail_includes": "can't be traded",
+    "detail_excludes": "Try closer"
+  },
+  "twin": "appraisal-plush-dog-is-an-item"
+}
