@@ -116,6 +116,9 @@ export class MemoryStore implements AppraiserStore {
   async setAppraising(itemId: string, appraising: boolean) {
     this.#find(itemId).appraising = appraising;
   }
+  async removeProhibited(itemId: string) {
+    this.items.splice(this.items.indexOf(this.#find(itemId)), 1);
+  }
 
   #find(itemId: string) {
     const stored = this.items.find((i) => i.id === itemId);

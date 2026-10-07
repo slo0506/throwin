@@ -150,6 +150,11 @@ export class MemoryStore implements AppraiserStore {
   async setAppraising(itemId: string, appraising: boolean) {
     this.item(itemId).appraising = appraising;
   }
+  removed: string[] = [];
+  async removeProhibited(itemId: string) {
+    this.removed.push(itemId);
+    this.item(itemId).appraising = false;
+  }
 
   /** Adds follow-up photos the way submit_item_media does: 1 batch, 1 timestamp. */
   addPhotos(itemId: string, paths: string[], at = new Date()) {

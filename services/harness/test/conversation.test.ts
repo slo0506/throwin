@@ -488,6 +488,31 @@ describe("offers", () => {
     expect(ask).toMatchObject({ status: "offering", offerItemIds: [], cashCeilingCents: 0 });
   });
 
+  it("never turns a want Throw-In can't trade into an Ask", async () => {
+    const world = await makeWorld();
+    world.resolver.target = {
+      ...world.resolver.target,
+      name: "Golden retriever puppy",
+      category: "pets",
+      anchor: null,
+      prohibited_reason: "live_animal",
+    };
+    world.model.push(
+      { tools: [{ name: "resolve_target", input: { text: "a golden retriever puppy" } }] },
+      { text: "Throw-In can't trade live animals." },
+    );
+    await turn(world, { text: "I want a golden retriever puppy" });
+    const result = resultText(
+      lastToolResults(
+        world.model.requests[1] as Anthropic.MessageCreateParamsNonStreaming,
+      )[0] as Anthropic.ToolResultBlockParam,
+    );
+    expect(result).toContain("Throw-In can't trade live animals.");
+    // No target_id is issued, so there is nothing for upsert_ask to use.
+    expect(result).not.toMatch(/target_id/);
+    expect(await world.data.listActiveAsks(ALICE)).toEqual([]);
+  });
+
   it("moves a drafting Ask to offering when upsert_ask adds a target", async () => {
     const world = await makeWorld();
     const ask = await world.data.createAsk(ALICE, {

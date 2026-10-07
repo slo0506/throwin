@@ -1,4 +1,4 @@
-import { AutonomyLevel, fenceUntrusted } from "@throwin/shared";
+import { AutonomyLevel, cantTrade, fenceUntrusted } from "@throwin/shared";
 import { z } from "zod";
 import type { AskPatch, AskRecord, AskTarget } from "../data.js";
 import { askTitle, clean, offerValue, statusLine, usd, usdRange } from "../format.js";
@@ -96,6 +96,12 @@ export const resolveTarget = defineTool({
       { text: input.text, url: input.url, image: image ?? undefined },
       (run) => ctx.recordModelRun("resolve_target", run),
     );
+    if (target.prohibited_reason) {
+      // No target_id: there is nothing to make an Ask from.
+      return {
+        content: `${cantTrade(target.prohibited_reason)} Tell the user that in 1 plain sentence, without lecturing. Don't make an Ask for it and don't suggest a workaround.`,
+      };
+    }
     const targetId = ctx.newId();
     return { content: targetText(targetId, target), target: { target_id: targetId, data: target } };
   },
@@ -136,6 +142,8 @@ export const upsertAsk = defineTool({
       target = ctx.session.targets.get(input.target_id);
       if (!target)
         throw new ToolError("unknown_id", "That target_id is not a resolve_target result.");
+      if (target.prohibited_reason)
+        throw new ToolError("prohibited", cantTrade(target.prohibited_reason));
     }
     const deadline = input.deadline ? new Date(`${input.deadline}T23:59:59Z`) : undefined;
     if (deadline && deadline.getTime() <= ctx.now().getTime()) {

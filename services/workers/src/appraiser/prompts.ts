@@ -1,7 +1,7 @@
 // Appraiser prompts. Versioned with the code; every change ships with eval cases in
 // evals/cases/appraisal (see agents/appraiser/README.md).
 
-export const PROMPT_VERSION = "appraiser-2026-10-03g";
+export const PROMPT_VERSION = "appraiser-2026-10-07a";
 
 /**
  * Things the Appraiser must never report, and never read out loud. Shared by detection and
@@ -15,6 +15,21 @@ const PRIVATE_AND_EXCLUDED = `Never report, and never read or repeat any text on
 - Documents, mail, receipts, notes, IDs, passports, licenses, bank or credit cards, keys, and anything showing a name, address, account or other personal information.
 - Room fixtures and household controls: ceiling and wall lights, light switches, outlets, thermostats, smoke detectors, and remotes for air conditioners, fans, TVs or lights.
 Leave these out entirely, even when they sit right next to something tradeable.`;
+
+/**
+ * What Throw-In can't trade at all, with the reason codes from @throwin/shared. Toys and
+ * props made as toys stay tradeable; the line is whether it's the real thing.
+ */
+const CANT_TRADE = `Throw-In can't trade these, so they are never items. Each has a reason code:
+- person: people, including babies and children, and people in photos on a screen.
+- live_animal: pets and any living animal. Plush, figurines, pet beds and pet gear are fine.
+- weapon: guns, gun parts, ammunition, knives made as weapons, stun guns, brass knuckles. Toy blasters, water pistols, Nerf and clearly toy props are fine.
+- drugs: drugs and anything for using them, including cannabis.
+- alcohol: bottles with alcohol in them. Empty collectible bottles, glasses and bar tools are fine.
+- tobacco: cigarettes, cigars, vapes, e-cigarettes and nicotine products.
+- adult: sexual or adult content and toys.
+- hazardous: fireworks, fuel, chemicals, other hazardous materials.
+- counterfeit: replicas or fakes presented as the real brand.`;
 
 export const DETECT_SYSTEM = `You find tradeable possessions in photos or video frames for a trading app.
 
@@ -30,7 +45,10 @@ Report everything someone might trade, small things included:
 - Sneakers, shoes, clothing, bags, hats, and accessories such as watches, sunglasses, water bottles, phone and tablet cases.
 - Books, board games (sealed or not), trading cards, and gear for sports, music and the outdoors.
 - Lamps (table and floor lamps), decor, plants in decorative pots, vases, frames, and other things that move with you.
-Skip only large furniture and built-ins (beds, sofas, tables, desks, dressers, shelving units, cabinets, counters), walls, floors, doors, windows, people, pets, food, loose cables, and anything smaller than about 2% of the frame. At most 20 objects.
+Skip only large furniture and built-ins (beds, sofas, tables, desks, dressers, shelving units, cabinets, counters), walls, floors, doors, windows, food, loose cables, and anything smaller than about 2% of the frame. At most 20 objects.
+
+${CANT_TRADE}
+Never report one of these as an object. Instead add 1 entry to not_tradeable with its reason code and nothing else: no label, no description.
 
 ${PRIVATE_AND_EXCLUDED}
 
@@ -51,6 +69,9 @@ Rules:
 - condition_confidence: 0.8 or more when the photos show the sides that matter for this kind of item clearly. 0.7 to 0.8 when a less important side is hidden. Below 0.7 only when a side that drives value is hidden or blurry (sneaker soles, a screen, a card's surface).
 - Below 0.7 on either, set follow_up to the single photo that would settle it, under 60 characters, phrased as a request: "Photo of the size tag", "Photo of the soles", "Photo inside the box". It is a hint for later questions: the item still goes on the Shelf, and the owner is asked the cheapest useful question first, a photo last.
 - Set is_tradeable_item false for anything that is not a possession people trade.
+
+${CANT_TRADE}
+- If the item is one of these, set prohibited_reason to its code, is_tradeable_item false, and a generic title such as "Can't be traded". Otherwise prohibited_reason is null.
 - box_in_crop: for each close-up where the item you named is visible, a tight box around all of it and nothing else: the whole pair for shoes, the whole set with its box for LEGO, the bottle with its cap, the lamp from shade to base. Coordinates are normalized 0 to 1 within that close-up. Leave out close-ups where you can't see it.
 
 Privacy:

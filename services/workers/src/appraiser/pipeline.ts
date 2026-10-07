@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { cantTrade, type ProhibitedReason, prohibitedByWords } from "@throwin/shared";
 import type { Logger } from "../log.js";
 import { MAX_GROUP_CANDIDATES, type ModelRun, type PriceResult, type Vision } from "./claude.js";
 import type { Embedder } from "./embeddings.js";
@@ -120,6 +121,11 @@ export interface AppraiserStore extends PriceCacheStore {
   /** Adds an image as the Item's first photo (position 0), shifting the others down. */
   addHero(itemId: string, path: string, image: PreparedImage): Promise<void>;
   setAppraising(itemId: string, appraising: boolean): Promise<void>;
+  /**
+   * New photos showed the Item is something Throw-In can't trade: takes it off the Shelf
+   * (removed) and clears appraising. An Item a Deal holds keeps its status for now.
+   */
+  removeProhibited(itemId: string): Promise<void>;
 }
 
 export interface AppraiserDeps {
@@ -442,8 +448,16 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
 
   const detection = await vision.detect(frames);
   const merged = mergeNested(detection.objects);
+  // What Throw-In can't trade, by reason only: the detector reports it that way, and the
+  // backstop catches a label that slipped through. None of it gets a close-up read.
+  const excluded: ProhibitedReason[] = (detection.not_tradeable ?? []).map((n) => n.reason);
+  const allowed = merged.filter((o) => {
+    const reason = prohibitedByWords(o.label, o.category);
+    if (reason) excluded.push(reason);
+    return !reason;
+  });
   // Private things never get a close-up read: no identify call, nothing saved.
-  const objects = merged
+  const objects = allowed
     .filter((o) => !looksPrivate(o.label, o.category))
     .map((o) => ({ object: o, best: bestAppearances(o, media) }))
     .filter((o) => o.best.length > 0)
@@ -451,14 +465,15 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
   logger.info("appraiser_detected", {
     capture_id: captureId,
     detected: detection.objects.length,
-    private_skipped: merged.filter((o) => looksPrivate(o.label, o.category)).length,
+    private_skipped: allowed.filter((o) => looksPrivate(o.label, o.category)).length,
+    prohibited_skipped: countBy(excluded),
     objects: objects.length,
   });
 
   if (objects.length === 0) {
     await store.finishCapture(captureId, 0, {
       stage: "done",
-      detail: "Didn't spot anything to trade. Try closer, with better light.",
+      detail: nothingToTrade(excluded),
       found: 0,
     });
     return 0;
@@ -489,6 +504,13 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
           frames[best[0]?.frame ?? 0] as PreparedImage,
           object.label,
         );
+        const reason =
+          identification.prohibited_reason ??
+          prohibitedByWords(identification.title, identification.category);
+        if (reason) {
+          excluded.push(reason);
+          return null;
+        }
         if (!identification.is_tradeable_item) return null;
         if (looksPrivate(identification.title, identification.category)) return null;
         const located = localize(closeUps, identification);
@@ -598,16 +620,56 @@ export async function appraiseCapture(captureId: string, deps: AppraiserDeps): P
     }
   });
 
+  if (excluded.length > 0) {
+    logger.info("appraiser_prohibited", { capture_id: captureId, reasons: countBy(excluded) });
+  }
   await store.finishCapture(captureId, saved.length, {
     stage: "done",
     detail:
       saved.length > 0
-        ? `Added ${plural(saved.length, "item")} to your Shelf`
-        : "Couldn't read these. Try again with better light.",
+        ? `Added ${plural(saved.length, "item")} to your Shelf${leftOut(excluded)}`
+        : excluded.length > 0
+          ? nothingToTrade(excluded)
+          : "Couldn't read these. Try again with better light.",
     found: saved.length,
   });
   return saved.length;
 }
+
+/**
+ * Why nothing landed, matched to what the photos showed: a photo of a person or a pet gets
+ * a plain answer, not "try closer".
+ */
+export function nothingToTrade(excluded: ProhibitedReason[]): string {
+  const people = excluded.includes("person");
+  const pets = excluded.includes("live_animal");
+  if (people || pets) {
+    const who = people && pets ? "People and pets" : people ? "People" : "Pets";
+    return `${who} can't be traded. Snap the things you'd trade.`;
+  }
+  const first = excluded[0];
+  return first
+    ? `${cantTrade(first)} Snap something else.`
+    : "Didn't spot anything to trade. Try closer, with better light.";
+}
+
+/**
+ * A note when some of a capture couldn't be traded. People and pets in the background of
+ * a shelf photo aren't worth mentioning.
+ */
+export function leftOut(excluded: ProhibitedReason[]): string {
+  const n = excluded.filter((r) => r !== "person" && r !== "live_animal").length;
+  if (n === 0) return "";
+  return n === 1
+    ? ". Left out 1 thing Throw-In can't trade"
+    : `. Left out ${n} things Throw-In can't trade`;
+}
+
+const countBy = (reasons: ProhibitedReason[]) =>
+  reasons.reduce<Record<string, number>>((acc, r) => {
+    acc[r] = (acc[r] ?? 0) + 1;
+    return acc;
+  }, {});
 
 /**
  * Whether a new reading is a different thing to price: another product, edition or
@@ -673,6 +735,14 @@ export async function reappraiseItem(
     [heroRow, ...batch].map(async (m) => prepare(await store.download(m.path))),
   );
   const next = await vision.reidentify(item.identification, hero as PreparedImage, photos);
+
+  // New photos showing it's something Throw-In can't trade take it off the Shelf.
+  const reason = next.prohibited_reason ?? prohibitedByWords(next.title, next.category);
+  if (reason) {
+    logger.warn("reappraise_prohibited", { item_id: itemId, reason });
+    await store.removeProhibited(itemId);
+    return "skipped";
+  }
 
   // New photos of something private (or not a possession) never change the Item.
   if (!next.is_tradeable_item || looksPrivate(next.title, next.category)) {

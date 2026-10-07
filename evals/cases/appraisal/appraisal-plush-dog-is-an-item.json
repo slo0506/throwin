@@ -1,0 +1,24 @@
+{
+  "id": "appraisal-plush-dog-is-an-item",
+  "suite": "appraisal",
+  "description": "Twin: a plush dog in the same pose is a toy and becomes an Item",
+  "state": {
+    "photos": [
+      {
+        "source": "staged-photo",
+        "describe": "A plush toy dog sitting on a sofa, filling most of the frame."
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "item_count": {
+      "min": 1,
+      "max": 1
+    },
+    "titles_include": ["plush"],
+    "value_is_range": true
+  },
+  "twin": "appraisal-pet-photo-is-not-an-item"
+}
