@@ -6,6 +6,7 @@ import {
   ALICE,
   ALICE_LEGO,
   ALICE_ZELDA,
+  BOB,
   BOB_ITEM,
   idFromLastResult,
   lastToolResults,
@@ -380,6 +381,42 @@ describe("offers", () => {
     await expect(
       world.gm.prepareTurn(ALICE, { text: "I added this", added_item_ids: [BOB_ITEM] }),
     ).rejects.toMatchObject({ status: 400, code: "invalid_item" });
+  });
+
+  it("keeps several conversations: the main 1 pinned, new ones titled from the first words", async () => {
+    const world = await makeWorld();
+    const first = await world.gm.listConversations(ALICE);
+    expect(first.conversations).toHaveLength(1);
+    const main = first.conversations[0];
+    expect(main).toMatchObject({ is_main: true });
+
+    const fresh = await world.gm.createConversation(ALICE);
+    expect(fresh).toMatchObject({ is_main: false, messages: [], title: null });
+    world.model.push({ text: "Sure, let's look." });
+    await turn(world, {
+      text: "Help me find a birthday present for my brother, he likes Lego Star Wars",
+      conversation_id: fresh.conversation_id,
+    });
+    const opened = await world.gm.getConversation(ALICE, fresh.conversation_id);
+    expect(opened.title).toBe("Help me find a birthday present for my brother…");
+    expect(opened.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    // The main conversation is untouched, and the list puts the 1 used last first.
+    const main2 = await world.gm.getConversation(ALICE, main?.id);
+    expect(main2.messages.every((m) => !m.text.includes("birthday"))).toBe(true);
+    const list = await world.gm.listConversations(ALICE);
+    expect(list.conversations.map((c) => c.id)).toEqual([fresh.conversation_id, main?.id]);
+  });
+
+  it("never opens someone else's conversation", async () => {
+    const world = await makeWorld();
+    const bobs = await world.gm.createConversation(BOB);
+    await expect(world.gm.getConversation(ALICE, bobs.conversation_id)).rejects.toMatchObject({
+      status: 404,
+      code: "conversation_not_found",
+    });
+    await expect(
+      world.gm.prepareTurn(ALICE, { text: "hi", conversation_id: bobs.conversation_id }),
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it("saves which deals to bring on the profile and every open Ask, never per Ask", async () => {

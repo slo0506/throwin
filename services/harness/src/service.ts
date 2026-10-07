@@ -5,6 +5,7 @@ import {
   fenceUntrusted,
   GmComponent,
   type GmConversation,
+  type GmConversationList,
   type GmMessage,
   type GmStreamEvent,
   type PostGmMessage,
@@ -85,6 +86,17 @@ export interface PreparedTurn {
 export const GM_FAILED_MESSAGE = "Something went wrong on my side. Try that again in a moment.";
 const EMPTY_REPLY = "Sorry, I lost my train of thought there. Could you say that again?";
 const CLIENT_HISTORY_LIMIT = 200;
+const MAX_LISTED_CONVERSATIONS = 50;
+const TITLE_LENGTH = 48;
+
+/** A conversation's title: the user's first words in it, cut at a word near 48 characters. */
+export function conversationTitle(text: string): string {
+  const line = clean(text, 200).split("\n")[0] ?? "";
+  if (line.length <= TITLE_LENGTH) return line;
+  const cut = line.slice(0, TITLE_LENGTH);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > 20 ? cut.slice(0, space) : cut).replace(/[\s,.;:!?-]+$/, "")}…`;
+}
 
 /**
  * The GM, wired to its data, model and prompts. Stateless between turns: every turn
@@ -131,8 +143,18 @@ export class GmService {
     return user;
   }
 
-  /** The user's current conversation, created (with the intake greeting) on first call. */
-  async #conversation(user: GmUser): Promise<Conversation> {
+  /**
+   * The user's conversation by ID, or else the 1 they used last. Their very first is made
+   * on first call, with the intake greeting.
+   */
+  async #conversation(user: GmUser, conversationId?: string): Promise<Conversation> {
+    if (conversationId) {
+      const found = await this.#data.getConversation(user.id, conversationId);
+      if (!found) {
+        throw new GmInputError(404, "conversation_not_found", "That conversation doesn't exist");
+      }
+      return found;
+    }
     const existing = await this.#data.latestConversation(user.id);
     if (existing) return existing;
     const conversation = await this.#data.createConversation(user.id);
@@ -155,12 +177,13 @@ export class GmService {
     return conversation;
   }
 
-  async getConversation(userId: string): Promise<GmConversation> {
+  async getConversation(userId: string, conversationId?: string): Promise<GmConversation> {
     const user = await this.#user(userId);
-    const conversation = await this.#conversation(user);
-    const [rows, finished] = await Promise.all([
+    const conversation = await this.#conversation(user, conversationId);
+    const [rows, finished, first] = await Promise.all([
       this.#data.listMessages(userId, conversation.id, CLIENT_HISTORY_LIMIT),
-      this.#data.intakeFinished(userId, conversation.id),
+      this.#data.intakeFinished(userId),
+      this.#data.firstConversation(userId),
     ]);
     const picks = choicesMade(rows);
     const messages: GmMessage[] = [];
@@ -182,6 +205,45 @@ export class GmService {
       conversation_id: conversation.id,
       mode: finished ? "chat" : "intake",
       messages,
+      title: conversation.title,
+      is_main: first?.id === conversation.id,
+    };
+  }
+
+  /** The user's conversations, most recently used first. Makes the main 1 if needed. */
+  async listConversations(userId: string): Promise<GmConversationList> {
+    const user = await this.#user(userId);
+    await this.#conversation(user);
+    const [list, first] = await Promise.all([
+      this.#data.listConversations(userId, MAX_LISTED_CONVERSATIONS),
+      this.#data.firstConversation(userId),
+    ]);
+    return {
+      conversations: list.map((c) => ({
+        id: c.id,
+        title: c.title,
+        is_main: c.id === first?.id,
+        updated_at: c.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  /**
+   * A new, empty conversation. Memory is the user's, not the conversation's, so the GM knows
+   * them the same in every 1, and the intake happens once per person, not per conversation.
+   */
+  async createConversation(userId: string): Promise<GmConversation> {
+    const user = await this.#user(userId);
+    // The main conversation first, so a new 1 is never mistaken for it.
+    await this.#conversation(user);
+    const conversation = await this.#data.createConversation(userId);
+    const finished = await this.#data.intakeFinished(userId);
+    return {
+      conversation_id: conversation.id,
+      mode: finished ? "chat" : "intake",
+      messages: [],
+      title: null,
+      is_main: false,
     };
   }
 
@@ -223,11 +285,11 @@ export class GmService {
    */
   async prepareTurn(userId: string, body: PostGmMessage): Promise<PreparedTurn> {
     const user = await this.#user(userId);
-    const conversation = await this.#conversation(user);
+    const conversation = await this.#conversation(user, body.conversation_id);
     const rows = trimToTurnStart(
       await this.#data.listMessages(userId, conversation.id, this.#historyLimit),
     );
-    const finished = await this.#data.intakeFinished(userId, conversation.id);
+    const finished = await this.#data.intakeFinished(userId);
     const session = new GmSession(userId, conversation.id, finished ? "chat" : "intake");
     session.absorb(rows);
 
@@ -250,6 +312,9 @@ export class GmService {
         createdAt: tick(),
       },
     ]);
+    if (!conversation.title && body.text) {
+      await this.#data.setConversationTitle(userId, conversation.id, conversationTitle(body.text));
+    }
 
     return {
       conversationId: conversation.id,

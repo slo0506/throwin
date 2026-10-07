@@ -26,6 +26,8 @@ struct GMChatView: View {
     @State private var position = ScrollPosition(edge: .bottom)
     /// Following the newest message. The user's own scrolling turns it off and back on.
     @State private var followsLatest = true
+    /// The conversation list, sliding in from the leading edge.
+    @State private var showsChats = false
     @FocusState private var composerFocused: Bool
 
     private var chat: GMChatModel { model.gm }
@@ -39,6 +41,15 @@ struct GMChatView: View {
                 composer
             }
             .background(Palette.canvas)
+            .overlay {
+                if showsChats {
+                    GMConversationDrawer(
+                        isPresented: $showsChats,
+                        onOpen: { id in Task { await chat.open(id) } },
+                        onNew: { Task { await chat.startNew() } }
+                    )
+                }
+            }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $openAsk) { route in
                 AskDetailView(askID: route.id, fallback: route.ask)
@@ -69,11 +80,28 @@ struct GMChatView: View {
 
     private var header: some View {
         HStack(spacing: Space.sm) {
+            if !isIntake, model.isLive {
+                Button {
+                    composerFocused = false
+                    Task { await chat.loadConversations() }
+                    withAnimation(Motion.soft) { showsChats = true }
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Your chats")
+            }
             GMOrbView(mood: orbMood, size: 44)
             VStack(alignment: .leading, spacing: 1) {
-                Text(isIntake ? "Meet your GM" : "Your GM")
+                Text(headerTitle)
                     .font(Typo.headline)
                     .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
                 Text(statusText)
                     .font(Typo.footnote)
                     .foregroundStyle(Palette.inkSecondary)
@@ -87,6 +115,20 @@ struct GMChatView: View {
                     .foregroundStyle(Palette.inkSecondary)
                     .buttonStyle(.plain)
             } else {
+                if model.isLive {
+                    Button {
+                        Task { await chat.startNew() }
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 40, height: 40)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .disabled(chat.isBusy || (chat.rows.isEmpty && !chat.isMain))
+                    .accessibilityLabel("New chat")
+                }
                 Button {
                     dismiss()
                 } label: {
@@ -103,6 +145,12 @@ struct GMChatView: View {
         .padding(.horizontal, Space.gutter)
         .padding(.top, isIntake ? Space.sm : Space.xl)
         .padding(.bottom, Space.sm)
+    }
+
+    private var headerTitle: String {
+        if isIntake { return "Meet your GM" }
+        if chat.isMain { return "Your GM" }
+        return chat.title ?? "New chat"
     }
 
     private var orbMood: OrbMood {

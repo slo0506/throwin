@@ -8,7 +8,7 @@ import {
   MemoryGmData,
   type ModelClient,
 } from "@throwin/harness";
-import { GmConversation, PostGmMessageResponse } from "@throwin/shared";
+import { GmConversation, GmConversationList, PostGmMessageResponse } from "@throwin/shared";
 import { describe, expect, it } from "vitest";
 import { GmStreamHub } from "../src/gm/streams.js";
 import { ALICE, BOB, errorCode, makeHarness } from "./helpers.js";
@@ -213,6 +213,30 @@ describe("GM routes", () => {
     expect(b.headers.get("Idempotent-Replayed")).toBe("true");
     expect(await b.json()).toEqual(await a.json());
     expect(data.messages.filter((m) => m.role === "user")).toHaveLength(1);
+  });
+
+  it("lists, creates and opens conversations, each the user's own", async () => {
+    const { request } = await setup();
+    const list = async (as = ALICE) =>
+      GmConversationList.parse(await (await request("/v1/gm/conversations", { as })).json())
+        .conversations;
+    const [main] = await list();
+    expect(main).toMatchObject({ is_main: true, title: null });
+
+    const created = await request("/v1/gm/conversations", { as: ALICE, method: "POST" });
+    expect(created.status).toBe(201);
+    const fresh = GmConversation.parse(await created.json());
+    expect(fresh).toMatchObject({ is_main: false, messages: [] });
+
+    const opened = GmConversation.parse(
+      await (await request(`/v1/gm/conversation?id=${main?.id}`, { as: ALICE })).json(),
+    );
+    expect(opened).toMatchObject({ conversation_id: main?.id, is_main: true });
+    expect((await list()).map((c) => c.id)).toContain(fresh.conversation_id);
+
+    const theirs = await request(`/v1/gm/conversation?id=${fresh.conversation_id}`, { as: BOB });
+    expect(theirs.status).toBe(404);
+    expect(await errorCode(theirs)).toBe("conversation_not_found");
   });
 
   it("answers 503 when the GM is not configured", async () => {

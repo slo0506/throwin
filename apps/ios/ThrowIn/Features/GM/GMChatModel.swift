@@ -43,6 +43,14 @@ final class GMChatModel {
     /// Bumped by everything the user does in the thread (send, a card answer, a retry), so the
     /// view can bring them to where the reply will land.
     private(set) var userActions = 0
+    /// The conversation on screen. Nil until loaded: the server opens the 1 used last.
+    private(set) var conversationID: String?
+    /// Its title (the user's first words in it). Nil for a new 1.
+    private(set) var title: String?
+    /// The first conversation, where the intake happened: pinned as "Your GM".
+    private(set) var isMain = true
+    /// Every conversation, most recently used first, for the list.
+    private(set) var conversations: [GMConversationSummary] = []
 
     /// The reference date for the bloom. History is stamped far before it, so it reads settled.
     let epoch = Date()
@@ -70,6 +78,17 @@ final class GMChatModel {
     }
 
     func reset() {
+        clearThread()
+        conversationID = nil
+        title = nil
+        isMain = true
+        conversations = []
+        demo = DemoGM()
+        lastDemoInput = nil
+    }
+
+    /// Empties the thread on screen, ready to load another conversation.
+    private func clearThread() {
         turnTask?.cancel()
         turnTask = nil
         rows = []
@@ -83,9 +102,36 @@ final class GMChatModel {
         failed = nil
         screen = nil
         wantsComposerFocus = false
-        demo = DemoGM()
-        lastDemoInput = nil
         openTextRowID = nil
+    }
+
+    // MARK: Conversations
+
+    func loadConversations() async {
+        guard let api = app?.api, let list = try? await api.gmConversations() else { return }
+        withAnimation(Motion.snappy) { conversations = list }
+    }
+
+    /// Opens another conversation. Waits for a reply that's still streaming to finish first.
+    func open(_ id: String) async {
+        guard id != conversationID, !isBusy, app?.api != nil else { return }
+        clearThread()
+        conversationID = id
+        await load(intake: false)
+    }
+
+    /// Starts an empty conversation. The GM knows you the same in every 1.
+    func startNew() async {
+        guard !isBusy, let api = app?.api else { return }
+        do {
+            let fresh = try await api.createGMConversation()
+            clearThread()
+            apply(fresh)
+            hasLoaded = true
+            await loadConversations()
+        } catch {
+            app?.shelfError = "Couldn't start a new chat. Try again."
+        }
     }
 
     // MARK: Loading
@@ -111,7 +157,7 @@ final class GMChatModel {
         loadFailed = false
         defer { isLoading = false }
         do {
-            let conversation = try await api.gmConversation()
+            let conversation = try await api.gmConversation(id: conversationID)
             apply(conversation)
             if rows.isEmpty, mode == .intake {
                 rows = [greeting()]
@@ -125,6 +171,9 @@ final class GMChatModel {
 
     private func apply(_ conversation: GMConversation) {
         mode = conversation.mode
+        conversationID = conversation.conversationId
+        title = conversation.title
+        isMain = conversation.isMain
         let rebuilt = Self.rows(from: conversation.messages)
         var answered = Self.answered(in: rebuilt)
         for (id, picked) in answers where answered[id] != nil {
@@ -261,6 +310,8 @@ final class GMChatModel {
     }
 
     private func start(_ request: GMSendRequest, demoInput: DemoGM.Input) {
+        var request = request
+        request.conversationId = conversationID
         failed = nil
         lastDemoInput = demoInput
         openTextRowID = nil
@@ -354,9 +405,11 @@ final class GMChatModel {
 
     private func finishLiveTurn(_ api: APIClient) async {
         settle()
-        if mode == .intake, let conversation = try? await api.gmConversation() {
+        if mode == .intake || title == nil, let conversation = try? await api.gmConversation(id: conversationID) {
             mode = conversation.mode
+            title = conversation.title
         }
+        await loadConversations()
         await app?.refreshAfterGMTurn()
     }
 
@@ -382,7 +435,7 @@ final class GMChatModel {
     /// The stream broke after the message was sent. The reply may still have finished on the
     /// server, so reload the thread before offering Try again.
     private func recover(_ request: GMSendRequest, api: APIClient, error: (any Error)?) async {
-        if let conversation = try? await api.gmConversation(),
+        if let conversation = try? await api.gmConversation(id: conversationID),
            conversation.messages.last?.role == .assistant {
             settle()
             apply(conversation)
