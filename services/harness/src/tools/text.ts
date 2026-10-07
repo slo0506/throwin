@@ -68,6 +68,7 @@ export function askText(
   }
   if (t?.constraints.length)
     lines.push(`  constraints: ${t.constraints.map((c) => clean(c, 80)).join("; ")}`);
+  if (a.maxItems > 1) lines.push(`  takes: up to ${a.maxItems} Items`);
   lines.push(
     `  offer: ${a.offerItemIds.length} Item${a.offerItemIds.length === 1 ? "" : "s"}${a.offerItemIds.length ? ` (${a.offerItemIds.join(", ")})` : ""}${offer ? `, worth ${usdRange(offer.low_cents, offer.high_cents)}` : ""}, cash up to ${usd(a.cashCeilingCents)}`,
   );

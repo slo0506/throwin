@@ -121,6 +121,8 @@ export const AskCardData = z.object({
     .object({ low_cents: z.number().int().nonnegative(), high_cents: z.number().int() })
     .nullable(),
   cash_ceiling_cents: z.number().int().min(0).max(100000),
+  /** Cards stored before bundles have no max_items. */
+  max_items: z.number().int().min(1).max(5).default(1),
   autonomy: AutonomyLevel,
   deadline: z.iso.datetime({ offset: true }).nullable(),
   created_at: z.iso.datetime({ offset: true }),

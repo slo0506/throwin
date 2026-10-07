@@ -2,11 +2,12 @@ import Foundation
 
 /// Whether an Ask's offer can pay for what it's after, in the GM's words.
 ///
-/// Every Deal swaps exactly 1 Item each way, plus cash, and each person has to come out
-/// within the matcher's tolerance: 15% of the larger Item or $10, whichever is more
-/// (docs/contracts/m3-matcher.md). So what counts is the best single Item in the offer plus
-/// the cash ceiling, never the sum of everything offered. Computed on device from mid values,
-/// so it answers instantly as you tap.
+/// Each person has to come out within the matcher's tolerance: 15% of the larger side or $10,
+/// whichever is more (docs/contracts/m3-matcher.md). Most Deals swap 1 Item each way plus
+/// cash; the matcher adds more of the offer only when the other side wants several, which
+/// nobody can count on. So what counts is the best single Item in the offer plus the cash
+/// ceiling, never the sum of everything offered. Computed on device from mid values, so it
+/// answers instantly as you tap.
 nonisolated struct OfferFit: Equatable, Sendable {
     enum Verdict: Equatable, Sendable {
         /// What the Ask is after has no price yet.
@@ -106,7 +107,7 @@ nonisolated struct OfferFit: Equatable, Sendable {
         case .pricing:
             return "I'm still pricing this. Pick what you'd give up in the meantime."
         case .empty:
-            return "Pick what you'd give up for it. Each trade is 1 thing for 1 thing, plus cash if it's uneven."
+            return "Pick what you'd give up for it. I'll offer 1 of them, plus cash if it's uneven, or more if they want several."
         case .fits:
             return "Your \(bestName) covers it on its own."
         case let .fitsWithCash(cents):
@@ -118,7 +119,7 @@ nonisolated struct OfferFit: Equatable, Sendable {
             if reachesHalf {
                 return "A bit short. Add about \(Money.dollars(cents)) more cash, or offer something closer to \(Money.range(low: target.lowCents, high: target.highCents))."
             }
-            return "Unlikely as is. Your \(bestName) is worth about \(value.label), and this goes for \(target.label). Each trade is 1 thing for 1 thing, plus cash."
+            return "Unlikely as is. Your \(bestName) is worth about \(value.label), and this goes for \(target.label). I can only add more of your things if they want several."
         }
     }
 

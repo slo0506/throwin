@@ -144,7 +144,7 @@ const NetworkRow = z.object({
 });
 
 const ASK_COLUMNS =
-  "id, user_id, raw_text, title, target, status, cash_ceiling_cents, deadline, autonomy, created_at, updated_at, offer_sets(item_id)";
+  "id, user_id, raw_text, title, target, status, cash_ceiling_cents, max_items, deadline, autonomy, created_at, updated_at, offer_sets(item_id)";
 
 const AskRow = z.object({
   id: z.string(),
@@ -154,6 +154,7 @@ const AskRow = z.object({
   target: z.unknown(),
   status: AskStatus,
   cash_ceiling_cents: z.number().int(),
+  max_items: z.number().int(),
   deadline: ts.nullable(),
   autonomy: AutonomyLevel,
   created_at: ts,
@@ -171,6 +172,7 @@ function toAsk(r: z.infer<typeof AskRow>): AskRecord {
     status: r.status,
     target: target.success ? target.data : null,
     cashCeilingCents: r.cash_ceiling_cents,
+    maxItems: r.max_items,
     deadline: r.deadline,
     autonomy: r.autonomy,
     offerItemIds: (r.offer_sets ?? []).map((o) => o.item_id),
@@ -455,6 +457,7 @@ export class SupabaseGmData implements GmData {
         raw_text: ask.rawText,
         target: ask.target ?? {},
         status: ask.status,
+        max_items: ask.maxItems ?? 1,
         autonomy: ask.autonomy,
         deadline: ask.deadline?.toISOString() ?? null,
         title: ask.title,
@@ -476,6 +479,7 @@ export class SupabaseGmData implements GmData {
       ...(patch.title !== undefined && { title: patch.title }),
       ...(patch.offerItemIds !== undefined && { offer_item_ids: patch.offerItemIds }),
       ...(patch.cashCeilingCents !== undefined && { cash_ceiling_cents: patch.cashCeilingCents }),
+      ...(patch.maxItems !== undefined && { max_items: patch.maxItems }),
       ...(patch.autonomy !== undefined && { autonomy: patch.autonomy }),
       ...(patch.deadline !== undefined && { deadline: patch.deadline?.toISOString() ?? null }),
     };

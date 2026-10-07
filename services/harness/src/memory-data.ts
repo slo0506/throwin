@@ -206,6 +206,7 @@ export class MemoryGmData implements GmData {
       id: randomUUID(),
       userId,
       ...ask,
+      maxItems: ask.maxItems ?? 1,
       cashCeilingCents: 0,
       offerItemIds: [],
       createdAt: at,

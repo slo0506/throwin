@@ -33,6 +33,7 @@ export const askRoutes = (repo: Repository) =>
         // A resolved target skips straight to asking what the user would offer.
         status: body.target ? "offering" : "drafting",
         cashCeilingCents: body.cash_ceiling_cents ?? 0,
+        maxItems: body.max_items ?? 1,
         autonomy: body.autonomy ?? "every_deal",
       });
       return c.json(toOwnAsk(ask), 201);
@@ -54,6 +55,7 @@ export const askRoutes = (repo: Repository) =>
         ...(body.cash_ceiling_cents !== undefined && {
           cashCeilingCents: body.cash_ceiling_cents,
         }),
+        ...(body.max_items !== undefined && { maxItems: body.max_items }),
         ...(body.autonomy !== undefined && { autonomy: body.autonomy }),
         ...(body.deadline !== undefined && {
           deadline: body.deadline === null ? null : new Date(body.deadline),

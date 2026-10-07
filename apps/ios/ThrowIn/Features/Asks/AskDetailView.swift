@@ -187,7 +187,43 @@ struct AskDetailView: View {
 
             cashCeiling(ask)
                 .padding(.top, Space.xs)
+            howMany(ask)
         }
+    }
+
+    /// How many Items the Ask takes. Above 1, 1 trade can bring several from 1 person.
+    private func howMany(_ ask: Ask) -> some View {
+        PaperCard {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("How many you'd take").sectionLabel()
+                        Text(ask.maxItems == 1 ? "Just 1" : "Up to \(ask.maxItems)")
+                            .font(Typo.value)
+                            .foregroundStyle(Palette.ink)
+                            .contentTransition(.numericText())
+                            .animation(Motion.snappy, value: ask.maxItems)
+                    }
+                    Spacer()
+                    Stepper(
+                        "How many you'd take",
+                        value: Binding(
+                            get: { ask.maxItems },
+                            set: { model.updateAsk(askID, AskPatch(maxItems: $0)) }
+                        ),
+                        in: 1...5
+                    )
+                    .labelsHidden()
+                    .disabled(!canEdit)
+                    .accessibilityValue(ask.maxItems == 1 ? "Just 1" : "Up to \(ask.maxItems)")
+                }
+                Text("More than 1 lets 1 trade bring you several, like 2 games for 1 set.")
+                    .font(Typo.footnote)
+                    .foregroundStyle(Palette.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .sensoryFeedback(.selection, trigger: ask.maxItems)
     }
 
     private func cashCeiling(_ ask: Ask) -> some View {

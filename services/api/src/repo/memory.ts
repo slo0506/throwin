@@ -388,6 +388,7 @@ export class MemoryRepository implements Repository {
       target: null,
       offerItemIds: [],
       cashCeilingCents: 0,
+      maxItems: 1,
       autonomy: "every_deal",
       deadline: null,
       createdAt: new Date("2026-10-03T00:00:00Z"),
@@ -475,6 +476,7 @@ export class MemoryRepository implements Repository {
     if (update.target !== undefined) ask.target = update.target;
     if (update.title !== undefined) ask.title = update.title;
     if (update.cashCeilingCents !== undefined) ask.cashCeilingCents = update.cashCeilingCents;
+    if (update.maxItems !== undefined) ask.maxItems = update.maxItems;
     if (update.autonomy !== undefined) ask.autonomy = update.autonomy;
     if (update.deadline !== undefined) ask.deadline = update.deadline;
     ask.status = status;

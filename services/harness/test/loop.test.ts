@@ -16,6 +16,39 @@ import {
 } from "./support.js";
 
 describe("tool round trips", () => {
+  it("saves how many Items an Ask takes, and edits it", async () => {
+    const world = await makeWorld([
+      { tools: [{ name: "resolve_target", input: { text: "2 or 3 Switch games" } }] },
+      (params) => ({
+        tools: [
+          {
+            name: "upsert_ask",
+            input: {
+              raw_text: "2 or 3 Switch games",
+              target_id: idFromLastResult(params, "target_id"),
+              max_items: 3,
+            },
+          },
+        ],
+      }),
+      { text: "Saved." },
+    ]);
+    await turn(world, { text: "2 or 3 Switch games for the kids" });
+    const ask = world.data.asks[0];
+    expect(ask?.maxItems).toBe(3);
+
+    world.model.push(
+      { tools: [{ name: "upsert_ask", input: { ask_id: ask?.id, max_items: 2 } }] },
+      (params) => {
+        // The GM sees the new count in the tool result.
+        expect(lastToolResults(params).map(resultText).join("")).toContain("takes: up to 2 Items");
+        return { text: "Now 2." };
+      },
+    );
+    await turn(world, { text: "Make that 2" });
+    expect(world.data.asks[0]?.maxItems).toBe(2);
+  });
+
   it("resolves a want, saves an Ask, records runs and events, and enqueues memory", async () => {
     const world = await makeWorld([
       {

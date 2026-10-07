@@ -147,6 +147,7 @@ export function toAskCard(ask: AskRecord, offerItems: OwnItem[], stats: CircleSt
     offer_item_ids: ask.offerItemIds,
     offer_value: offerValue(offerItems),
     cash_ceiling_cents: ask.cashCeilingCents,
+    max_items: ask.maxItems,
     autonomy: ask.autonomy,
     deadline: ask.deadline?.toISOString() ?? null,
     created_at: ask.createdAt.toISOString(),

@@ -32,6 +32,7 @@ All JSON is snake_case. Money is integer cents. Values are ranges. IDs are UUIDs
   "offer_item_ids": ["uuid"],
   "offer_value": { "low_cents": 14000, "high_cents": 21000 },
   "cash_ceiling_cents": 2000,
+  "max_items": 1,
   "autonomy": "every_deal | likely_yes",
   "deadline": "2026-10-20T00:00:00Z or null",
   "created_at": "...",
@@ -40,6 +41,7 @@ All JSON is snake_case. Money is integer cents. Values are ranges. IDs are UUIDs
 ```
 
 - `cash_ceiling_cents` is returned only to the Ask's owner and never leaves through network functions.
+- `max_items` (1 to 5, default 1) is how many Items the Ask takes, so 1 trade can bring several ("2 or 3 board games"; bundles, `docs/contracts/m3-matcher.md`). The GM sets it with `upsert_ask` when the user clearly wants several, and the Ask page has a stepper. Changing it on a prospecting Ask re-matches it.
 - `status_line` is plain words computed by the server ("Waiting for what you'd offer", "Checking 46 Shelves in 2 Circles").
 - `title` is a new column on `asks` (nullable, set from the resolved target).
 - `target` is null and `status` is `drafting` until the target resolves; creating or patching with a `target` moves a drafting Ask to `offering`. Target fields other than `kind` and `name` default to null (`constraints` to `[]`).
@@ -49,9 +51,9 @@ All JSON is snake_case. Money is integer cents. Values are ranges. IDs are UUIDs
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
 | GET | `/v1/asks` | | `{ "asks": [Ask] }`, newest first, excluding cancelled |
-| POST | `/v1/asks` | `{ "raw_text": string, "target"?: Target, "cash_ceiling_cents"?: int, "autonomy"?: string }` | 201 Ask |
+| POST | `/v1/asks` | `{ "raw_text": string, "target"?: Target, "cash_ceiling_cents"?: int, "max_items"?: int, "autonomy"?: string }` | 201 Ask |
 | GET | `/v1/asks/{id}` | | Ask |
-| PATCH | `/v1/asks/{id}` | any of `raw_text`, `target`, `offer_item_ids`, `cash_ceiling_cents` (0 to 100000), `autonomy`, `deadline`, `status: "cancelled"` | Ask |
+| PATCH | `/v1/asks/{id}` | any of `raw_text`, `target`, `offer_item_ids`, `cash_ceiling_cents` (0 to 100000), `max_items` (1 to 5), `autonomy`, `deadline`, `status: "cancelled"` | Ask |
 
 Setting a non-empty offer set on a `drafting` or `offering` Ask moves it to `prospecting`. Offer items must be the owner's own, on the Shelf, not reserved.
 
