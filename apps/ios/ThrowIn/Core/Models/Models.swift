@@ -403,6 +403,8 @@ nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
     var myApproval: ApprovalState = .pending
     /// The caller's own Ask this Deal fills, when the server says.
     var askID: String?
+    /// First names of the people who haven't approved yet.
+    var waitingOn: [String] = []
 
     var giveValue: Int { give.compactMap(\.value?.midCents).reduce(0, +) }
     var getValue: Int { receive.compactMap(\.value?.midCents).reduce(0, +) }

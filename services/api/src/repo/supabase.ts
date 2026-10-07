@@ -40,6 +40,7 @@ import {
   type ItemUpdate,
   type MePatch,
   type MeRecord,
+  type PhotoRequestRecord,
   type QuestionRecord,
   type Repository,
   SHELF_STATUSES,
@@ -919,6 +920,90 @@ export class SupabaseRepository implements Repository {
 
   async getDeal(userId: string, dealId: string): Promise<DealRecord | null> {
     return (await this.#deals(userId, dealId, SHOWN_DEAL_STATUSES))[0] ?? null;
+  }
+
+  async listPhotoRequests(userId: string): Promise<PhotoRequestRecord[]> {
+    const own = await this.db.from("deal_participants").select("deal_id").eq("user_id", userId);
+    if (own.error) throw new RepositoryError("photoRequests.mine", own.error);
+    const ids = ((own.data ?? []) as { deal_id: string }[]).map((r) => r.deal_id);
+    if (ids.length === 0) return [];
+    const deals = await this.db
+      .from("deals")
+      .select("id, expires_at")
+      .in("id", ids)
+      .eq("status", "staged");
+    if (deals.error) throw new RepositoryError("photoRequests.deals", deals.error);
+    const staged = z.array(z.object({ id: z.string(), expires_at: ts })).parse(deals.data ?? []);
+    if (staged.length === 0) return [];
+
+    const legs = await this.db
+      .from("deal_legs")
+      .select("deal_id, receiver_id, item_id")
+      .in(
+        "deal_id",
+        staged.map((d) => d.id),
+      )
+      .eq("giver_id", userId)
+      .not("item_id", "is", null);
+    if (legs.error) throw new RepositoryError("photoRequests.legs", legs.error);
+    const legRows = z
+      .array(z.object({ deal_id: z.string(), receiver_id: z.string(), item_id: z.string() }))
+      .parse(legs.data ?? []);
+    if (legRows.length === 0) return [];
+
+    const [items, users] = await Promise.all([
+      this.db
+        .from("items")
+        .select("id, title, readiness, missing_angles, item_media(storage_path, position)")
+        .in(
+          "id",
+          legRows.map((l) => l.item_id),
+        )
+        .neq("readiness", "showcase"),
+      this.db
+        .from("users")
+        .select("id, display_name")
+        .in("id", [...new Set(legRows.map((l) => l.receiver_id))]),
+    ]);
+    if (items.error) throw new RepositoryError("photoRequests.items", items.error);
+    if (users.error) throw new RepositoryError("photoRequests.users", users.error);
+    const itemById = new Map(
+      z
+        .array(
+          z.object({
+            id: z.string(),
+            title: z.string(),
+            missing_angles: z.array(z.string()).nullable(),
+            item_media: z
+              .array(z.object({ storage_path: z.string(), position: z.number() }))
+              .nullable(),
+          }),
+        )
+        .parse(items.data ?? [])
+        .map((i) => [i.id, i]),
+    );
+    const names = new Map(
+      z
+        .array(z.object({ id: z.string(), display_name: z.string().nullable() }))
+        .parse(users.data ?? [])
+        .map((u) => [u.id, u.display_name?.trim().split(/\s+/)[0] || null]),
+    );
+    const expiry = new Map(staged.map((d) => [d.id, d.expires_at]));
+    return legRows.flatMap((l) => {
+      const item = itemById.get(l.item_id);
+      if (!item) return [];
+      return [
+        {
+          dealId: l.deal_id,
+          expiresAt: expiry.get(l.deal_id) as Date,
+          itemId: item.id,
+          itemTitle: item.title,
+          missingAngles: item.missing_angles ?? [],
+          thumbnailPath: firstPhoto(item.item_media),
+          wantedBy: names.get(l.receiver_id) ?? null,
+        },
+      ];
+    });
   }
 
   async approveDeal(userId: string, dealId: string, snapshot: unknown) {

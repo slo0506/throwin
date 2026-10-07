@@ -1,13 +1,20 @@
 import SwiftUI
 
-/// Home: Deal Sheets waiting on you, your live Asks, and 1 suggestion from the GM.
+/// Home: 1 list of what needs you right now ("Next up", worked out by the server across
+/// Deals, the Shelf and Asks, best first), then Deals you've approved that wait on others,
+/// then your live Asks. A Deal waiting on you shows as its full card, the loud moment; the
+/// rest are 1-tap rows whose button goes straight to the action.
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Namespace private var dealNamespace
+    @State private var path: [AskRoute] = []
+    @State private var shoot: HomeShootRoute?
+    @State private var tuneUp: TuneUpRoute?
+    @State private var isCapturing = false
 
     var body: some View {
         @Bindable var model = model
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.xl) {
                     header
@@ -17,22 +24,30 @@ struct HomeView: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
                     }
 
-                    ForEach(model.dealsWaiting) { deal in
-                        let approved = model.approvedDealIDs.contains(deal.id)
+                    if !nextUp.isEmpty {
                         VStack(alignment: .leading, spacing: Space.sm) {
-                            SectionHeader(
-                                title: deal.status == .approved ? "Approved" : approved ? "Waiting on the others" : "Waiting on you",
-                                trailing: deal.status.isOpen && !approved ? "Expires in \(deal.expiresInHours)h" : nil
-                            )
-                            Button {
-                                model.presentedDeal = deal
-                            } label: {
-                                DealTeaserCard(deal: deal, isApproved: approved)
+                            SectionHeader(title: "Next up")
+                            ForEach(nextUp) { item in
+                                nextUpView(item)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
                             }
-                            .buttonStyle(.pressable)
-                            .matchedTransitionSource(id: deal.id, in: dealNamespace)
                         }
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                        .animation(Motion.bouncy, value: nextUp.map(\.id))
+                    }
+
+                    if !inFlight.isEmpty {
+                        VStack(alignment: .leading, spacing: Space.sm) {
+                            SectionHeader(title: "Waiting on the others")
+                            ForEach(inFlight) { deal in
+                                Button {
+                                    model.presentedDeal = deal
+                                } label: {
+                                    DealTeaserCard(deal: deal, isApproved: true)
+                                }
+                                .buttonStyle(.pressable)
+                                .matchedTransitionSource(id: deal.id, in: dealNamespace)
+                            }
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: Space.sm) {
@@ -44,23 +59,9 @@ struct HomeView: View {
                             .buttonStyle(.pressable)
                             .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         }
-                        if model.asks.isEmpty {
-                            Text("No Asks yet. Tell your GM 1 thing you want.")
-                                .font(Typo.callout)
-                                .foregroundStyle(Palette.inkSecondary)
-                                .padding(.horizontal, 4)
-                        }
                         newAskButton
                     }
                     .animation(Motion.bouncy, value: model.asks.map(\.id))
-
-                    // A sample until the GM makes real suggestions; never shown to live users.
-                    if !model.isLive {
-                        VStack(alignment: .leading, spacing: Space.sm) {
-                            SectionHeader(title: "From your GM")
-                            GMSuggestionCard()
-                        }
-                    }
                 }
                 .padding(.horizontal, Space.gutter)
                 .padding(.top, Space.xs)
@@ -85,7 +86,95 @@ struct HomeView: View {
                 DealSheetView(deal: deal)
                     .navigationTransition(.zoom(sourceID: deal.id, in: dealNamespace))
             }
+            .fullScreenCover(item: $shoot, onDismiss: refresh) { route in
+                ShowcaseShootView(itemID: route.itemID, angles: route.angles)
+            }
+            .fullScreenCover(item: $tuneUp, onDismiss: refresh) { route in
+                TuneUpView(itemID: route.itemID)
+            }
+            .sheet(isPresented: $isCapturing) {
+                CaptureSheet(capture: model.draftCapture())
+            }
         }
+    }
+
+    // MARK: Next up
+
+    /// The server's list. Built on device in demo mode, or until the server's list arrives,
+    /// so a Deal waiting on you never drops off Home.
+    private var nextUp: [NextUpItem] {
+        model.isLive && !model.nextUp.isEmpty ? model.nextUp : localNextUp
+    }
+
+    /// Deals you've approved that wait on someone else.
+    private var inFlight: [DealSheet] {
+        model.dealsWaiting.filter { deal in
+            deal.status.isOpen && (deal.myApproval == .approved || model.approvedDealIDs.contains(deal.id))
+        }
+    }
+
+    @ViewBuilder
+    private func nextUpView(_ item: NextUpItem) -> some View {
+        if item.kind == .approveDeal, let deal = model.dealsWaiting.first(where: { $0.id == item.dealId }) {
+            Button {
+                model.presentedDeal = deal
+            } label: {
+                DealTeaserCard(deal: deal, isApproved: false)
+            }
+            .buttonStyle(.pressable)
+            .matchedTransitionSource(id: deal.id, in: dealNamespace)
+        } else {
+            NextUpRow(item: item) { act(on: item) }
+        }
+    }
+
+    /// Each button goes straight to the action, not to a screen that leads to it.
+    private func act(on item: NextUpItem) {
+        switch item.kind {
+        case .approveDeal:
+            if let deal = model.dealsWaiting.first(where: { $0.id == item.dealId }) {
+                model.presentedDeal = deal
+            }
+        case .showcasePhotos, .itemPhotos:
+            if let itemID = item.itemId {
+                shoot = HomeShootRoute(itemID: itemID, angles: item.angles)
+            }
+        case .offerForAsk, .weakOffer:
+            if let ask = model.asks.first(where: { $0.id == item.askId }) {
+                path.append(AskRoute(ask: ask))
+            }
+        case .joinCircle:
+            withAnimation(Motion.bouncy) { model.tab = .circles }
+        case .tuneUp:
+            tuneUp = TuneUpRoute(itemID: nil)
+        case .addToShelf:
+            isCapturing = true
+        case .newAsk:
+            model.openGM(screen: "new_ask")
+        }
+    }
+
+    private func refresh() {
+        Task { await model.refreshNextUp() }
+    }
+
+    /// Deals waiting on you and open questions, in the server list's shape.
+    private var localNextUp: [NextUpItem] {
+        var items = model.dealsWaiting
+            .filter { $0.status == .pendingApprovals && $0.myApproval == .pending && !model.approvedDealIDs.contains($0.id) }
+            .map { deal in
+                NextUpItem(
+                    id: "deal:\(deal.id)", kind: .approveDeal, title: deal.receive.first?.title ?? "A trade",
+                    detail: "Waiting on you.", cta: "Review", dealId: deal.id, angles: []
+                )
+            }
+        if model.tuneUpCount > 0 {
+            items.append(NextUpItem(
+                id: "tune-up", kind: .tuneUp, title: "Answer \(model.tuneUpCount) quick questions",
+                detail: "Pins down your Items so your GM can price them.", cta: "Tune up", angles: []
+            ))
+        }
+        return items
     }
 
     private var header: some View {
@@ -181,7 +270,7 @@ struct DealTeaserCard: View {
             }
 
             HStack {
-                Text(isApproved ? "Waiting on Maya and Dev" : "Review the Deal Sheet")
+                Text(isApproved ? waitingLine : "Review the Deal Sheet")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                 Spacer()
                 Image(systemName: isApproved ? "checkmark.circle.fill" : "chevron.right")
@@ -208,6 +297,12 @@ struct DealTeaserCard: View {
                     .opacity(isApproved ? 0.25 : 0.9)
             }
         }
+    }
+
+    private var waitingLine: String {
+        deal.waitingOn.isEmpty
+            ? "Everyone's in"
+            : "Waiting on \(deal.waitingOn.formatted(.list(type: .and)))"
     }
 
     private func tileStack(_ items: [ShelfItem], tint: Color) -> some View {
@@ -342,41 +437,96 @@ struct PushPromptCard: View {
     }
 }
 
-// MARK: - GM suggestion
+// MARK: - Next up row
 
-struct GMSuggestionCard: View {
-    @State private var answer: String?
+/// Which Item and angles a "Take photos" button shoots.
+struct HomeShootRoute: Identifiable {
+    let id = UUID()
+    var itemID: String
+    var angles: [String]
+}
+
+/// 1 thing that needs you: a picture (the Item, the Ask's target, or a symbol for the kind),
+/// what and why in the GM's words, and a button named for the action it takes.
+struct NextUpRow: View {
+    var item: NextUpItem
+    var action: () -> Void
 
     var body: some View {
-        PaperCard {
-            VStack(alignment: .leading, spacing: Space.md) {
-                HStack(alignment: .top, spacing: Space.sm) {
-                    GMOrbView(mood: .idle, size: 34, showsGlow: false)
-                    Text(answer ?? "Maya is looking for a Switch game you have. Want me to see what she'd trade?")
-                        .font(Typo.body)
+        Button(action: action) {
+            HStack(spacing: Space.sm) {
+                picture
+                    .frame(width: 52, height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title)
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundStyle(Palette.ink)
-                        .contentTransition(.opacity)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Text(item.detail)
+                        .font(Typo.footnote)
+                        .foregroundStyle(Palette.inkSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
-                if answer == nil {
-                    HStack(spacing: Space.xs) {
-                        Button("Sure") { respond("On it. I'll ask Maya's GM and come back with options.") }
-                            .buttonStyle(.glassProminent)
-                            .tint(Palette.iris)
-                        Button("Not that item") { respond("Got it. I'll keep Mario Kart off the table for Maya.") }
-                            .buttonStyle(.glass)
-                        Spacer()
+                Spacer(minLength: Space.xs)
+                Text(item.cta)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(Palette.canvas)
+                    .lineLimit(1)
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .background(Palette.ink, in: Capsule())
+            }
+            .padding(Space.sm)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
+                    .strokeBorder(Palette.hairline, lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(item.cta)
+    }
+
+    @ViewBuilder
+    private var picture: some View {
+        let style = Self.style(for: item.kind)
+        ZStack {
+            style.tint.opacity(0.14)
+            Image(systemName: style.symbol)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(style.tint)
+            if let raw = item.thumbnailUrl, let url = URL(string: raw) {
+                // Ask targets are product shots on any background; Item photos fill.
+                if item.kind == .offerForAsk || item.kind == .weakOffer {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFit().padding(4).background(.white)
+                    } placeholder: {
+                        Color.clear
                     }
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
+                } else {
+                    RemoteImage(url: url)
                 }
             }
         }
-        .sensoryFeedback(.selection, trigger: answer)
     }
 
-    private func respond(_ text: String) {
-        withAnimation(Motion.bouncy) { answer = text }
+    private static func style(for kind: NextUpItem.Kind) -> (symbol: String, tint: Color) {
+        switch kind {
+        case .approveDeal: ("arrow.triangle.2.circlepath", Palette.iris)
+        case .showcasePhotos: ("camera.fill", Palette.give)
+        case .offerForAsk: ("hand.point.up.left.fill", Palette.iris)
+        case .joinCircle: ("person.3.fill", Palette.receive)
+        case .weakOffer: ("scalemass.fill", Palette.gold)
+        case .tuneUp: ("wand.and.stars", Palette.iris)
+        case .itemPhotos: ("camera.aperture", Palette.mint)
+        case .addToShelf: ("plus.viewfinder", Palette.give)
+        case .newAsk: ("sparkles", Palette.bubblegum)
+        }
     }
 }
 

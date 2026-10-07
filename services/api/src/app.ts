@@ -14,6 +14,7 @@ import { gmRoutes } from "./routes/gm.js";
 import { healthRoutes } from "./routes/health.js";
 import { itemRoutes } from "./routes/items.js";
 import { meRoutes } from "./routes/me.js";
+import { nextUpRoutes } from "./routes/next-up.js";
 import { questionRoutes } from "./routes/questions.js";
 import { tasteFactRoutes } from "./routes/taste-facts.js";
 import type { AppDeps, AppEnv } from "./types.js";
@@ -44,6 +45,7 @@ export function createApp(deps: AppDeps) {
   v1.route("/media", mediaRoutes(deps.repo, deps.media));
   v1.route("/captures", captureRoutes(deps.repo, deps.media));
   v1.route("/questions", questionRoutes(deps.repo, deps.media));
+  v1.route("/next-up", nextUpRoutes(deps.repo, deps.media, now));
   v1.route(
     "/gm",
     gmRoutes({
