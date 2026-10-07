@@ -60,7 +60,7 @@ nonisolated struct InvitePreview: Decodable, Hashable, Sendable {
     var status: Status
 }
 
-nonisolated struct APIDealPerson: Decodable, Sendable {
+nonisolated struct APIDealPerson: Decodable, Hashable, Sendable {
     var userId: String
     var firstName: String?
     var photoUrl: String?
@@ -73,7 +73,7 @@ nonisolated struct APIDealParticipant: Decodable, Sendable {
     var approval: ApprovalState
 }
 
-nonisolated struct APIDealItem: Decodable, Sendable {
+nonisolated struct APIDealItem: Decodable, Hashable, Sendable {
     var id: String
     var title: String
     var category: String?
@@ -85,7 +85,7 @@ nonisolated struct APIDealItem: Decodable, Sendable {
 }
 
 nonisolated struct APIDealSheet: Decodable, Sendable {
-    nonisolated struct Cash: Decodable, Sendable {
+    nonisolated struct Cash: Decodable, Hashable, Sendable {
         var payCents: Int
         var receiveCents: Int
     }
@@ -105,6 +105,11 @@ nonisolated struct APIDealSheet: Decodable, Sendable {
     /// Every Item on each side; several is a bundle. Older servers send only `youGive` and `youGet`.
     var gives: [APIDealItem]?
     var gets: [APIDealItem]?
+    /// An open counter. While it's open, nobody can approve. Older servers don't send it.
+    var counter: APIDealCounter?
+    var countersLeft: Int?
+    /// Set when an accepted counter replaced this Deal.
+    var supersededBy: String?
     var cash: Cash
     var loop: [LoopLeg]
     var participants: [APIDealParticipant]
@@ -112,6 +117,36 @@ nonisolated struct APIDealSheet: Decodable, Sendable {
     var why: String?
     /// The caller's own Ask this Deal fills. Older servers don't send it.
     var yourAskId: String?
+}
+
+/// A counter on a Deal, from the caller's side (docs/contracts/m3-deals.md, "Counters").
+nonisolated struct APIDealCounter: Decodable, Sendable {
+    nonisolated struct Change: Decodable, Sendable {
+        var op: String
+        var item: APIDealItem
+        var giver: APIDealPerson
+        var receiver: APIDealPerson
+    }
+
+    var id: String
+    var proposedBy: APIDealPerson
+    var changes: [Change]
+    var gives: [APIDealItem]
+    var gets: [APIDealItem]
+    var cash: APIDealSheet.Cash
+    /// "pending", "accepted" or "declined"; nil when the counter doesn't ask the caller.
+    var yourAnswer: String?
+    var waitingOn: [APIDealPerson]
+}
+
+/// 1 change in a counter, as the API takes it.
+nonisolated struct CounterChange: Codable, Hashable, Sendable {
+    var op: String
+    var itemId: String
+}
+
+nonisolated struct CounterRequest: Encodable, Sendable {
+    var changes: [CounterChange]
 }
 
 nonisolated struct DealSheetsResponse: Decodable, Sendable {
@@ -214,8 +249,17 @@ extension DealSheet {
             status: d.status,
             myApproval: d.yourApproval,
             askID: d.yourAskId,
-            waitingOn: d.participants.filter { $0.approval == .pending }.map { $0.firstName ?? "someone" }
+            waitingOn: d.participants.filter { $0.approval == .pending }.map { $0.firstName ?? "someone" },
+            counter: d.counter.map { DealCounter($0, me: Self.caller(d)) },
+            countersLeft: d.countersLeft ?? 3,
+            supersededBy: d.supersededBy
         )
+    }
+
+    /// The caller is whoever is in the Deal but neither gives to them nor gets from them.
+    private nonisolated static func caller(_ d: APIDealSheet) -> String? {
+        let others: Set<String> = [d.giveTo.userId, d.getFrom.userId]
+        return d.participants.first { !others.contains($0.userId) }?.userId
     }
 
     /// Follows the legs giver to receiver, so the arrows between avatars mean "gives to".
@@ -231,5 +275,31 @@ extension DealSheet {
             current = following
         }
         return ordered.count == people.count ? ordered : people
+    }
+}
+
+extension DealCounter {
+    nonisolated init(_ c: APIDealCounter, me: String?) {
+        let name = { (p: APIDealPerson) in p.firstName ?? "someone" }
+        self.init(
+            id: c.id,
+            proposer: name(c.proposedBy),
+            isMine: c.proposedBy.userId == me,
+            changes: c.changes.map { change in
+                DealCounter.Change(
+                    isAdd: change.op == "add",
+                    item: ShelfItem(dealItem: change.item),
+                    giver: name(change.giver),
+                    receiver: name(change.receiver),
+                    fromMe: change.giver.userId == me,
+                    toMe: change.receiver.userId == me
+                )
+            },
+            give: c.gives.map { ShelfItem(dealItem: $0) },
+            receive: c.gets.map { ShelfItem(dealItem: $0) },
+            throwInCents: c.cash.payCents - c.cash.receiveCents,
+            yourAnswer: c.yourAnswer.flatMap(DealCounter.Answer.init(rawValue:)),
+            waitingOn: c.waitingOn.map(name)
+        )
     }
 }

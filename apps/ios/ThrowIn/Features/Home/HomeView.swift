@@ -131,7 +131,7 @@ struct HomeView: View {
     /// Each button goes straight to the action, not to a screen that leads to it.
     private func act(on item: NextUpItem) {
         switch item.kind {
-        case .approveDeal:
+        case .approveDeal, .answerCounter:
             if let deal = model.dealsWaiting.first(where: { $0.id == item.dealId }) {
                 model.presentedDeal = deal
             }
@@ -517,6 +517,7 @@ struct NextUpRow: View {
 
     private static func style(for kind: NextUpItem.Kind) -> (symbol: String, tint: Color) {
         switch kind {
+        case .answerCounter: ("arrow.left.arrow.right", Palette.gold)
         case .approveDeal: ("arrow.triangle.2.circlepath", Palette.iris)
         case .showcasePhotos: ("camera.fill", Palette.give)
         case .offerForAsk: ("hand.point.up.left.fill", Palette.iris)

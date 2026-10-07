@@ -282,6 +282,24 @@ final class APIClient {
         try await send("POST", "v1/deals/\(id)/decline", body: DeclineRequest(reason: reason))
     }
 
+    /// Asks to change a Deal's Items. Everyone else whose side changes answers it.
+    func proposeCounter(_ dealID: String, changes: [CounterChange]) async throws -> APIDealSheet {
+        try await send("POST", "v1/deals/\(dealID)/counters", body: CounterRequest(changes: changes))
+    }
+
+    /// The Deal to show next: a new version once everyone accepted, else the same Deal.
+    func answerCounter(_ dealID: String, counterID: String, accept: Bool) async throws -> APIDealSheet {
+        try await send(
+            "POST",
+            "v1/deals/\(dealID)/counters/\(counterID)/\(accept ? "accept" : "decline")",
+            body: EmptyBody()
+        )
+    }
+
+    func withdrawCounter(_ dealID: String, counterID: String) async throws -> APIDealSheet {
+        try await send("POST", "v1/deals/\(dealID)/counters/\(counterID)/withdraw", body: EmptyBody())
+    }
+
     // MARK: Next up
 
     /// What needs the user, best first.

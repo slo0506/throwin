@@ -14,9 +14,9 @@ struct DealSheetView: View {
     @State private var rippleTrigger = 0
     @State private var celebrate = 0
     @State private var approveCenter: CGPoint = .zero
-    @State private var showCounter = false
     @State private var confirmDecline = false
     @State private var isDeclining = false
+    @State private var isAnswering = false
     @State private var errorText: String?
 
     private var scaleMax: Int {
@@ -32,6 +32,8 @@ struct DealSheetView: View {
                 VStack(alignment: .leading, spacing: Space.xl) {
                     topBar
                     title
+                    if let counter = deal.counter { counterSection(counter) }
+                    if deal.supersededBy != nil { supersededNote }
                     side(title: "You give", items: deal.give, tint: Palette.give)
                     fairness
                     side(title: "You get", items: deal.receive, tint: Palette.receive)
@@ -49,11 +51,6 @@ struct DealSheetView: View {
         .overlay {
             CelebrationBurst(trigger: celebrate, origin: UnitPoint(x: 0.5, y: 0.82))
                 .ignoresSafeArea()
-        }
-        .sheet(isPresented: $showCounter) {
-            CounterSheet(deal: deal)
-                .presentationDetents([.medium])
-                .presentationCornerRadius(32)
         }
         .confirmationDialog("Decline this Deal?", isPresented: $confirmDecline, titleVisibility: .visible) {
             Button("Decline", role: .destructive) { decline() }
@@ -206,6 +203,63 @@ struct DealSheetView: View {
         }
     }
 
+    /// An open counter: what it changes, from your side, and whose answer it waits on.
+    private func counterSection(_ c: DealCounter) -> some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Palette.iris)
+                Text(c.isMine ? "Your counter" : "\(c.proposer)'s counter").sectionLabel()
+            }
+            Text(counterHeadline(c))
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(c.changes) { change in
+                HStack(spacing: Space.sm) {
+                    ItemArtwork(item: change.item, cornerRadius: 12)
+                        .frame(width: 48, height: 48)
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: change.isAdd ? "plus.circle.fill" : "minus.circle.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white, change.isAdd ? Palette.mint : Palette.give)
+                                .offset(x: 6, y: 6)
+                        }
+                    Text(change.line)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(2)
+                }
+            }
+            Text(DealCounter.cashLine(after: c.throwInCents, now: deal.throwInCents))
+                .font(Typo.footnote)
+                .foregroundStyle(Palette.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.md)
+        .background(Palette.iris.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func counterHeadline(_ c: DealCounter) -> String {
+        let names = ListFormatter.localizedString(byJoining: c.waitingOn)
+        if c.yourAnswer == .pending { return "\(c.proposer) wants to change the trade. It waits on your answer." }
+        if c.isMine { return "Waiting on \(names) to answer." }
+        return "Waiting on \(names) to answer it."
+    }
+
+    /// Everyone accepted a counter; the new version goes out once its photos are in.
+    private var supersededNote: some View {
+        Label(
+            "Everyone agreed to the change. The new version goes out as soon as its photos are in.",
+            systemImage: "checkmark.circle.fill"
+        )
+        .font(.system(size: 15, weight: .semibold, design: .rounded))
+        .foregroundStyle(Palette.mint)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
     private var why: some View {
         HStack(alignment: .top, spacing: Space.sm) {
             GMOrbView(mood: .idle, size: 32, showsGlow: false)
@@ -228,6 +282,62 @@ struct DealSheetView: View {
                     .font(Typo.footnote)
                     .foregroundStyle(Palette.danger)
             }
+            if let counter = deal.counter {
+                counterActions(counter)
+            } else if deal.supersededBy == nil {
+                approveActions
+            }
+        }
+        .padding(.horizontal, Space.gutter)
+        .padding(.top, Space.lg)
+        .padding(.bottom, Space.sm)
+        .background {
+            LinearGradient(colors: [Palette.canvas.opacity(0), Palette.canvas, Palette.canvas], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        }
+        .animation(Motion.bouncy, value: phase)
+    }
+
+    /// While a counter is open nobody approves: you answer it, or take yours back.
+    @ViewBuilder
+    private func counterActions(_ counter: DealCounter) -> some View {
+        if counter.yourAnswer == .pending {
+            HStack(spacing: Space.sm) {
+                Button {
+                    answer(accept: false)
+                } label: {
+                    Text("Decline").frame(maxWidth: .infinity).frame(height: 30)
+                }
+                .buttonStyle(.glass)
+                Button {
+                    answer(accept: true)
+                } label: {
+                    Text(isAnswering ? "Sending" : "Accept").frame(maxWidth: .infinity).frame(height: 30)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Palette.ink)
+            }
+            .font(.system(size: 16, weight: .semibold, design: .rounded))
+            .disabled(isAnswering)
+            Text("Accepting makes a new version everyone approves again. Declining keeps the trade as it was.")
+                .font(Typo.footnote)
+                .foregroundStyle(Palette.inkTertiary)
+                .multilineTextAlignment(.center)
+        } else if counter.isMine {
+            Button {
+                withdraw()
+            } label: {
+                Text("Take it back").frame(maxWidth: .infinity).frame(height: 30)
+            }
+            .buttonStyle(.glass)
+            .font(.system(size: 16, weight: .semibold, design: .rounded))
+            .foregroundStyle(Palette.ink)
+            .disabled(isAnswering)
+        }
+    }
+
+    private var approveActions: some View {
+        VStack(spacing: Space.sm) {
             HoldToApproveButton(phase: phase) {
                 approve()
             }
@@ -247,14 +357,12 @@ struct DealSheetView: View {
                     }
                     .buttonStyle(.glass)
                     .disabled(isDeclining || phase == .confirming)
-                    // Counters aren't on the server yet; demo mode keeps the sketch.
-                    if !model.isLive {
-                        Button {
-                            showCounter = true
-                        } label: {
-                            Text("Counter").frame(maxWidth: .infinity).frame(height: 30)
+                    if deal.countersLeft > 0 {
+                        Button(action: askGMToChange) {
+                            Text("Change it").frame(maxWidth: .infinity).frame(height: 30)
                         }
                         .buttonStyle(.glass)
+                        .disabled(phase == .confirming)
                     }
                 }
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
@@ -268,14 +376,43 @@ struct DealSheetView: View {
                     .transition(.opacity)
             }
         }
-        .padding(.horizontal, Space.gutter)
-        .padding(.top, Space.lg)
-        .padding(.bottom, Space.sm)
-        .background {
-            LinearGradient(colors: [Palette.canvas.opacity(0), Palette.canvas, Palette.canvas], startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
+    }
+
+    /// Counters start with the GM: you say what you'd change, it stages a card you send.
+    private func askGMToChange() {
+        let title = deal.getTitle ?? "this trade"
+        model.presentedDeal = nil
+        Task {
+            // Let the Deal Sheet finish closing before the GM opens.
+            try? await Task.sleep(for: .milliseconds(450))
+            model.openGM(screen: "deal_sheet", seed: "About the \(title) trade: ")
         }
-        .animation(Motion.bouncy, value: phase)
+    }
+
+    private func answer(accept: Bool) {
+        isAnswering = true
+        errorText = nil
+        Task {
+            do {
+                try await model.answerCounter(deal, accept: accept)
+            } catch {
+                errorText = (error as? APIError)?.message ?? "Couldn't send your answer. Try again."
+            }
+            isAnswering = false
+        }
+    }
+
+    private func withdraw() {
+        isAnswering = true
+        errorText = nil
+        Task {
+            do {
+                try await model.withdrawCounter(deal)
+            } catch {
+                errorText = (error as? APIError)?.message ?? "Couldn't take it back. Try again."
+            }
+            isAnswering = false
+        }
     }
 
     /// After approving: who it's still waiting on, or what happens next.
@@ -350,52 +487,6 @@ enum DeviceConfirmation {
         } catch {
             return false
         }
-    }
-}
-
-/// Counter: a different Throw-In or item. Re-runs matching instead of opening a chat thread.
-private struct CounterSheet: View {
-    var deal: DealSheet
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var throwIn: Double = 10
-    @State private var sent = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.lg) {
-            Text("Counter").font(Typo.title2)
-            Text("Change the Throw-In and your GM will re-run the Loop with everyone else's limits.")
-                .font(Typo.callout)
-                .foregroundStyle(Palette.inkSecondary)
-
-            VStack(alignment: .leading, spacing: Space.xs) {
-                HStack {
-                    Text("Your Throw-In").sectionLabel()
-                    Spacer()
-                    Text(Money.dollars(Int(throwIn) * 100))
-                        .font(Typo.valueLarge)
-                        .contentTransition(.numericText(value: throwIn))
-                        .animation(Motion.snappy, value: throwIn)
-                }
-                Slider(value: $throwIn, in: 0...20, step: 1)
-                    .tint(Palette.gold)
-                    .sensoryFeedback(.selection, trigger: throwIn)
-            }
-
-            Button {
-                withAnimation(Motion.bouncy) { sent = true }
-                Task {
-                    try? await Task.sleep(for: .seconds(1.1))
-                    dismiss()
-                }
-            } label: {
-                PrimaryLabel(sent ? "Sent to the Loop" : "Send counter", symbol: sent ? "checkmark" : "arrow.triangle.2.circlepath")
-            }
-            .buttonStyle(.glassProminent)
-            .tint(Palette.ink)
-            .disabled(sent)
-        }
-        .padding(Space.xl)
     }
 }
 

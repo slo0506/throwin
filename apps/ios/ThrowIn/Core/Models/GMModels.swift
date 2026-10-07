@@ -510,6 +510,7 @@ nonisolated struct GMComponent: Decodable, Identifiable, Hashable, Sendable {
         case cameraRequest(CameraRequestData)
         case askCard(Ask)
         case recap(RecapData)
+        case counterCard(CounterCardData)
         /// A kind this build doesn't know yet. Not rendered.
         case unknown(String)
     }
@@ -541,6 +542,8 @@ nonisolated struct GMComponent: Decodable, Identifiable, Hashable, Sendable {
             body = (try? c.decode(Ask.self, forKey: .data)).map(Body.askCard) ?? .unknown(kind)
         case "recap":
             body = (try? c.decode(RecapData.self, forKey: .data)).map(Body.recap) ?? .unknown(kind)
+        case "counter_card":
+            body = (try? c.decode(CounterCardData.self, forKey: .data)).map(Body.counterCard) ?? .unknown(kind)
         default:
             body = .unknown(kind)
         }
@@ -595,4 +598,24 @@ nonisolated enum GMEvent: Sendable {
     case component(GMComponent)
     case done(messageID: String?)
     case error(code: String, message: String)
+}
+
+/// A counter the GM staged from your words. It goes out only when you tap Send, which posts
+/// `changes` to the Deal; the rest is what it would do, as of when it was staged.
+nonisolated struct CounterCardData: Decodable, Hashable, Sendable {
+    nonisolated struct Line: Decodable, Hashable, Sendable {
+        var op: String
+        var item: APIDealItem
+        var giver: APIDealPerson
+        var receiver: APIDealPerson
+    }
+
+    var dealId: String
+    var changes: [CounterChange]
+    var lines: [Line]
+    var gives: [APIDealItem]
+    var gets: [APIDealItem]
+    var cash: APIDealSheet.Cash
+    var cashNow: APIDealSheet.Cash
+    var waitingOn: [APIDealPerson]
 }

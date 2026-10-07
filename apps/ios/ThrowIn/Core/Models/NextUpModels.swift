@@ -4,6 +4,7 @@ import Foundation
 /// Shelf and Asks (`GET /v1/next-up`). Unknown kinds from a newer server are dropped.
 nonisolated struct NextUpItem: Decodable, Identifiable, Hashable, Sendable {
     enum Kind: String, Decodable, Sendable {
+        case answerCounter = "answer_counter"
         case approveDeal = "approve_deal"
         case showcasePhotos = "showcase_photos"
         case offerForAsk = "offer_for_ask"
