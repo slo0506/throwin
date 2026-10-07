@@ -126,9 +126,6 @@ export const upsertAsk = defineTool({
       .max(5)
       .optional()
       .describe("The user's own conditions, e.g. 'built is fine'"),
-    autonomy: AutonomyLevel.optional().describe(
-      "every_deal: bring every deal. likely_yes: only deals they are likely to accept",
-    ),
     deadline: z.iso.date().optional().describe("YYYY-MM-DD, only if the user gave one"),
   }),
   progress: (input) => (input.ask_id ? "Updating your Ask" : "Saving your Ask"),
@@ -153,7 +150,8 @@ export const upsertAsk = defineTool({
         title: target?.name ?? null,
         target: target ? toAskTarget(target, input.constraints) : null,
         status: target ? "offering" : "drafting",
-        autonomy: input.autonomy ?? (await ctx.data.getUser(ctx.userId))?.autonomy ?? "every_deal",
+        // Which deals to bring is 1 profile setting for every Ask (set_autonomy).
+        autonomy: (await ctx.data.getUser(ctx.userId))?.autonomy ?? "every_deal",
         deadline: deadline ?? null,
       });
       const title = clean(askTitle(ask) ?? ask.rawText, 80);
@@ -181,7 +179,6 @@ export const upsertAsk = defineTool({
       ...(input.raw_text && { rawText: input.raw_text }),
       ...(nextTarget && { target: nextTarget }),
       ...(target && { title: target.name }),
-      ...(input.autonomy && { autonomy: input.autonomy }),
       ...(deadline && { deadline }),
     });
     return {
@@ -247,6 +244,30 @@ export const setOfferSet = defineTool({
       issuedIds: [final.id],
       askId: final.id,
       summary: `Set your offer for ${title}: ${ids.length} Item${ids.length === 1 ? "" : "s"}, ${cash}`,
+    };
+  },
+});
+
+const AUTONOMY_WORDS: Record<AutonomyLevel, string> = {
+  every_deal: "every deal",
+  likely_yes: "only deals they'd likely say yes to",
+};
+
+export const setAutonomy = defineTool({
+  name: "set_autonomy",
+  description:
+    "Save which deals to bring the user: every_deal (every deal you find) or likely_yes (only deals they'd likely accept). It's 1 setting for all their Asks, now and later, and they can change it in Settings. Never ask it per Ask.",
+  kind: "write",
+  input: z.object({ level: AutonomyLevel }),
+  progress: null,
+  async run(ctx, input) {
+    await ctx.data.setAutonomy(ctx.userId, input.level);
+    return {
+      content: `Saved: bring them ${AUTONOMY_WORDS[input.level]}. This applies to every Ask; they can change it in Settings.`,
+      summary:
+        input.level === "every_deal"
+          ? "Set to bring you every deal"
+          : "Set to bring you only likely yeses",
     };
   },
 });

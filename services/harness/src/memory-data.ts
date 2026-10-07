@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ItemWillingness } from "@throwin/shared";
+import type { AutonomyLevel, ItemWillingness } from "@throwin/shared";
 import {
   ACTIVE_ASK_STATUSES,
   type AgentEvent,
@@ -184,6 +184,14 @@ export class MemoryGmData implements GmData {
     return this.asks
       .filter((a) => a.userId === userId && ACTIVE_ASK_STATUSES.includes(a.status))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async setAutonomy(userId: string, level: AutonomyLevel) {
+    const user = this.users.get(userId);
+    if (user) user.autonomy = level;
+    for (const ask of this.asks) {
+      if (ask.userId === userId && ACTIVE_ASK_STATUSES.includes(ask.status)) ask.autonomy = level;
+    }
   }
 
   async getAsk(userId: string, askId: string) {

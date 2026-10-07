@@ -405,6 +405,20 @@ export class SupabaseGmData implements GmData {
       .map(toAsk);
   }
 
+  async setAutonomy(userId: string, level: AutonomyLevel): Promise<void> {
+    const profile = await this.db
+      .from("profiles")
+      .update({ autonomy_level: level })
+      .eq("user_id", userId);
+    if (profile.error) throw new GmDataError("setAutonomy.profile", profile.error);
+    const asks = await this.db
+      .from("asks")
+      .update({ autonomy: level })
+      .eq("user_id", userId)
+      .in("status", [...ACTIVE_ASK_STATUSES]);
+    if (asks.error) throw new GmDataError("setAutonomy.asks", asks.error);
+  }
+
   async getAsk(userId: string, askId: string): Promise<AskRecord | null> {
     if (!isUuid(askId)) return null;
     const { data, error } = await this.db

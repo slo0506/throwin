@@ -343,6 +343,36 @@ describe("offers", () => {
     });
   });
 
+  it("saves which deals to bring on the profile and every open Ask, never per Ask", async () => {
+    const world = await makeWorld();
+    const open = await world.data.createAsk(ALICE, {
+      rawText: "x",
+      title: null,
+      target: null,
+      status: "offering",
+      autonomy: "every_deal",
+      deadline: null,
+    });
+    const done = await world.data.createAsk(ALICE, {
+      rawText: "y",
+      title: null,
+      target: null,
+      status: "fulfilled",
+      autonomy: "every_deal",
+      deadline: null,
+    });
+    world.model.push(
+      { tools: [{ name: "set_autonomy", input: { level: "likely_yes" } }] },
+      { text: "Done." },
+    );
+    await turn(world, { text: "only bring me deals I'd take" });
+    expect((await world.data.getUser(ALICE))?.autonomy).toBe("likely_yes");
+    expect([open.autonomy, done.autonomy]).toEqual(["likely_yes", "every_deal"]);
+    // New Asks inherit it: upsert_ask has no autonomy field to override it with.
+    const upsert = world.gm.registry.definitions().find((d) => d.name === "upsert_ask");
+    expect(JSON.stringify(upsert?.input_schema)).not.toContain("autonomy");
+  });
+
   it("refuses cash ceilings over $1,000 and Items marked not available", async () => {
     const world = await makeWorld();
     const ask = await world.data.createAsk(ALICE, {

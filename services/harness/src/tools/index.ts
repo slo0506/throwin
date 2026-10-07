@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { GmPrompts } from "../prompts.js";
-import { getAskStatus, resolveTarget, setOfferSet, upsertAsk } from "./asks.js";
+import { getAskStatus, resolveTarget, setAutonomy, setOfferSet, upsertAsk } from "./asks.js";
 import { defineTool, type GmTool, ToolError, ToolRegistry } from "./registry.js";
 import { presentAsk, presentChoices, presentItems, presentRecap, requestMedia } from "./render.js";
 import { getItem, searchMyShelf, searchNetwork, updateItem } from "./shelf.js";
@@ -69,6 +69,7 @@ export function gmTools(prompts: GmPrompts): GmTool[] {
     resolveTarget,
     upsertAsk,
     setOfferSet,
+    setAutonomy,
     updateItem,
     getAskStatus,
     presentItems,

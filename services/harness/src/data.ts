@@ -225,6 +225,12 @@ export interface GmData {
   /** The same write path as PATCH /v1/asks/{id}: public.patch_ask. */
   updateAsk(userId: string, askId: string, patch: AskPatch): Promise<AskUpdateResult>;
 
+  /**
+   * Which deals to bring the user, for every Ask: the profile setting, copied onto their
+   * open Asks so the 2 never disagree.
+   */
+  setAutonomy(userId: string, level: AutonomyLevel): Promise<void>;
+
   /** Active, always-on taste facts. Written only by the memory extractor. */
   listAlwaysOnFacts(userId: string): Promise<TasteFact[]>;
 

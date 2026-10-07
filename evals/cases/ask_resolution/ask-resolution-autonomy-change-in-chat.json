@@ -1,0 +1,37 @@
+{
+  "id": "ask-resolution-autonomy-change-in-chat",
+  "suite": "ask_resolution",
+  "description": "Asking for fewer deals in chat changes the profile setting, not an Ask",
+  "state": {
+    "user": { "first_name": "Sam", "autonomy": "every_deal" },
+    "mode": "chat",
+    "shelf": [],
+    "asks": [
+      {
+        "id": "bbbbbbbb-1111-4000-8000-000000000001",
+        "raw_text": "the big Lego Batmobile",
+        "title": "LEGO Batman Batmobile Tumbler 76240",
+        "status": "prospecting",
+        "target": {
+          "kind": "exact",
+          "name": "LEGO Batman Batmobile Tumbler 76240",
+          "brand": "LEGO",
+          "model": "76240",
+          "category": "toys/lego",
+          "constraints": [],
+          "anchor": { "retail_cents": 26999, "used_low_cents": 18000, "used_high_cents": 25000 }
+        },
+        "offer_item_ids": [],
+        "cash_ceiling_cents": 0
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "Too many deals. From now on only bring me ones I'd actually take",
+  "expect": {
+    "tools_called": ["set_autonomy"],
+    "tools_not_called": ["upsert_ask"],
+    "autonomy": "likely_yes",
+    "asks_max": 1
+  }
+}

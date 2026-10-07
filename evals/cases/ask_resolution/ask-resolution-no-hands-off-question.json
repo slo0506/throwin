@@ -1,0 +1,34 @@
+{
+  "id": "ask-resolution-no-hands-off-question",
+  "suite": "ask_resolution",
+  "description": "A new Ask in chat is saved right away with the profile's setting; the GM doesn't ask how hands-off to be",
+  "state": {
+    "user": { "first_name": "Sam", "autonomy": "likely_yes" },
+    "mode": "chat",
+    "shelf": [],
+    "resolver_target": {
+      "kind": "exact",
+      "name": "PlayStation 5 Slim Disc Edition 1TB",
+      "brand": "Sony",
+      "model": "CFI-2015",
+      "category": "electronics/consoles",
+      "constraints": [],
+      "anchor": { "retail_cents": 49999, "used_low_cents": 34000, "used_high_cents": 42000 },
+      "confidence": 0.93,
+      "alternatives": []
+    }
+  },
+  "conversation": [],
+  "message": "I want a PS5 Slim, the disc version",
+  "expect": {
+    "tools_called": ["resolve_target", "upsert_ask"],
+    "tools_not_called": ["set_autonomy"],
+    "components": ["ask_card"],
+    "asks_min": 1,
+    "asks_max": 1,
+    "ask_title_includes": "PlayStation 5",
+    "autonomy": "likely_yes",
+    "text_excludes": ["hands-off", "hands off"],
+    "prices_grounded": true
+  }
+}
