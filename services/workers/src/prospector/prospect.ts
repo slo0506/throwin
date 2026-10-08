@@ -204,12 +204,52 @@ export const embeddingHash = (model: string, text: string) =>
   createHash("sha256").update(`${model}\n${text}`).digest("hex");
 
 const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-const topCategory = (c: string) => normalize(c.split("/")[0] ?? c);
+
+/**
+ * Categories come from 2 models that name things differently: the GM's resolver writes paths
+ * ("games/playstation", "toys/lego") and the Appraiser free text ("Video Game Consoles",
+ * "Toys & Games > Building Toys"). Both map to a coarse kind, checked in this order so
+ * "Toys & Games" is toys and "games/board" is board games. Null when nothing fits.
+ */
+const KINDS: [kind: string, words: RegExp][] = [
+  ["trading_cards", /trading ?card|pokemon card|tcg|sports card/],
+  ["board_games", /board ?game|\bboard\b|tabletop|card game|puzzle/],
+  ["toys", /lego|toy|building set|action figure|plush|doll/],
+  [
+    "video_games",
+    /video ?game|playstation|\bps[1-5]\b|xbox|nintendo|switch|console|gaming|\bgames?\b/,
+  ],
+  ["sneakers", /sneaker|shoe|footwear|jordan|trainer/],
+  ["apparel", /apparel|clothing|jacket|shirt|hoodie|sweater|pants|\bhat\b|\bcap\b/],
+  ["books", /book|comic|manga/],
+  ["electronics", /electronic|camera|audio|headphone|phone|laptop|computer|tablet|speaker|drone/],
+  ["home", /home|decor|kitchen|furniture|plant|garden/],
+];
+
+export function categoryKind(category: string): string | null {
+  const c = category.toLowerCase();
+  return KINDS.find(([, words]) => words.test(c))?.[0] ?? null;
+}
+
+/** Consoles are electronics too, so the 2 never rule each other out. */
+const RELATED = new Set(["electronics|video_games", "video_games|electronics"]);
+
+/**
+ * Whether 2 categories can describe the same kind of thing. Unknown kinds fall back to the
+ * first path segment, compared loosely.
+ */
+export function sameKind(a: string, b: string): boolean {
+  const ka = categoryKind(a);
+  const kb = categoryKind(b);
+  if (ka && kb) return ka === kb || RELATED.has(`${ka}|${kb}`);
+  const top = (c: string) => normalize(c.split(/[/>]/)[0] ?? c);
+  return top(a) === top(b);
+}
 
 /**
  * How well an Item fits an Ask, 0 to 1, or null when it doesn't fit. A matching model
  * number is strong evidence on its own; otherwise similarity must clear the bar, and an
- * exact Ask's brand and any Ask's top-level category must not contradict the Item.
+ * exact Ask's brand and any Ask's kind of thing (sameKind) must not contradict the Item.
  */
 export function scoreCandidate(
   target: unknown,
@@ -218,7 +258,7 @@ export function scoreCandidate(
 ): number | null {
   const parsed = AskTarget.safeParse(target);
   const t = parsed.success ? parsed.data : null;
-  if (t?.category && c.category && topCategory(t.category) !== topCategory(c.category)) {
+  if (t?.category && c.category && !sameKind(t.category, c.category)) {
     return null;
   }
   const brandClash = Boolean(t?.brand && c.brand && normalize(t.brand) !== normalize(c.brand));
@@ -245,7 +285,7 @@ export function inferCandidate(
 ): number | null {
   const parsed = AskTarget.safeParse(target);
   const category = parsed.success ? parsed.data.category : null;
-  if (!category || !c.category || topCategory(category) !== topCategory(c.category)) return null;
+  if (!category || !c.category || !sameKind(category, c.category)) return null;
   return c.similarity >= minSimilarity ? Math.min(1, c.similarity) : null;
 }
 

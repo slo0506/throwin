@@ -8,6 +8,7 @@ import {
 } from "../src/prospector/matcher.js";
 import {
   askEmbeddingText,
+  categoryKind,
   embeddingHash,
   type InquiryResult,
   type InterestCandidate,
@@ -21,6 +22,7 @@ import {
   type ReviewContext,
   type StageResult,
   type StoredEdge,
+  sameKind,
   scoreCandidate,
   type WantCandidate,
 } from "../src/prospector/prospect.js";
@@ -271,6 +273,38 @@ const ask = (
   embeddingHash: null,
   status: "prospecting",
   ...over,
+});
+
+describe("categories from the resolver and the Appraiser", () => {
+  it("map paths and free text to the same kind", () => {
+    expect(categoryKind("games/playstation")).toBe("video_games");
+    expect(categoryKind("Video Game Consoles")).toBe("video_games");
+    expect(categoryKind("Toys & Games > Building Toys")).toBe("toys");
+    expect(categoryKind("toys/lego")).toBe("toys");
+    expect(categoryKind("games/board")).toBe("board_games");
+    expect(categoryKind("Sneakers")).toBe("sneakers");
+    expect(categoryKind("Mystery Box")).toBeNull();
+  });
+
+  it("only rule out kinds that really differ", () => {
+    expect(sameKind("games/playstation", "Video Game Consoles")).toBe(true);
+    expect(sameKind("games/switch", "Electronics")).toBe(true);
+    expect(sameKind("toys/lego", "Toys & Games > Building Toys")).toBe(true);
+    expect(sameKind("sneakers", "Video Game Consoles")).toBe(false);
+    expect(sameKind("mystery/box", "Mystery")).toBe(true);
+  });
+
+  it("let a PS4 on a Shelf fill a PS4 Ask", () => {
+    const ps4 = {
+      kind: "exact",
+      name: "PlayStation 4",
+      brand: "Sony",
+      category: "games/playstation",
+    };
+    const item = { similarity: 0.42, category: "Video Game Consoles", brand: "Sony", model: null };
+    expect(scoreCandidate(ps4, item, 0.3)).toBeCloseTo(0.42);
+    expect(scoreCandidate(ps4, { ...item, category: "Sneakers" }, 0.3)).toBeNull();
+  });
 });
 
 describe("someone wants your Item", () => {
