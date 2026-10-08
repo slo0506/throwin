@@ -10,6 +10,7 @@ import {
   compareQuestions,
   DEFAULT_NOTIFICATION_PREFS,
   DealStatus,
+  IDENTIFIED_CONFIDENCE,
   ItemReadiness,
   ItemStatus,
   ItemWillingness,
@@ -1022,14 +1023,12 @@ export class SupabaseRepository implements Repository {
       this.db
         .from("items")
         .select(
-          "id, title, readiness, missing_angles, item_media(storage_path, position), item_questions(status)",
+          "id, title, identity_conf, identity_confirmed, missing_angles, item_media(storage_path, position), item_questions(status)",
         )
         .in(
           "id",
           legRows.map((l) => l.item_id),
-        )
-        // A Deal only waits on Items the GM can't identify yet.
-        .eq("readiness", "logged"),
+        ),
       this.db
         .from("users")
         .select("id, display_name")
@@ -1043,6 +1042,8 @@ export class SupabaseRepository implements Repository {
           z.object({
             id: z.string(),
             title: z.string(),
+            identity_conf: z.number().nullable(),
+            identity_confirmed: z.boolean().nullable(),
             missing_angles: z.array(z.string()).nullable(),
             item_media: z
               .array(z.object({ storage_path: z.string(), position: z.number() }))
@@ -1051,6 +1052,8 @@ export class SupabaseRepository implements Repository {
           }),
         )
         .parse(items.data ?? [])
+        // A Deal only waits on Items the GM can't tell what they are (item_identity_known).
+        .filter((i) => !(i.identity_confirmed || (i.identity_conf ?? 0) >= IDENTIFIED_CONFIDENCE))
         .map((i) => [i.id, i]),
     );
     const names = new Map(

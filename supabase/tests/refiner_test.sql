@@ -216,8 +216,9 @@ begin
   end if;
 end $$;
 
--- 7. A Deal's Item takes no answers.
-insert into public.deals (id) values ('50000000-0000-4000-8000-000000000051');
+-- 7. An Item out for approval in a Deal takes no answers; a staged Deal, which waits for
+--    exactly these answers, lets them through.
+insert into public.deals (id, status) values ('50000000-0000-4000-8000-000000000051', 'pending_approvals');
 do $$
 declare
   r jsonb;
@@ -226,6 +227,14 @@ begin
    where id = '20000000-0000-4000-8000-000000000051';
   r := public.answer_item_question('00000000-0000-4000-8000-000000000005', '60000000-0000-4000-8000-000000000004', 'Swoosh', false);
   if r ->> 'result' <> 'item_reserved' then raise exception 'reserved: %', r; end if;
+  update public.deals set status = 'staged' where id = '50000000-0000-4000-8000-000000000051';
+  update public.items set appraising = false where id = '20000000-0000-4000-8000-000000000051';
+  r := public.answer_item_question('00000000-0000-4000-8000-000000000005', '60000000-0000-4000-8000-000000000004', 'Swoosh', false);
+  if r ->> 'result' <> 'ok' then raise exception 'a staged Deal should take answers: %', r; end if;
+  if (select reserved_by_deal_id from public.items where id = '20000000-0000-4000-8000-000000000051')
+     <> '50000000-0000-4000-8000-000000000051' then
+    raise exception 'the Item must stay held by its Deal';
+  end if;
 end $$;
 
 rollback;

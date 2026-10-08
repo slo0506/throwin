@@ -33,7 +33,7 @@ Money moves only after both people confirm the handoff in person (PRD "Handoff a
 
 ## Decisions (Oct 7)
 
-- **Deal Sheets go out once every Item is identified, not showcase** (Option A). Showcase stays as homework that makes an offer stronger. A Deal waits only while the GM can't tell what an Item is, and its owner gets the cheapest way to pin it down: quick answers, then photos (`pin_down_item`, `showcase_photos` in Next up). Migration `20261023000100_deals_at_identified.sql`.
+- **Deal Sheets go out once the GM knows what every Item is, not at showcase** (Option A). Showcase stays as homework that makes an offer stronger. A Deal waits only while an Item's identity is unknown (not confirmed and under 0.85 confidence), and its owner gets the cheapest way to pin it down: quick answers, then photos (`pin_down_item`, `showcase_photos` in Next up). A wide value range never holds a Deal: both people see the ranges. Migrations `20261023000100_deals_at_identified.sql` and `20261023000400_deal_gate_is_identity.sql`; answers and photos for a held Item in `20261022000100` and `20261023000300`.
 - **A photo only counts when it shows the same item.** The Refiner checks every photo against the Item's first photo: same unit, a different object, or unclear; whether it looks like a stock or store photo; and exact repeats. Photos that fail don't count toward the score or the angles, and the owner sees why ("This one doesn't look like your Insta360 X3, so it isn't counted").
 
 ## Plan
