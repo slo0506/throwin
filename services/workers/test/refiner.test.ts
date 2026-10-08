@@ -1,4 +1,4 @@
-import { computeReadiness, YES_NO_OPTIONS } from "@throwin/shared";
+import { computeReadiness, STUDIO_PHOTO_SCORE, YES_NO_OPTIONS } from "@throwin/shared";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import type { CachedPrice } from "../src/appraiser/price-cache.js";
@@ -6,7 +6,7 @@ import type { Identification } from "../src/appraiser/schemas.js";
 import { silentLogger } from "../src/log.js";
 import { CATEGORIES, categoryOf, unknownDrivers } from "../src/refiner/categories.js";
 import type { QuestionRequest, RefinerModels } from "../src/refiner/models.js";
-import { combine, measure } from "../src/refiner/photo-score.js";
+import { combine, dropDuplicates, measure, STOCK_PHOTO_CAP } from "../src/refiner/photo-score.js";
 import {
   askableDrivers,
   DEFAULT_REFINER,
@@ -121,6 +121,8 @@ const judgment = (overrides: Partial<PhotoJudgment> = {}): PhotoJudgment => ({
   fill: 0.6,
   background: "clean",
   angles_present: [],
+  main_photo_stock: false,
+  extras: [],
   ...overrides,
 });
 
@@ -443,6 +445,109 @@ describe("askableDrivers", () => {
         question({ id: "q2", status: "skipped", skipCount: 1, answeredAt: old }),
       ]),
     ).not.toContain("brand");
+  });
+});
+
+describe("photos that aren't the owner's own Item", () => {
+  const angles = CATEGORIES.electronics.angles;
+
+  it("doesn't count an extra photo of something else, and flags it", async () => {
+    const big = await texture(1000, 800);
+    const m = await measure({ jpeg: big, width: 1000, height: 800 });
+    // Found dogfooding: a lens cap from another model "showed" the accessories angle.
+    const s = combine(
+      m,
+      judgment({
+        angles_present: ["Front"],
+        extras: [
+          { shows: "other_item", stock: false, angles: ["Accessories laid out"] },
+          { shows: "same_item", stock: false, angles: ["Ports"] },
+        ],
+      }),
+      angles,
+    );
+    expect(s.missingAngles).toEqual(["Back with label", "Accessories laid out"]);
+    expect(s.issues).toContain("wrong_item");
+  });
+
+  it("caps a stock-looking main photo below Studio and showcase, and counts none of its angles", async () => {
+    const big = await texture(1000, 800);
+    const m = await measure({ jpeg: big, width: 1000, height: 800 });
+    const s = combine(
+      m,
+      judgment({ angles_present: [...angles], fill: 0.8, main_photo_stock: true }),
+      angles,
+    );
+    expect(s.score).toBeLessThanOrEqual(STOCK_PHOTO_CAP);
+    expect(s.score).toBeLessThan(STUDIO_PHOTO_SCORE);
+    expect(s.missingAngles).toEqual([...angles]);
+    expect(s.issues).toContain("stock_photo");
+  });
+
+  it("ignores a stock extra's angles", async () => {
+    const big = await texture(1000, 800);
+    const m = await measure({ jpeg: big, width: 1000, height: 800 });
+    const s = combine(
+      m,
+      judgment({ extras: [{ shows: "same_item", stock: true, angles: ["Ports"] }] }),
+      angles,
+    );
+    expect(s.missingAngles).toContain("Ports");
+    expect(s.issues).toContain("stock_photo");
+  });
+
+  it("finds the same shot added twice, even re-encoded, and keeps different ones", async () => {
+    const gradient = (direction: "x" | "y") =>
+      sharp(
+        Buffer.from(
+          Array.from({ length: 200 * 160 }, (_, i) => {
+            const x = i % 200;
+            const y = Math.floor(i / 200);
+            return direction === "x" ? Math.round((x / 199) * 255) : Math.round((y / 159) * 255);
+          }),
+        ),
+        { raw: { width: 200, height: 160, channels: 1 } },
+      )
+        .jpeg({ quality: 90 })
+        .toBuffer();
+    const across = await gradient("x");
+    const reencoded = await sharp(across).resize(180, 144).jpeg({ quality: 70 }).toBuffer();
+    const down = await gradient("y");
+    const main = await solidJpeg("#3366aa", 900, 700);
+    const { kept, duplicates } = await dropDuplicates(
+      { jpeg: main, width: 900, height: 700 },
+      [across, reencoded, down].map((jpeg, i) => ({
+        image: { jpeg, width: 200, height: 160 },
+        value: i,
+      })),
+    );
+    expect(duplicates).toBe(1);
+    expect(kept.map((k) => k.value)).toEqual([0, 2]);
+  });
+
+  it("judges repeats once and flags them", async () => {
+    const store = new MemoryRefinerStore({
+      identification: ps5,
+      value: { lowCents: 30000, midCents: 34000, highCents: 38000 },
+    });
+    store.files.set("hero.jpg", await texture(1000, 800));
+    const extra = await solidJpeg("#3366aa", 1000, 800);
+    store.files.set("extra-1.jpg", extra);
+    store.files.set("extra-2.jpg", extra);
+    store.item.media.push(
+      { id: "m2", path: "extra-1.jpg", position: 1 },
+      { id: "m3", path: "extra-2.jpg", position: 2 },
+    );
+    const models = fakeModels();
+    let sent = -1;
+    models.judgePhoto = async (_hero, others) => {
+      sent = others.length;
+      return judgment({ extras: [{ shows: "same_item", stock: false, angles: ["Ports"] }] });
+    };
+    const { deps: d } = deps(store, models);
+    await refineItem("item-1", USER, "photos", d);
+    expect(sent).toBe(1);
+    expect(store.last.photo?.issues).toContain("duplicate_photo");
   });
 });
 

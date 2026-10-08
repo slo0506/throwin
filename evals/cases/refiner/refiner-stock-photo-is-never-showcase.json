@@ -1,0 +1,32 @@
+{
+  "id": "refiner-stock-photo-is-never-showcase",
+  "suite": "refinement",
+  "description": "A catalog-style product photo (seamless white studio backdrop, perfect lighting) as the main photo is flagged stock_photo, scores 45 or less, gets no Studio and counts no angles",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "title": "Air Jordan 4 Retro Oil Green",
+      "category": "sneakers",
+      "brand": "Jordan",
+      "model": "Air Jordan 4 Retro",
+      "identity_confidence": 0.9,
+      "condition_confidence": 0.7,
+      "value_cents": { "low": 11500, "mid": 15000, "high": 19000 },
+      "photos": [
+        {
+          "source": "wikimedia-commons-search",
+          "query": "Nike Air Jordan 4 studio product photo white background"
+        }
+      ]
+    },
+    "reason": "created"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "photo_score": { "max": 45 },
+    "photo_issues_include": ["stock_photo"],
+    "studio_allowed": false,
+    "readiness_not": "showcase"
+  }
+}

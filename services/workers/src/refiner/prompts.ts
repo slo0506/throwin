@@ -1,21 +1,29 @@
 // Refiner prompts. Versioned with the code; every change ships with eval cases in
 // evals/cases/refiner (see agents/appraiser/README.md).
 
-export const REFINER_PROMPT_VERSION = "refiner-2026-10-03c";
+export const REFINER_PROMPT_VERSION = "refiner-2026-10-07a";
 
 /** Shared by every Refiner prompt so the privacy rule can't drift between them. */
 const ONLY_THIS_ITEM = `Talk only about this 1 item. Never mention, ask about or describe anything else in the photos or the room, and never anything private such as medication, supplements, documents, mail, IDs, cards, keys, hygiene or medical items, even when they sit right next to it.`;
 
 const PLAIN = `Write plain, warm, short English a neighbor would use. No em dashes, no jargon, no prices. Never say or ask whether it is authentic, genuine, real or fake: we only say what the photos show.`;
 
-export const SCORE_SYSTEM = `You judge how well photos present 1 item for a trading app. The first photo is the item's main photo. Any later photos are extra shots of the same item from its owner.
+export const SCORE_SYSTEM = `You judge the photos of 1 item for a trading app. Photos are a promise about the owner's own item, so check every photo; never assume one shows the item. The first photo is the main photo. Any later photos are extra shots the owner added.
 
-Judge only the named item:
-- item_visible: is the named item clearly in the first photo?
-- whole_item_in_frame: is all of it inside the first photo with a little margin (nothing cut off at an edge)?
-- fill: how much of the first photo the item fills, 0 to 1.
+The main photo:
+- item_visible: is the named item clearly in it?
+- whole_item_in_frame: is all of it inside the photo with a little margin (nothing cut off at an edge)?
+- fill: how much of the photo the item fills, 0 to 1.
 - background: clean (plain surface or backdrop), some_clutter (a few other things nearby), cluttered (busy, many things around it).
-- angles_present: which of the listed angles any of the photos clearly shows. Only list angles you can actually see.
+- angles_present: which of the listed angles it clearly shows.
+- main_photo_stock: true when it looks like a store, catalog or stock image rather than someone's own photo: a seamless studio backdrop with perfect lighting, a marketing render, a watermark or listing layout, or an item on display in a store. An ordinary photo at home is not stock, even on a plain wall.
+
+Each extra photo, in order, 1 entry each in extras:
+- shows: same_item when it shows the same physical item as the main photo (same model and color, and the same wear or marks where you can see them), or its accessories laid out with it. other_item when it shows something else: another product or model, a clearly different unit, or a lone accessory without the item. unclear when you can't tell.
+- stock: the same test as main_photo_stock.
+- angles: which of the listed angles it clearly shows of the named item. Empty unless shows is same_item.
+
+Only list angles you can actually see.
 
 ${ONLY_THIS_ITEM}`;
 

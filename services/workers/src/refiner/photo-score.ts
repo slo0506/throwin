@@ -26,6 +26,55 @@ export interface PhotoScoreConfig {
 export const DEFAULT_PHOTO_SCORE: PhotoScoreConfig = { sharpnessLow: 20, sharpnessHigh: 200 };
 
 /**
+ * A main photo that looks like a store or stock image tops out here: under the Studio bar
+ * (50) and the showcase bar (75), so it can identify an Item but never present it as yours.
+ */
+export const STOCK_PHOTO_CAP = 45;
+
+/** Thumbnails closer than this (mean difference per pixel, out of 255) are the same shot. */
+export const DUPLICATE_MAX_DIFFERENCE = 4;
+
+/** A 16 by 16 greyscale thumbnail, enough to tell the same shot from a different one. */
+export async function thumbprint(image: PreparedImage): Promise<Uint8Array> {
+  const { data } = await sharp(image.jpeg)
+    .resize(16, 16, { fit: "fill" })
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return new Uint8Array(data);
+}
+
+/** Mean absolute difference per pixel between 2 thumbprints, 0 to 255. */
+export function thumbprintDifference(a: Uint8Array, b: Uint8Array): number {
+  let total = 0;
+  for (let i = 0; i < a.length; i++) total += Math.abs((a[i] as number) - (b[i] as number));
+  return a.length > 0 ? total / a.length : 0;
+}
+
+/**
+ * Splits extra photos into the ones worth judging and repeats: an extra that matches the
+ * main photo or an earlier extra is the same shot added twice.
+ */
+export async function dropDuplicates<T>(
+  main: PreparedImage,
+  extras: { image: PreparedImage; value: T }[],
+): Promise<{ kept: { image: PreparedImage; value: T }[]; duplicates: number }> {
+  const seen = [await thumbprint(main)];
+  const kept: { image: PreparedImage; value: T }[] = [];
+  let duplicates = 0;
+  for (const extra of extras) {
+    const print = await thumbprint(extra.image);
+    if (seen.some((s) => thumbprintDifference(s, print) <= DUPLICATE_MAX_DIFFERENCE)) {
+      duplicates++;
+      continue;
+    }
+    seen.push(print);
+    kept.push(extra);
+  }
+  return { kept, duplicates };
+}
+
+/**
  * Points per factor, 100 in all. Resolution and sharpness weigh most because no backdrop
  * or framing fixes a tiny or blurry photo; the 3 judgment parts share the rest.
  */
@@ -77,13 +126,15 @@ export interface PhotoScore {
 /**
  * Combines code metrics and the model's judgment into 0 to 100. A long edge under 600 px
  * caps the score at 40, below the Studio bar, since lifting a tiny crop only makes a tiny
- * sticker.
+ * sticker. Angles count only from photos that show the owner's own Item: a stock-looking
+ * main photo, an extra of something else, a stock extra or a repeated shot add nothing.
  */
 export function combine(
   m: PhotoMetrics,
   judgment: PhotoJudgment,
   angles: readonly string[],
   config: PhotoScoreConfig = DEFAULT_PHOTO_SCORE,
+  duplicates = 0,
 ): PhotoScore {
   const resolution = clamp01((m.longEdge - 300) / (1000 - 300));
   const sharp = clamp01(
@@ -98,7 +149,11 @@ export function combine(
       ? clamp01(0.4 + judgment.fill)
       : clamp01(0.5 * judgment.fill);
   const background = { clean: 1, some_clutter: 0.6, cluttered: 0.2 }[judgment.background];
-  const seen = new Set(judgment.angles_present.map((a) => a.trim().toLowerCase()));
+  const counted = [
+    ...(judgment.main_photo_stock ? [] : judgment.angles_present),
+    ...judgment.extras.filter((e) => e.shows === "same_item" && !e.stock).flatMap((e) => e.angles),
+  ];
+  const seen = new Set(counted.map((a) => a.trim().toLowerCase()));
   const missingAngles = angles.filter((a) => !seen.has(a.toLowerCase()));
   const coverage = angles.length > 0 ? (angles.length - missingAngles.length) / angles.length : 1;
 
@@ -110,6 +165,7 @@ export function combine(
     ),
   );
   if (m.longEdge < MIN_LONG_EDGE_PX) score = Math.min(score, SMALL_PHOTO_CAP);
+  if (judgment.main_photo_stock) score = Math.min(score, STOCK_PHOTO_CAP);
 
   const issues: PhotoIssue[] = [];
   if (m.longEdge < MIN_LONG_EDGE_PX) issues.push("too_small");
@@ -118,5 +174,8 @@ export function combine(
   if (judgment.item_visible && !judgment.whole_item_in_frame) issues.push("cut_off");
   if (judgment.background === "cluttered") issues.push("cluttered_background");
   if (missingAngles.length > 0) issues.push("missing_angles");
+  if (judgment.extras.some((e) => e.shows === "other_item")) issues.push("wrong_item");
+  if (judgment.main_photo_stock || judgment.extras.some((e) => e.stock)) issues.push("stock_photo");
+  if (duplicates > 0) issues.push("duplicate_photo");
   return { score: Math.max(0, Math.min(100, score)), issues, missingAngles, parts };
 }

@@ -15,6 +15,12 @@ export const PhotoIssue = z.enum([
   "cut_off",
   "cluttered_background",
   "missing_angles",
+  /** An extra photo shows something other than this Item; it isn't counted. */
+  "wrong_item",
+  /** A photo looks like a store or stock image, not the owner's own Item. */
+  "stock_photo",
+  /** The same shot was added twice; it counts once. */
+  "duplicate_photo",
 ]);
 export type PhotoIssue = z.infer<typeof PhotoIssue>;
 

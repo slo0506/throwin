@@ -1,0 +1,35 @@
+{
+  "id": "refiner-photo-of-something-else-isnt-counted",
+  "suite": "refinement",
+  "description": "Found dogfooding: the owner's Insta360 X3 plus an extra photo of a lone lens cap from an X4. The cap shows something else, so it fills no angle and is flagged wrong_item",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "title": "Insta360 X3 360 Action Camera",
+      "category": "electronics",
+      "brand": "Insta360",
+      "model": "X3",
+      "identity_confidence": 0.9,
+      "condition_confidence": 0.7,
+      "value_cents": { "low": 20000, "mid": 23000, "high": 26000 },
+      "photos": [
+        {
+          "source": "staged-photo",
+          "describe": "A hand holding a black Insta360 X3 camera, lens and 'Insta360 X3' text visible, window light behind it."
+        },
+        {
+          "source": "staged-photo",
+          "describe": "A black rubber lens cap labeled for the Insta360 X4, alone on a patterned carpet, no camera in the frame."
+        }
+      ]
+    },
+    "reason": "photos"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "photo_issues_include": ["wrong_item"],
+    "missing_angles_include": ["Accessories laid out"],
+    "readiness_not": "showcase"
+  }
+}

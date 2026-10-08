@@ -2,6 +2,20 @@ import { QuestionKind } from "@throwin/shared";
 import { z } from "zod";
 import { strict } from "../appraiser/schemas.js";
 
+const angleList = z.array(z.string()).transform((a) => [...new Set(a)].slice(0, 10));
+
+/**
+ * 1 extra photo, judged on its own: photos are a promise about the owner's own Item, so
+ * the grader never assumes an extra shows it (docs/specs/trust-and-verification.md).
+ */
+export const ExtraPhotoJudgment = z.object({
+  shows: z.enum(["same_item", "other_item", "unclear"]),
+  /** Looks like a store, catalog or stock image rather than the owner's own photo. */
+  stock: z.boolean(),
+  angles: angleList,
+});
+export type ExtraPhotoJudgment = z.infer<typeof ExtraPhotoJudgment>;
+
 /** The judgment parts of a photo score, from 1 Haiku call. */
 export const PhotoJudgment = z.object({
   item_visible: z.boolean(),
@@ -9,7 +23,12 @@ export const PhotoJudgment = z.object({
   /** Share of the hero photo the item fills, 0 to 1. */
   fill: z.number().transform((v) => Math.min(1, Math.max(0, v))),
   background: z.enum(["clean", "some_clutter", "cluttered"]),
-  angles_present: z.array(z.string()).transform((a) => [...new Set(a)].slice(0, 10)),
+  /** Angles the main photo shows. */
+  angles_present: angleList,
+  /** The main photo looks like a store, catalog or stock image. */
+  main_photo_stock: z.boolean().default(false),
+  /** 1 per extra photo, in the order sent. */
+  extras: z.array(ExtraPhotoJudgment).default([]),
 });
 export type PhotoJudgment = z.infer<typeof PhotoJudgment>;
 
@@ -34,10 +53,40 @@ export const photoJudgmentJsonSchema = (angles: readonly string[]) =>
       angles_present: {
         type: "array",
         items: { type: "string", enum: [...angles] },
-        description: "Which of the listed angles any photo clearly shows",
+        description: "Which of the listed angles the main photo clearly shows",
+      },
+      main_photo_stock: {
+        type: "boolean",
+        description:
+          "True when the main photo looks like a store, catalog or stock image, not someone's own item",
+      },
+      extras: {
+        type: "array",
+        description: "1 entry per extra photo, in the order given",
+        items: {
+          type: "object",
+          properties: {
+            shows: { type: "string", enum: ["same_item", "other_item", "unclear"] },
+            stock: { type: "boolean" },
+            angles: {
+              type: "array",
+              items: { type: "string", enum: [...angles] },
+              description: "Which of the listed angles this photo clearly shows of the named item",
+            },
+          },
+          required: ["shows", "stock", "angles"],
+        },
       },
     },
-    required: ["item_visible", "whole_item_in_frame", "fill", "background", "angles_present"],
+    required: [
+      "item_visible",
+      "whole_item_in_frame",
+      "fill",
+      "background",
+      "angles_present",
+      "main_photo_stock",
+      "extras",
+    ],
   });
 
 const line = (max: number) =>
