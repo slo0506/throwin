@@ -144,8 +144,8 @@ def test_a_bundle_deal_lists_every_item_and_sums_the_sides():
         "a": (12000, 15000),
         "b": (15000, 12000),
     }
-    # Utility of all 4 Items, minus 2 extra Items and $7.50 of cash.
-    assert deal.score == round(1.0 + 0.9 + 0.8 + 0.7 - 2 * 0.15 - 7.5 * 0.02, 3)
+    # Utility of all 4 Items, minus 2 extra Items and $7.50 of cash on $270 of Items.
+    assert deal.score == round(1.0 + 0.9 + 0.8 + 0.7 - 2 * 0.15 - 750 / 27000, 3)
 
 
 def test_bundles_work_in_a_3_way_loop():

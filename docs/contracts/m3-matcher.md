@@ -34,7 +34,7 @@ All JSON is snake_case. Money is integer cents. IDs are strings (UUIDs in practi
   "tolerance_floor_cents": 1000,
   "max_items_per_leg": 1,
   "time_limit_seconds": 5,
-  "weights": { "utility": 1, "cash_per_dollar": 0.02, "extra_person": 0.25, "low_confidence": 1, "inferred_edge": 0.3, "extra_item": 0.15 }
+  "weights": { "utility": 1, "cash_share": 1, "extra_person": 0.25, "low_confidence": 1, "inferred_edge": 0.3, "extra_item": 0.15 }
 }
 ```
 
@@ -104,7 +104,7 @@ These are property-tested in `services/matcher/tests/test_properties.py` on 320 
 
 ## Score
 
-`utility × sum(edge utility) − cash_per_dollar × dollars moved − extra_person × (people − 2) − extra_item × (Items − people) − low_confidence × (1 − lowest edge confidence) − inferred_edge × inferred edges`
+`utility × sum(edge utility) − cash_share × (cash moved ÷ value of the Items traded) − extra_person × (people − 2) − extra_item × (Items − people) − low_confidence × (1 − lowest edge confidence) − inferred_edge × inferred edges`
 
 Sums and the lowest confidence run over every Item in the Deal, bundles included.
 

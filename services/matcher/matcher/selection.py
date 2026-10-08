@@ -32,7 +32,8 @@ def score(balanced: Balanced, w: Weights) -> float:
     edges = [e for leg in balanced.legs for e in leg]
     people = len(balanced.legs)
     utility = sum(e.utility for e in edges)
-    cash = balanced.cash_moved_cents / 100 * w.cash_per_dollar
+    value = sum(e.value_cents for e in edges)
+    cash = w.cash_share * balanced.cash_moved_cents / max(value, 1)
     logistics = (people - 2) * w.extra_person + (len(edges) - people) * w.extra_item
     risk = (1 - min(e.confidence for e in edges)) * w.low_confidence
     inferred = sum(e.kind == "inferred" for e in edges) * w.inferred_edge

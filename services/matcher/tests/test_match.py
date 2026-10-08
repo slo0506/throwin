@@ -288,3 +288,38 @@ def test_balance_refuses_a_malformed_deal():
         ([("a", 0), ("b", 0)], [("b", "a", "1", 100), ("a", "b", "1", 100)]),
     ):
         assert _balance_api(people, legs).status_code == 422
+
+
+def test_a_trade_both_people_asked_for_survives_a_big_throw_in():
+    # Found on prod: a $230 camera for a $117.50 console needs about $78 from the console's
+    # owner. A flat $0.02 a dollar priced it below 0 and nobody saw a Deal.
+    req = MatchRequest(
+        anchor_user="anto",
+        edges=[
+            Edge(
+                from_user="anto",
+                to_user="jackson",
+                item_id="insta",
+                utility=0.9,
+                confidence=0.9,
+                ask_id="anto-ask",
+                giver_ask_id="jackson-ask",
+                value_cents=23000,
+                cash_ceiling_cents=12500,
+            ),
+            Edge(
+                from_user="jackson",
+                to_user="anto",
+                item_id="ps4",
+                utility=0.611,
+                confidence=0.611,
+                ask_id="jackson-ask",
+                giver_ask_id="anto-ask",
+                value_cents=11750,
+                cash_ceiling_cents=0,
+            ),
+        ],
+    )
+    (deal,) = match(req).deals
+    assert deal.cash_legs[0].payer == "anto"
+    assert deal.score > 0
