@@ -23,6 +23,8 @@ class Edge(BaseModel):
     value_cents: int = Field(default=0, ge=0)
     # The most cash `from_user` would add for this Ask.
     cash_ceiling_cents: int = Field(default=0, ge=0, le=100_000)
+    # How many Items the wanter's Ask takes ("2 or 3 board games"). 1 for most Asks.
+    max_items: int = Field(default=1, ge=1, le=5)
 
 
 class WantGraph(BaseModel):
@@ -67,6 +69,8 @@ class Weights(BaseModel):
     low_confidence: float = 1.0
     # Per inferred edge: the wanter never asked, so a Liaison inquiry must confirm it.
     inferred_edge: float = 0.3
+    # Per Item beyond the first that 1 person hands another: 1 more thing to hand over.
+    extra_item: float = 0.15
 
 
 class MatchRequest(WantGraph):
@@ -74,11 +78,18 @@ class MatchRequest(WantGraph):
     # Fairness tolerance: max(pct of the larger Item value, floor). PRD: 15% or $10.
     tolerance_pct: float = Field(default=0.15, ge=0, le=1)
     tolerance_floor_cents: int = Field(default=1000, ge=0)
+    # Items 1 person may hand another in 1 Deal (X for Y). At 1, every Deal is 1 Item each
+    # way. Above 1, when cash alone can't even a Loop out, a giver can add Items from the
+    # same offer set that the receiver's Asks want.
+    max_items_per_leg: int = Field(default=1, ge=1, le=5)
     time_limit_seconds: float = Field(default=5.0, gt=0, le=60)
 
 
 class ItemLeg(BaseModel):
-    """`receiver` gets `item_id` from `giver`. Maps to a deal_legs row with an item."""
+    """`receiver` gets `item_id` from `giver`. Maps to a deal_legs row with an item.
+
+    A bundle is several ItemLegs with the same giver and receiver.
+    """
 
     giver: str
     receiver: str
@@ -98,7 +109,8 @@ class CashLeg(BaseModel):
 
 
 class Fairness(BaseModel):
-    """1 participant's side of the Deal. Positive net means they come out ahead."""
+    """1 participant's side of the Deal, summed over their Items. Positive net means they
+    come out ahead."""
 
     user: str
     gives_cents: int

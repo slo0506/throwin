@@ -1,8 +1,8 @@
 """Scoring and selection: the best set of balanced cycles that never promises an Item twice.
 
-Each candidate is scored (utility gained, minus penalties for cash, extra people, low
-confidence and inferred edges), then CP-SAT picks the non-overlapping set with the most
-total score. Overlap means sharing an Item, or filling the same Ask twice.
+Each candidate is scored (utility gained, minus penalties for cash, extra people, extra
+Items, low confidence and inferred edges), then CP-SAT picks the non-overlapping set with
+the most total score. Overlap means sharing an Item, or filling the same Ask twice.
 """
 
 from __future__ import annotations
@@ -20,15 +20,20 @@ SCALE = 1000
 
 @dataclass(frozen=True)
 class Candidate:
-    edges: list[Edge]
     balanced: Balanced
     score: float
 
+    @property
+    def edges(self) -> list[Edge]:
+        return [e for leg in self.balanced.legs for e in leg]
 
-def score(edges: list[Edge], balanced: Balanced, w: Weights) -> float:
+
+def score(balanced: Balanced, w: Weights) -> float:
+    edges = [e for leg in balanced.legs for e in leg]
+    people = len(balanced.legs)
     utility = sum(e.utility for e in edges)
     cash = balanced.cash_moved_cents / 100 * w.cash_per_dollar
-    logistics = (len(edges) - 2) * w.extra_person
+    logistics = (people - 2) * w.extra_person + (len(edges) - people) * w.extra_item
     risk = (1 - min(e.confidence for e in edges)) * w.low_confidence
     inferred = sum(e.kind == "inferred" for e in edges) * w.inferred_edge
     return w.utility * utility - cash - logistics - risk - inferred
