@@ -1,0 +1,32 @@
+{
+  "id": "appraisal-follow-up-photo-of-another-item-changes-nothing",
+  "suite": "appraisal",
+  "description": "Found dogfooding: a pair of Crocs got a stock photo of an Insta360 X3 as its size-tag photo and became a $120 to $260 camera. The same-item check calls it other_item, so the reading, the price and the hero stay the Crocs'",
+  "state": {
+    "item": {
+      "title": "Crocs Classic Clog Yellow",
+      "category": "sneakers",
+      "brand": "Crocs",
+      "model": "Classic Clog",
+      "identity_confidence": 0.9,
+      "value_cents": { "low": 500, "mid": 1000, "high": 1500 },
+      "follow_up": "Photo of the size tag",
+      "photos": [
+        {
+          "source": "staged-photo",
+          "describe": "1 yellow Crocs Classic Clog on a wooden floor, light scuffing."
+        },
+        { "source": "wikimedia-commons-search", "query": "Insta360 X3 camera white background" }
+      ]
+    }
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "same_item": ["other_item"],
+    "outcome": "rejected",
+    "title_includes": "Crocs",
+    "value_unchanged": true,
+    "hero_unchanged": true
+  }
+}

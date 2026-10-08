@@ -10,6 +10,7 @@ import {
   PRICE_SYSTEM,
   PROMPT_VERSION,
   REIDENTIFY_NOTE,
+  SAME_ITEM_SYSTEM,
   VALUE_EXTRACT_SYSTEM,
 } from "./prompts.js";
 import {
@@ -19,6 +20,9 @@ import {
   groupsJsonSchema,
   Identification,
   identificationJsonSchema,
+  type PhotoMatch,
+  SameItemResult,
+  sameItemJsonSchema,
   ValueEstimate,
   valueJsonSchema,
 } from "./schemas.js";
@@ -123,6 +127,8 @@ export interface Vision {
     hero: PreparedImage,
     photos: PreparedImage[],
   ): Promise<Identification>;
+  /** Whether each new photo shows the same physical item as the hero, in order. */
+  sameItem(hero: PreparedImage, photos: PreparedImage[], title: string): Promise<PhotoMatch[]>;
   /**
    * 1 call per capture: which candidates are 1 thing to trade (the same physical object
    * seen twice, or parts traded together). Returns groups of 0-based candidate indexes.
@@ -218,6 +224,36 @@ export class ClaudeVision implements Vision {
       parser: Identification,
       maxTokens: 2000,
     });
+  }
+
+  async sameItem(
+    hero: PreparedImage,
+    photos: PreparedImage[],
+    title: string,
+  ): Promise<PhotoMatch[]> {
+    if (photos.length === 0) return [];
+    const content: (ImageBlock | TextBlock)[] = [
+      {
+        type: "text",
+        text: `The item: ${fenceUntrusted("item_title", title, { maxLength: 120 })}`,
+      },
+      { type: "text", text: "First photo:" },
+      imageBlock(hero),
+      ...photos.flatMap((photo, i): (ImageBlock | TextBlock)[] => [
+        { type: "text", text: `New photo ${i + 1}:` },
+        imageBlock(photo),
+      ]),
+    ];
+    const result = await this.#structured(
+      "appraiser.same_item",
+      MODELS.fast,
+      SAME_ITEM_SYSTEM,
+      content,
+      { schema: sameItemJsonSchema, parser: SameItemResult, maxTokens: 300 },
+    );
+    // A photo the model didn't answer for is treated as unclear: it can inform the reading
+    // but never become the hero.
+    return photos.map((_, i) => result.photos[i] ?? "unclear");
   }
 
   async group(candidates: GroupCandidate[]): Promise<number[][]> {

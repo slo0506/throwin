@@ -13,7 +13,7 @@ import type {
   StoredItem,
 } from "../src/appraiser/pipeline.js";
 import type { CachedPrice } from "../src/appraiser/price-cache.js";
-import type { Detection, Identification } from "../src/appraiser/schemas.js";
+import type { Detection, Identification, PhotoMatch } from "../src/appraiser/schemas.js";
 
 export const USER = "u1";
 export const CAPTURE = "c1";
@@ -212,6 +212,8 @@ export type FakeVision = Vision & {
   reidentifyCalls: number;
   priceImpl: (item: Identification) => Promise<PriceResult>;
   reidentifyImpl: (previous: Identification, photos: PreparedImage[]) => Promise<Identification>;
+  /** Every photo is the same item unless a test says otherwise. */
+  sameItemImpl: (photos: PreparedImage[]) => Promise<PhotoMatch[]>;
 };
 
 /** `same` groups every candidate into 1 Item; pass groupImpl for anything finer. */
@@ -230,6 +232,7 @@ export function fakeVision(
     reidentifyCalls: 0,
     priceImpl: async () => priceResult(),
     reidentifyImpl: async (previous) => previous,
+    sameItemImpl: async (photos) => photos.map(() => "same_item" as const),
     async group(candidates) {
       this.groupCalls++;
       this.groupInputs.push(candidates);
@@ -253,6 +256,9 @@ export function fakeVision(
     async price(item) {
       this.priceCalls++;
       return this.priceImpl(item);
+    },
+    async sameItem(_hero, photos) {
+      return this.sameItemImpl(photos);
     },
   };
 }

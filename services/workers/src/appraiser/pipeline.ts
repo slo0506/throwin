@@ -699,16 +699,22 @@ function latestBatch(media: ItemMedia[], heroId: string | undefined) {
 }
 
 /**
- * Follow-up photos to an updated Item: reads it again from its hero image and the owner's
- * new photos, prices again only when the identity changed materially (or it never had a
- * value), promotes a better photo to the hero image, and saves it all in place. Throws on
- * failure so the job retries; the caller clears appraising after the last attempt.
+ * Follow-up photos to an updated Item: checks each new photo shows the same item, reads it
+ * again from its hero image and the photos that do, prices again only when the identity
+ * changed materially (or it never had a value), promotes a better photo of the same item
+ * to the hero image, and saves it all in place. Throws on failure so the job retries; the
+ * caller clears appraising after the last attempt.
+ *
+ * A photo of something else never touches the Item (found dogfooding: a stock photo of a
+ * camera, sent as the size tag of a pair of Crocs, made them a $120 to $260 camera). When
+ * no new photo shows it, the result is "rejected": nothing changes, and the Refiner flags
+ * the photo so the owner sees why.
  */
 export async function reappraiseItem(
   itemId: string,
   userId: string,
   deps: AppraiserDeps,
-): Promise<"updated" | "skipped"> {
+): Promise<"updated" | "skipped" | "rejected"> {
   const { store, vision, logger } = deps;
   const pricer = deps.pricer ?? new CachedPricer(vision, store);
   const item = await store.loadItem(itemId, userId);
@@ -731,9 +737,23 @@ export async function reappraiseItem(
     return "skipped";
   }
 
-  const [hero, ...photos] = await Promise.all(
+  const [hero, ...allPhotos] = await Promise.all(
     [heroRow, ...batch].map(async (m) => prepare(await store.download(m.path))),
   );
+  const matches = await vision.sameItem(
+    hero as PreparedImage,
+    allPhotos,
+    item.identification.title,
+  );
+  // Unclear close-ups (a tag, a label) may inform the reading; only the same item can be
+  // the hero; another object is left out of everything.
+  const photos = allPhotos.filter((_, i) => matches[i] !== "other_item");
+  const sameItem = allPhotos.filter((_, i) => matches[i] === "same_item");
+  if (photos.length === 0) {
+    logger.warn("reappraise_not_this_item", { item_id: itemId, photos: allPhotos.length });
+    await store.setAppraising(itemId, false);
+    return "rejected";
+  }
   const next = await vision.reidentify(item.identification, hero as PreparedImage, photos);
 
   // New photos showing it's something Throw-In can't trade take it off the Shelf.
@@ -769,10 +789,11 @@ export async function reappraiseItem(
     }
   }
 
-  // Promote the best new photo when it beats the current hero (larger and sharper).
+  // Promote the best new photo of the same item when it beats the current hero (larger
+  // and sharper).
   let heroImage = hero as PreparedImage;
   let best: PreparedImage | null = null;
-  for (const photo of photos) {
+  for (const photo of sameItem) {
     if (await isBetterHero(photo, best ?? heroImage)) best = photo;
   }
   if (best) {
@@ -796,6 +817,7 @@ export async function reappraiseItem(
     status,
     repriced: reprice,
     new_hero: best !== null,
+    left_out: allPhotos.length - photos.length,
   });
   return "updated";
 }
