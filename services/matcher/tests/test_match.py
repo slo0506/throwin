@@ -220,3 +220,71 @@ def test_match_api():
         "giver_ask_id": None,
         "kind": "explicit",
     }
+
+
+# balance (fixed Items, for counters) -------------------------------------------------------
+
+
+def _balance_api(people, legs):
+    return TestClient(app).post(
+        "/v1/balance",
+        json={
+            "people": [{"user": u, "cash_ceiling_cents": c} for u, c in people],
+            "item_legs": [
+                {"giver": g, "receiver": r, "item_id": i, "value_cents": v} for g, r, i, v in legs
+            ],
+        },
+    )
+
+
+def test_balance_adds_the_least_cash_for_fixed_items():
+    # A counter adds b's $90 jacket to the $150 Switch a gets for 2 games ($120 + ...).
+    res = _balance_api(
+        [("a", 5000), ("b", 0)],
+        [("b", "a", "switch", 15000), ("b", "a", "jacket", 9000), ("a", "b", "zelda", 20000)],
+    )
+    assert res.status_code == 200
+    body = res.json()
+    # a gets $240 for $200: 15% of $240 is $36, so a pays $4.
+    assert body["balanced"] is True
+    assert body["cash_legs"] == [{"payer": "a", "payee": "b", "amount_cents": 400}]
+    assert {f["user"]: f["net_cents"] for f in body["fairness"]} == {"a": 3600, "b": -3600}
+
+
+def test_balance_says_no_when_the_ceiling_is_too_low():
+    res = _balance_api(
+        [("a", 0), ("b", 0)],
+        [("b", "a", "switch", 15000), ("b", "a", "jacket", 9000), ("a", "b", "zelda", 20000)],
+    )
+    assert res.status_code == 200 and res.json() == {
+        "balanced": False,
+        "cash_legs": [],
+        "fairness": [],
+        "cash_moved_cents": 0,
+    }
+
+
+def test_balance_matches_the_matcher_on_a_loop():
+    # The same 3-way Loop through both paths gives the same Throw-Ins.
+    edges = [
+        e("a", "b", "b1", 30000, ceiling=20000),
+        e("b", "c", "c1", 10000),
+        e("c", "a", "a1", 10000),
+    ]
+    looped = balance([[x] for x in edges], 0.15, 1000)
+    res = _balance_api(
+        [("a", 20000), ("b", 0), ("c", 0)],
+        [("b", "a", "b1", 30000), ("c", "b", "c1", 10000), ("a", "c", "a1", 10000)],
+    ).json()
+    assert looped is not None
+    assert res["cash_legs"] == [c.model_dump() for c in looped.cash_legs]
+
+
+def test_balance_refuses_a_malformed_deal():
+    # c gets nothing; an outsider; an Item twice.
+    for people, legs in (
+        ([("a", 0), ("b", 0), ("c", 0)], [("b", "a", "1", 100), ("a", "b", "2", 100)]),
+        ([("a", 0), ("b", 0)], [("b", "a", "1", 100), ("x", "b", "2", 100)]),
+        ([("a", 0), ("b", 0)], [("b", "a", "1", 100), ("a", "b", "1", 100)]),
+    ):
+        assert _balance_api(people, legs).status_code == 422

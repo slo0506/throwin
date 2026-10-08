@@ -7,6 +7,7 @@ import {
   computeReadiness,
   DEFAULT_NOTIFICATION_PREFS,
   type DealStatus,
+  MAX_COUNTER_ROUNDS,
   type QuestionKind,
   type QuestionStatus,
 } from "@throwin/shared";
@@ -23,7 +24,11 @@ import {
   type CaptureRecord,
   type CircleMemberRecord,
   type CircleRecord,
+  type CounterItemRecord,
+  type CounterProposal,
+  type CounterRecord,
   type DealDecisionResult,
+  type DealItemRecord,
   type DealRecord,
   type InvitePreviewRecord,
   type InviteRecord,
@@ -32,10 +37,13 @@ import {
   type MePatch,
   type MeRecord,
   type PhotoRequestRecord,
+  type ProposeCounterResult,
   type QuestionRecord,
   type Repository,
+  type RespondCounterResult,
   SHELF_STATUSES,
   type TasteFactRecord,
+  type WithdrawCounterResult,
 } from "./types.js";
 
 type StoredUser = Omit<MeRecord, "counts">;
@@ -81,7 +89,24 @@ export class MemoryRepository implements Repository {
     joinedAt?: Date;
   }[] = [];
   readonly invites: (InviteRecord & { createdBy: string })[] = [];
-  readonly deals: { id: string; status: DealStatus; expiresAt: Date; createdAt: Date }[] = [];
+  readonly deals: {
+    id: string;
+    status: DealStatus;
+    expiresAt: Date;
+    createdAt: Date;
+    counterRounds: number;
+    supersededBy: string | null;
+  }[] = [];
+  /** Mirrors deal_counters. */
+  readonly counters: (CounterProposal & {
+    id: string;
+    dealId: string;
+    proposedBy: string;
+    answers: Record<string, "accepted" | "declined">;
+    status: "pending" | "accepted" | "declined" | "withdrawn" | "expired";
+    expiresAt: Date;
+    newDealId: string | null;
+  })[] = [];
   readonly dealLegs: {
     dealId: string;
     giverId: string;
@@ -601,6 +626,8 @@ export class MemoryRepository implements Repository {
       status: deal.status ?? "pending_approvals",
       expiresAt: deal.expiresAt ?? new Date("2099-01-01T00:00:00Z"),
       createdAt: deal.createdAt ?? new Date("2026-10-03T00:00:00Z"),
+      counterRounds: 0,
+      supersededBy: null,
     });
     for (const leg of deal.legs) {
       this.dealLegs.push({
@@ -690,6 +717,7 @@ export class MemoryRepository implements Repository {
     const check = this.#decidable(userId, dealId);
     if (typeof check === "string") return check;
     const { deal, me } = check;
+    if (this.#openCounter(dealId)) return "counter_open";
     Object.assign(me, { approval: "approved", snapshot });
     const everyone = this.dealParticipants.filter((p) => p.dealId === dealId);
     if (everyone.every((p) => p.approval === "approved")) {
@@ -723,7 +751,197 @@ export class MemoryRepository implements Repository {
     }
     for (const ask of this.#dealAsks(dealId))
       if (ask.status === "proposed") ask.status = "prospecting";
+    for (const c of this.counters)
+      if (c.dealId === dealId && c.status === "pending") c.status = "expired";
     return this.#dealRecord(dealId);
+  }
+
+  async getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]> {
+    return this.items
+      .filter((i) => itemIds.includes(i.id))
+      .map((i) => ({
+        ownerId: i.ownerId,
+        status: i.status,
+        reserved: i.reservedByDealId !== null && i.reservedByDealId !== undefined,
+        willingness: i.willingness,
+        item: this.#dealItem(i),
+      }));
+  }
+
+  async getAskCeilings(askIds: string[]): Promise<Map<string, number>> {
+    return new Map(
+      this.asks.filter((a) => askIds.includes(a.id)).map((a) => [a.id, a.cashCeilingCents]),
+    );
+  }
+
+  /** Mirrors public.propose_counter. */
+  async proposeCounter(
+    userId: string,
+    dealId: string,
+    counter: CounterProposal,
+  ): Promise<ProposeCounterResult> {
+    const deal = this.deals.find((d) => d.id === dealId);
+    if (!deal || deal.status === "staged" || !this.#inDeal(userId, dealId)) return "not_found";
+    if (deal.status !== "pending_approvals" || deal.expiresAt.getTime() <= Date.now()) {
+      return "closed";
+    }
+    if (this.#openCounter(dealId)) return "counter_open";
+    if (deal.counterRounds >= MAX_COUNTER_ROUNDS) return "no_rounds_left";
+    if (
+      counter.awaiting.length === 0 ||
+      counter.awaiting.includes(userId) ||
+      counter.awaiting.some((u) => !this.#inDeal(u, dealId))
+    ) {
+      return "invalid";
+    }
+    deal.counterRounds += 1;
+    this.counters.push({
+      ...structuredClone(counter),
+      id: randomUUID(),
+      dealId,
+      proposedBy: userId,
+      answers: {},
+      status: "pending",
+      expiresAt: new Date(Math.min(deal.expiresAt.getTime(), Date.now() + 24 * 3_600_000)),
+      newDealId: null,
+    });
+    return this.#dealRecord(dealId);
+  }
+
+  /** Mirrors public.respond_counter. */
+  async respondCounter(
+    userId: string,
+    dealId: string,
+    counterId: string,
+    accept: boolean,
+  ): Promise<RespondCounterResult> {
+    const c = this.counters.find((x) => x.id === counterId && x.dealId === dealId);
+    if (!c?.awaiting.includes(userId)) return "not_found";
+    const deal = this.deals.find((d) => d.id === dealId);
+    if (
+      !deal ||
+      c.status !== "pending" ||
+      c.expiresAt.getTime() <= Date.now() ||
+      deal.status !== "pending_approvals" ||
+      deal.expiresAt.getTime() <= Date.now()
+    ) {
+      return "closed";
+    }
+    if (c.answers[userId]) return "decided";
+    if (!accept) {
+      c.answers[userId] = "declined";
+      c.status = "declined";
+      return this.#dealRecord(dealId);
+    }
+    c.answers[userId] = "accepted";
+    if (c.awaiting.some((u) => !c.answers[u])) return this.#dealRecord(dealId);
+
+    const legs = c.proposal.item_legs;
+    const kept = new Set(legs.map((l) => l.item_id));
+    const added = this.items.filter((i) => kept.has(i.id) && i.reservedByDealId !== dealId);
+    if (
+      legs.some((l) => !this.items.some((i) => i.id === l.item_id && i.ownerId === l.giver)) ||
+      added.some((i) => i.status !== "on_shelf" || i.reservedByDealId)
+    ) {
+      c.status = "expired";
+      return "items_taken";
+    }
+    const newId = randomUUID();
+    const ready = this.items
+      .filter((i) => kept.has(i.id))
+      .every((i) => this.#sync(i).readiness === "showcase");
+    this.deals.push({
+      id: newId,
+      status: ready ? "pending_approvals" : "staged",
+      expiresAt: new Date(Date.now() + (ready ? 48 : 24) * 3_600_000),
+      createdAt: new Date(),
+      counterRounds: deal.counterRounds,
+      supersededBy: null,
+    });
+    for (const item of this.items) {
+      if (item.reservedByDealId === dealId) {
+        if (kept.has(item.id)) item.reservedByDealId = newId;
+        else Object.assign(item, { status: "on_shelf", reservedByDealId: null });
+      }
+    }
+    for (const item of added) Object.assign(item, { status: "reserved", reservedByDealId: newId });
+    for (const l of legs) {
+      this.dealLegs.push({
+        dealId: newId,
+        giverId: l.giver,
+        receiverId: l.receiver,
+        itemId: l.item_id,
+        throwInCents: 0,
+        askId: l.ask_id,
+        giverAskId: l.giver_ask_id,
+      });
+    }
+    for (const t of c.proposal.cash_legs) {
+      this.dealLegs.push({
+        dealId: newId,
+        giverId: t.payer,
+        receiverId: t.payee,
+        itemId: null,
+        throwInCents: t.amount_cents,
+        askId: null,
+        giverAskId: null,
+      });
+    }
+    for (const p of this.dealParticipants.filter((x) => x.dealId === dealId)) {
+      this.dealParticipants.push({
+        dealId: newId,
+        userId: p.userId,
+        approval: "pending",
+        snapshot: null,
+        declineReason: null,
+        why: p.why,
+      });
+    }
+    const stillFilled = new Set(legs.map((l) => l.ask_id));
+    for (const ask of this.#dealAsks(dealId)) {
+      if (ask.status === "proposed" && !stillFilled.has(ask.id)) ask.status = "prospecting";
+    }
+    deal.status = "cancelled";
+    deal.supersededBy = newId;
+    c.status = "accepted";
+    c.newDealId = newId;
+    return this.#dealRecord(ready ? newId : dealId);
+  }
+
+  /** Mirrors public.withdraw_counter. */
+  async withdrawCounter(
+    userId: string,
+    dealId: string,
+    counterId: string,
+  ): Promise<WithdrawCounterResult> {
+    const c = this.counters.find(
+      (x) => x.id === counterId && x.dealId === dealId && x.proposedBy === userId,
+    );
+    if (!c) return "not_found";
+    if (c.status !== "pending") return "closed";
+    c.status = "withdrawn";
+    return this.#dealRecord(dealId);
+  }
+
+  #openCounter(dealId: string) {
+    return this.counters.find(
+      (c) => c.dealId === dealId && c.status === "pending" && c.expiresAt.getTime() > Date.now(),
+    );
+  }
+
+  #dealItem(item: ItemRecord): DealItemRecord {
+    return {
+      id: item.id,
+      title: item.title,
+      category: item.category,
+      brand: item.brand,
+      model: item.model,
+      conditionGrade: item.conditionGrade,
+      valueLowCents: item.valueLowCents,
+      valueMidCents: item.valueMidCents,
+      valueHighCents: item.valueHighCents,
+      photoPath: item.thumbnailPath,
+    };
   }
 
   #inDeal(userId: string, dealId: string) {
@@ -763,18 +981,7 @@ export class MemoryRepository implements Repository {
             receiverId: l.receiverId,
             askId: l.askId,
             giverAskId: l.giverAskId,
-            item: {
-              id: item.id,
-              title: item.title,
-              category: item.category,
-              brand: item.brand,
-              model: item.model,
-              conditionGrade: item.conditionGrade,
-              valueLowCents: item.valueLowCents,
-              valueMidCents: item.valueMidCents,
-              valueHighCents: item.valueHighCents,
-              photoPath: item.thumbnailPath,
-            },
+            item: this.#dealItem(item),
           },
         ];
       }),
@@ -793,6 +1000,41 @@ export class MemoryRepository implements Repository {
             why: p.why,
           };
         }),
+      counterRounds: deal.counterRounds,
+      supersededBy: deal.supersededBy,
+      counter: this.#counterRecord(dealId),
+    };
+  }
+
+  #counterRecord(dealId: string): CounterRecord | null {
+    const c = this.#openCounter(dealId);
+    if (!c) return null;
+    return {
+      id: c.id,
+      proposedBy: c.proposedBy,
+      changes: c.changes,
+      legs: c.proposal.item_legs.flatMap((l) => {
+        const item = this.items.find((i) => i.id === l.item_id);
+        return item
+          ? [
+              {
+                giverId: l.giver,
+                receiverId: l.receiver,
+                askId: l.ask_id,
+                giverAskId: l.giver_ask_id,
+                item: this.#dealItem(item),
+              },
+            ]
+          : [];
+      }),
+      throwIns: c.proposal.cash_legs.map((t) => ({
+        payerId: t.payer,
+        payeeId: t.payee,
+        amountCents: t.amount_cents,
+      })),
+      awaiting: c.awaiting,
+      answers: { ...c.answers },
+      expiresAt: c.expiresAt,
     };
   }
 

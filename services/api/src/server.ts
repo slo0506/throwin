@@ -12,7 +12,9 @@ import { createApp } from "./app.js";
 import { SupabaseSessionIssuer } from "./auth/sessions.js";
 import { createSupabaseVerifier } from "./auth/verifier.js";
 import { loadEnv } from "./env.js";
+import { Counters } from "./lib/counters.js";
 import { createJsonLogger } from "./lib/logger.js";
+import { HttpBalancer } from "./lib/matcher.js";
 import { UnimplementedAppAttestVerifier } from "./middleware/app-attest.js";
 import { SupabaseMediaStore } from "./repo/media.js";
 import { SupabaseRepository } from "./repo/supabase.js";
@@ -24,6 +26,11 @@ const logger = createJsonLogger(env.LOG_LEVEL);
 const db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+
+const repo = new SupabaseRepository(db);
+// Counters re-balance through the matcher over Railway's private network.
+const counters = env.MATCHER_URL ? new Counters(repo, new HttpBalancer(env.MATCHER_URL)) : null;
+if (!counters) logger.warn("counters_disabled", { reason: "MATCHER_URL is not set" });
 
 const anonClient = () =>
   createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
@@ -59,7 +66,8 @@ const app = createApp({
   gm,
   sessions: new SupabaseSessionIssuer(db, anonClient),
   devAuthCode: env.DEV_AUTH_CODE,
-  repo: new SupabaseRepository(db),
+  repo,
+  counters,
   media: new SupabaseMediaStore(db),
   idempotency: new SupabaseIdempotencyStore(db),
   tokens: createSupabaseVerifier({

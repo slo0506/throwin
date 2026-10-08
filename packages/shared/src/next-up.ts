@@ -4,6 +4,8 @@ import { z } from "zod";
 // Computed on the server so the same list can drive notifications and the GM's check-ins.
 
 export const NextUpKind = z.enum([
+  /** Someone countered a Deal and is waiting on the user's answer. */
+  "answer_counter",
   /** A Deal Sheet waiting on the user's approval. */
   "approve_deal",
   /** A staged Deal is waiting for showcase photos of the user's Item. */

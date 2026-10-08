@@ -130,6 +130,38 @@ class Deal(BaseModel):
     score: float
 
 
+class BalancePerson(BaseModel):
+    user: str
+    # The most cash they'd add: the ceiling of the Ask the Deal fills for them.
+    cash_ceiling_cents: int = Field(default=0, ge=0, le=100_000)
+
+
+class FixedItemLeg(BaseModel):
+    """`receiver` gets `item_id` from `giver`."""
+
+    giver: str
+    receiver: str
+    item_id: str
+    value_cents: int = Field(ge=0)
+
+
+class BalanceRequest(BaseModel):
+    """Throw-Ins for a Deal whose Items are already decided, as when a counter changes them."""
+
+    people: list[BalancePerson] = Field(min_length=2, max_length=4)
+    item_legs: list[FixedItemLeg] = Field(min_length=2, max_length=20)
+    tolerance_pct: float = Field(default=0.15, ge=0, le=1)
+    tolerance_floor_cents: int = Field(default=1000, ge=0)
+
+
+class BalanceResponse(BaseModel):
+    # False when no Throw-Ins within the ceilings bring everyone close to even.
+    balanced: bool
+    cash_legs: list[CashLeg] = Field(default_factory=list)
+    fairness: list[Fairness] = Field(default_factory=list)
+    cash_moved_cents: int = 0
+
+
 class MatchResponse(BaseModel):
     deals: list[Deal]
     # Cycles found, how many could be balanced, and whether the search hit max_cycles.

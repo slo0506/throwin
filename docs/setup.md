@@ -26,6 +26,7 @@ Keys for Anthropic, Voyage, Stripe and the Supabase service role live only in Ra
 | `PORT` | Defaults to 8787 |
 | `BRAVE_SEARCH_API_KEY` | Optional. [Brave Search API](https://api-search.brave.com) key, for product photos on Ask cards. Without it, only images on pages the GM cited are tried, and most retail sites block those. Server only. |
 | `GM_USER_DAILY_BUDGET_CENTS`, `GM_DAILY_BUDGET_CENTS` | Optional. GM chat spend caps; see "Spend caps". |
+| `MATCHER_URL` | The matcher over Railway's private network, `http://matcher.railway.internal:8080`, the same as `workers`. Counters re-balance through it; without it, counters answer 503 and the rest of the API works. |
 
 ## Spend caps
 

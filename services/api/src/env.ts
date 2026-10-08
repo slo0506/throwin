@@ -28,6 +28,8 @@ export const EnvSchema = z
     GM_USER_DAILY_BUDGET_CENTS: z.coerce.number().int().min(1).default(300),
     /** GM model spend for everyone together in any 24 hours, in cents. */
     GM_DAILY_BUDGET_CENTS: z.coerce.number().int().min(1).default(1000),
+    /** The matcher's base URL, for re-balancing counters. Without it, counters answer 503. */
+    MATCHER_URL: optionalString.pipe(z.url().optional()),
   })
   .refine((env) => env.SUPABASE_JWT_SECRET || env.SUPABASE_JWKS_URL, {
     message: "Set SUPABASE_JWT_SECRET, SUPABASE_JWKS_URL, or both",

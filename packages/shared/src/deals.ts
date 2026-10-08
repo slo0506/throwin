@@ -28,6 +28,59 @@ export const DealItem = z.object({
 });
 export type DealItem = z.infer<typeof DealItem>;
 
+/** Counters a Deal can have, in all, and changes in 1 counter. */
+export const MAX_COUNTER_ROUNDS = 3;
+export const MAX_COUNTER_CHANGES = 3;
+
+/**
+ * 1 change in a counter: hand over 1 more Item, or take 1 out. An added Item goes from its
+ * owner to the person they give to in the Deal. Structured only, never free text.
+ */
+export const CounterChange = z.discriminatedUnion("op", [
+  z.strictObject({ op: z.literal("add"), item_id: z.uuid() }),
+  z.strictObject({ op: z.literal("remove"), item_id: z.uuid() }),
+]);
+export type CounterChange = z.infer<typeof CounterChange>;
+
+export const CounterCreate = z.strictObject({
+  changes: z.array(CounterChange).min(1).max(MAX_COUNTER_CHANGES),
+});
+export type CounterCreate = z.infer<typeof CounterCreate>;
+
+const Cash = z.object({
+  pay_cents: z.number().int().nonnegative(),
+  receive_cents: z.number().int().nonnegative(),
+});
+
+/** An open counter on a Deal, from the caller's side. */
+export const DealCounter = z.object({
+  id: z.uuid(),
+  proposed_by: DealPerson,
+  /** What it changes, Item by Item. */
+  changes: z.array(
+    z.object({
+      op: z.enum(["add", "remove"]),
+      item: DealItem,
+      giver: DealPerson,
+      receiver: DealPerson,
+    }),
+  ),
+  /** The caller's side as it would be. */
+  gives: z.array(DealItem),
+  gets: z.array(DealItem),
+  cash: Cash,
+  fairness: z.object({
+    give_cents: z.number().int().nonnegative(),
+    get_cents: z.number().int().nonnegative(),
+  }),
+  /** The caller's answer so far, or null when the counter doesn't ask them. */
+  your_answer: z.enum(["pending", "accepted", "declined"]).nullable(),
+  /** People who still have to answer. */
+  waiting_on: z.array(DealPerson),
+  expires_at: z.iso.datetime({ offset: true }),
+});
+export type DealCounter = z.infer<typeof DealCounter>;
+
 export const DealSheet = z.object({
   id: z.uuid(),
   status: DealStatus,
@@ -44,10 +97,7 @@ export const DealSheet = z.object({
   you_give: DealItem,
   you_get: DealItem,
   /** Cash Throw-Ins the caller pays or receives, in total. */
-  cash: z.object({
-    pay_cents: z.number().int().nonnegative(),
-    receive_cents: z.number().int().nonnegative(),
-  }),
+  cash: Cash,
   /** "You give about $X in value and get about $Y": each side's mid values, summed. */
   fairness: z.object({
     give_cents: z.number().int().nonnegative(),
@@ -67,6 +117,12 @@ export const DealSheet = z.object({
    * their Asks too. Null for a Drop leg that isn't tied to an Ask.
    */
   your_ask_id: z.uuid().nullable(),
+  /** An open counter. While it's open, nobody can approve. */
+  counter: DealCounter.nullable(),
+  /** How many more counters this Deal can have. */
+  counters_left: z.number().int().min(0).max(MAX_COUNTER_ROUNDS),
+  /** Set when an accepted counter replaced this Deal: the version to show instead. */
+  superseded_by: z.uuid().nullable(),
 });
 export type DealSheet = z.infer<typeof DealSheet>;
 
