@@ -3,6 +3,7 @@ import type {
   AskRecord,
   CircleRecord,
   DealRecord,
+  DemandRecord,
   ItemRecord,
   PhotoRequestRecord,
 } from "../repo/types.js";
@@ -21,6 +22,8 @@ export interface NextUpInput {
   asks: AskRecord[];
   items: ItemRecord[];
   circles: CircleRecord[];
+  /** What people in the user's Circles want, as counts (circle_demand). */
+  demand: DemandRecord[];
   /** Signed photo URLs by storage path. */
   urls: Map<string, string | null>;
 }
@@ -213,7 +216,27 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 7. Tune up: the cheapest way to tighten the Shelf.
+  // 7. Something people want that 1 of the user's Items could fill, and that Item isn't
+  //    offered for anything yet: a reason to trade it. Counts only, never who.
+  const offered = new Set(openAsks.flatMap((a) => a.offerItems.map((i) => i.id)));
+  const shelf = new Map(input.items.map((i) => [i.id, i]));
+  for (const want of input.demand) {
+    const item = want.itemIds.map((id) => shelf.get(id)).find((i) => i && !offered.has(i.id));
+    if (!item) continue;
+    out.push({
+      ...blank,
+      id: `demand:${want.label.toLowerCase()}`,
+      kind: "in_demand",
+      title: `Wanted in your Circles: ${short(want.label)}`,
+      detail: `${want.askers === 1 ? "Someone is" : `${want.askers} people are`} looking, and your ${short(item.title)} could fill it.`,
+      cta: "Trade it",
+      item_id: item.id,
+      thumbnail_url: photo(item.thumbnailPath),
+    });
+    break;
+  }
+
+  // 8. Tune up: the cheapest way to tighten the Shelf.
   const asking = input.items.filter((i) => i.openQuestions > 0 && !i.appraising);
   const questions = asking.reduce((n, i) => n + i.openQuestions, 0);
   if (questions > 0) {
@@ -227,7 +250,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 8. Identified Items a few photos from ready to show, most valuable first.
+  // 9. Identified Items a few photos from ready to show, most valuable first.
   const nearlyReady = input.items
     .filter((i) => i.readiness === "identified" && !i.appraising && i.status === "on_shelf")
     .sort((a, b) => (b.valueMidCents ?? 0) - (a.valueMidCents ?? 0))
@@ -247,7 +270,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 9. Getting started.
+  // 10. Getting started.
   if (input.items.length === 0) {
     out.push({
       ...blank,

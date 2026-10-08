@@ -125,6 +125,8 @@ A keep-alive comment line is sent every 15 seconds. The stream ends after `done`
 | `recap` | `{ "paragraph": string, "sample_decisions": [{ "give": string, "get": string, "verdict": "yes" or "no", "why": string }] }` |
 | `counter_card` | A counter the GM staged from the user's words (`stage_counter`): `{ "deal_id", "changes": [CounterChange], "lines": [{ "op", "item": DealItem, "giver", "receiver" }], "gives", "gets", "cash", "cash_now", "waiting_on" }`. It goes out only when the user taps Send: the app posts `changes` to `/v1/deals/{deal_id}/counters` (`docs/contracts/m3-deals.md`, "Counters"). It keeps what it showed when staged; the Deal Sheet is the live view. |
 
+The GM reads demand with `get_demand`: what people in the user's Circles want, as counts (2 or more people, or anyone the user's Items could help), and which of the user's Items could fill each. It never names anyone (`public.circle_demand`, also `GET /v1/demand`).
+
 The GM reads Deals with `get_deals` (the user's own Deal Sheets) and stages counters with `stage_counter`, both through the API's `DealDesk`, which plans counters with the same checks the counter route runs. No GM tool sends, accepts or declines a counter, or approves a Deal.
 
 The user answers `choices` by posting `choice`. Selecting Items in a selectable `item_cards` also posts `choice` with the Item IDs as `option_ids`, and the recap's 2 chips post `choice` with `looks_right` or `fix_something`. The GM shows at most 1 `choices` card per turn.

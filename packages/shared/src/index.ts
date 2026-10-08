@@ -2,6 +2,7 @@ export * from "./api.js";
 export * from "./asks.js";
 export * from "./circles.js";
 export * from "./deals.js";
+export * from "./demand.js";
 export * from "./enums.js";
 export * from "./gm.js";
 export * from "./id-allow-list.js";

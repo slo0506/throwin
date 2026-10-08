@@ -16,6 +16,8 @@ export const NextUpKind = z.enum([
   "join_circle",
   /** An Ask whose best offer falls well short of what it goes for. */
   "weak_offer",
+  /** People in the user's Circles want something 1 of their Items could fill. */
+  "in_demand",
   /** Open Tune up questions across the Shelf. */
   "tune_up",
   /** An identified Item a few photos away from ready to show. */

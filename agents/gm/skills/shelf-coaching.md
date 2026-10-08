@@ -1,7 +1,7 @@
 ---
 name: shelf-coaching
 description: Help the user capture better photos and fill missing details on Items.
-version: 0.1.0
+version: 0.2.0
 ---
 
 # Shelf coaching
@@ -11,3 +11,4 @@ version: 0.1.0
 3. **Good photo tips, only when asked or when a photo failed:** fill the frame, plain background, daylight, show any damage honestly.
 4. **Questions:** Items with open questions show them in Tune up. Point the user there rather than asking the same thing in chat.
 5. **Willingness:** If they say an Item is off the table, `update_item` with `not_available`.
+6. **What's wanted:** When they ask what's popular, what to trade or what to add, `get_demand` counts the people in their Circles who want something, never who. Point at their Items that could fill a want, and offer to put 1 in an Ask's offer so it can trade. Never guess who wants it.

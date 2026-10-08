@@ -10,6 +10,7 @@ import { authRoutes } from "./routes/auth.js";
 import { captureRoutes, mediaRoutes } from "./routes/captures.js";
 import { circleRoutes, inviteRoutes } from "./routes/circles.js";
 import { dealRoutes } from "./routes/deals.js";
+import { demandRoutes } from "./routes/demand.js";
 import { gmRoutes } from "./routes/gm.js";
 import { healthRoutes } from "./routes/health.js";
 import { itemRoutes } from "./routes/items.js";
@@ -46,6 +47,7 @@ export function createApp(deps: AppDeps) {
   v1.route("/captures", captureRoutes(deps.repo, deps.media));
   v1.route("/questions", questionRoutes(deps.repo, deps.media));
   v1.route("/next-up", nextUpRoutes(deps.repo, deps.media, now));
+  v1.route("/demand", demandRoutes(deps.repo));
   v1.route(
     "/gm",
     gmRoutes({

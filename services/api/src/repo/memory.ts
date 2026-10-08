@@ -30,6 +30,7 @@ import {
   type DealDecisionResult,
   type DealItemRecord,
   type DealRecord,
+  type DemandRecord,
   type InvitePreviewRecord,
   type InviteRecord,
   type ItemRecord,
@@ -125,6 +126,8 @@ export class MemoryRepository implements Repository {
     why: string | null;
   }[] = [];
   readonly askExclusions: { askId: string; itemId: string }[] = [];
+  /** What circle_demand would return, by user. Tests set it. */
+  readonly demand = new Map<string, DemandRecord[]>();
   readonly captures: CaptureRecord[] = [];
   readonly captureMedia: (CaptureMediaInput & { captureId: string })[] = [];
   readonly itemMedia: (CaptureMediaInput & { itemId: string })[] = [];
@@ -754,6 +757,10 @@ export class MemoryRepository implements Repository {
     for (const c of this.counters)
       if (c.dealId === dealId && c.status === "pending") c.status = "expired";
     return this.#dealRecord(dealId);
+  }
+
+  async getDemand(userId: string): Promise<DemandRecord[]> {
+    return this.demand.get(userId) ?? [];
   }
 
   async getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]> {

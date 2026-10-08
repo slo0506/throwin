@@ -53,6 +53,11 @@ export class MemoryGmData implements GmData {
   readonly events: AgentEvent[] = [];
   readonly jobs: { kind: string; payload: Record<string, unknown> }[] = [];
   readonly images = new Map<string, LoadedImage>();
+  /** What circle_demand would return, by user. Tests and evals set it. */
+  readonly demand = new Map<
+    string,
+    { label: string; category: string | null; askers: number; itemIds: string[] }[]
+  >();
   now: () => Date = () => new Date();
   /** When each run was recorded, for spend windows. */
   readonly #runTimes = new Map<string, Date>();
@@ -299,6 +304,20 @@ export class MemoryGmData implements GmData {
 
   async intakeFinished(userId: string) {
     return finishedIntakeIn(this.messages.filter((m) => m.userId === userId));
+  }
+
+  async circleDemand(userId: string) {
+    const rows = this.demand.get(userId) ?? [];
+    const own = await this.getOwnItems(
+      userId,
+      rows.flatMap((r) => r.itemIds),
+    );
+    return rows.map((r) => ({
+      label: r.label,
+      category: r.category,
+      askers: r.askers,
+      items: own.filter((i) => r.itemIds.includes(i.id)),
+    }));
   }
 
   async recordRun(run: AgentRun) {

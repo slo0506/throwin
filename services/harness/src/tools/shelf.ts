@@ -1,4 +1,4 @@
-import { ItemWillingness } from "@throwin/shared";
+import { fenceUntrusted, ItemWillingness } from "@throwin/shared";
 import { z } from "zod";
 import type { OwnItem } from "../data.js";
 import { clean } from "../format.js";
@@ -77,6 +77,37 @@ export const searchNetwork = defineTool({
     return {
       content: `${found.length} Items in the user's Circles:\n${found.map((i) => networkItemText(i)).join("\n")}`,
       issuedIds: found.map((i) => i.id),
+    };
+  },
+});
+
+export const getDemand = defineTool({
+  name: "get_demand",
+  description:
+    "What people in the user's Circles are looking for, as counts, and which of the user's Items could fill each. It never names anyone. Use it when the user asks what's wanted, or what an Item could get them.",
+  kind: "read",
+  input: z.object({}),
+  progress: () => "Checking what's wanted",
+  async run(ctx) {
+    const demand = await ctx.data.circleDemand(ctx.userId);
+    if (demand.length === 0) {
+      return {
+        content:
+          "Nothing is wanted by 2 or more people in the user's Circles right now, and nobody is looking for anything the user has.",
+      };
+    }
+    const lines = demand.map((d) =>
+      [
+        `- wanted by ${d.askers === 1 ? "1 person" : `${d.askers} people`}${d.category ? `, category ${d.category}` : ""}:`,
+        fenceUntrusted("want", d.label, { maxLength: 120 }),
+        d.items.length
+          ? `  the user's Items that could fill it:\n${d.items.map((i) => ownItemText(i)).join("\n")}`
+          : "  none of the user's Items fit",
+      ].join("\n"),
+    );
+    return {
+      content: `What people in the user's Circles are looking for. Counts only: nobody is named, and you never guess who.\n${lines.join("\n")}`,
+      issuedIds: demand.flatMap((d) => d.items.map((i) => i.id)),
     };
   },
 });

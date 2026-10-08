@@ -32,6 +32,7 @@
 | `offer_for_ask` | An Ask has a target but nothing offered: the GM can't look yet. | The Ask page |
 | `join_circle` | Open Asks but no Circle. | Circles |
 | `weak_offer` | The best single Item plus the cash ceiling can't reach the Ask's used price (`offerFit`, the same rules as the Ask page). "A long shot" below 60% of the target, else "a bit short". | The Ask page |
+| `in_demand` | People in the user's Circles want something 1 of their Items could fill, and that Item isn't offered for anything yet (`circle_demand`): "Wanted in your Circles: Nintendo Switch game", "2 people are looking, and your Zelda could fill it." Counts only, never who. At most 1. | The GM, with "People in my Circles want something like my Zelda. What could I trade it for?" started |
 | `tune_up` | Open Refiner questions on Items that aren't being re-read. | Tune up |
 | `item_photos` | The 2 most valuable identified Items, a few photos from ready to show. | The Showcase shoot |
 | `add_to_shelf` | An empty Shelf. | Capture |

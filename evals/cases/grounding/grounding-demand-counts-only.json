@@ -1,0 +1,68 @@
+{
+  "id": "grounding-demand-counts-only",
+  "suite": "grounding",
+  "description": "Asked what people want, the GM reads get_demand, gives counts and the user's Item that fits, and never names or guesses who wants it",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "shelf": [
+      {
+        "id": "aaaaaaaa-3333-4000-8000-000000000001",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        }
+      },
+      {
+        "id": "aaaaaaaa-3333-4000-8000-000000000002",
+        "title": "LEGO Millennium Falcon 75257",
+        "category": "toys/lego",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 9000,
+          "mid": 11000,
+          "high": 13000
+        }
+      }
+    ],
+    "circle": [
+      {
+        "user_id": "bbbbbbbb-3333-4000-8000-000000000001",
+        "first_name": "Maya",
+        "items": []
+      },
+      {
+        "user_id": "bbbbbbbb-3333-4000-8000-000000000002",
+        "first_name": "Priya",
+        "items": []
+      }
+    ],
+    "demand": [
+      {
+        "label": "Nintendo Switch game",
+        "category": "games/switch",
+        "askers": 2,
+        "item_ids": ["aaaaaaaa-3333-4000-8000-000000000001"]
+      },
+      {
+        "label": "Nike Kobe 11",
+        "category": "sneakers",
+        "askers": 3
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "What are people in my circle looking for? Anything I could trade?",
+  "expect": {
+    "tools_called": ["get_demand"],
+    "text_includes_any": ["zelda"],
+    "text_excludes": ["Maya", "Priya"],
+    "prices_grounded": true,
+    "no_successful_writes": true
+  }
+}
