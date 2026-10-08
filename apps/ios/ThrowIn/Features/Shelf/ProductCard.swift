@@ -414,6 +414,9 @@ struct GMNextStepCard: View {
             case "dark": "It's dark. Shoot near a window or under a bright light."
             case "cut_off": "Part of it is cut off. Step back so all of it shows."
             case "cluttered_background": "There's a lot behind it. A plain wall or table works best."
+            case "wrong_item": "1 photo doesn't look like this item, so it isn't counted. Retake it with this one in the frame."
+            case "stock_photo": "This looks like a store or stock photo. Use a photo of your own, so people trust it."
+            case "duplicate_photo": "The same shot was added twice. It counts once, so try a new angle."
             default: nil
             }
         }
@@ -455,13 +458,16 @@ struct ItemPhotoCarousel: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
             } else {
                 ItemArtwork(item: item, cornerRadius: 0, symbolScale: 0.3, studio: studioMode)
+                    .appraiseScan(while: item.isAppraising, duration: 1.8)
                     .contentShape(Rectangle())
                     .onTapGesture { if !urls.isEmpty { onOpen(0) } }
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(shape)
-        .appraiseScan(while: item.isAppraising, duration: 1.8)
+        // The scan sits on each photo, never on the paging TabView: a layer effect around a
+        // UIKit-backed view draws SwiftUI's "can't render" placeholder (a yellow no-entry
+        // sign) in its place, even while the effect is idle.
         .shadow(color: .black.opacity(0.08), radius: 24, y: 12)
         .overlay(alignment: .topLeading) {
             if page == 0, item.hasInventoryPhoto, studioImage == nil || showsOriginal {
@@ -510,6 +516,7 @@ struct ItemPhotoCarousel: View {
                 RemoteImage(url: url)
             }
         }
+        .appraiseScan(while: item.isAppraising, duration: 1.8)
         .contentShape(Rectangle())
         .onTapGesture { onOpen(index) }
     }

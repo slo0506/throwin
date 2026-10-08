@@ -252,7 +252,8 @@ extension DealSheet {
             waitingOn: d.participants.filter { $0.approval == .pending }.map { $0.firstName ?? "someone" },
             counter: d.counter.map { DealCounter($0, me: Self.caller(d)) },
             countersLeft: d.countersLeft ?? 3,
-            supersededBy: d.supersededBy
+            supersededBy: d.supersededBy,
+            getFromName: d.getFrom.firstName
         )
     }
 

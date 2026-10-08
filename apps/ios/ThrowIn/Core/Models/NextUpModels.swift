@@ -7,6 +7,7 @@ nonisolated struct NextUpItem: Decodable, Identifiable, Hashable, Sendable {
         case answerCounter = "answer_counter"
         case approveDeal = "approve_deal"
         case showcasePhotos = "showcase_photos"
+        case pinDownItem = "pin_down_item"
         case answerInquiry = "answer_inquiry"
         case someoneWants = "someone_wants"
         case offerForAsk = "offer_for_ask"
