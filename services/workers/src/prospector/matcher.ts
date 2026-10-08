@@ -13,12 +13,16 @@ export interface MatcherEdge {
   giver_ask_id: string | null;
   value_cents: number;
   cash_ceiling_cents: number;
+  /** How many Items the wanter's Ask takes. */
+  max_items: number;
 }
 
 export interface MatchRequest {
   edges: MatcherEdge[];
   anchor_user?: string;
   time_limit_seconds?: number;
+  /** Items 1 person may hand another in 1 Deal (bundles). The matcher's default is 1. */
+  max_items_per_leg?: number;
 }
 
 const MatchDeal = z.object({

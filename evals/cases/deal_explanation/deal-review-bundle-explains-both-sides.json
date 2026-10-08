@@ -1,0 +1,89 @@
+{
+  "id": "deal-review-bundle-explains-both-sides",
+  "suite": "deal_explanation",
+  "description": "A bundle (2 Switch games for 1 LEGO set) is kept, and each why speaks to that person's whole side in their own words, without adding values into a total",
+  "state": {
+    "participants": [
+      {
+        "first_name": "Jordan",
+        "gives": [
+          {
+            "title": "Super Mario Bros. Wonder",
+            "category": "video_games",
+            "condition_grade": "A",
+            "value_low_cents": 3500,
+            "value_high_cents": 4500
+          },
+          {
+            "title": "Kirby and the Forgotten Land",
+            "category": "video_games",
+            "condition_grade": "B",
+            "value_low_cents": 3000,
+            "value_high_cents": 4000
+          }
+        ],
+        "gets": {
+          "title": "LEGO Galaxy Explorer 10497",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 7000,
+          "value_high_cents": 9000
+        },
+        "facts": [
+          {
+            "key": "hunting_for",
+            "value": "Classic space LEGO",
+            "category": "hunting"
+          }
+        ]
+      },
+      {
+        "first_name": "Maya",
+        "gives": {
+          "title": "LEGO Galaxy Explorer 10497",
+          "category": "toys/lego",
+          "condition_grade": "A",
+          "value_low_cents": 7000,
+          "value_high_cents": 9000
+        },
+        "gets": [
+          {
+            "title": "Super Mario Bros. Wonder",
+            "category": "video_games",
+            "condition_grade": "A",
+            "value_low_cents": 3500,
+            "value_high_cents": 4500
+          },
+          {
+            "title": "Kirby and the Forgotten Land",
+            "category": "video_games",
+            "condition_grade": "B",
+            "value_low_cents": 3000,
+            "value_high_cents": 4000
+          }
+        ],
+        "facts": [
+          {
+            "key": "hunting_for",
+            "value": "Switch games for the kids",
+            "category": "hunting"
+          }
+        ]
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "verdict": "keep",
+    "every_why": true,
+    "why_includes_any": {
+      "p1": ["space"],
+      "p2": ["kids", "games"]
+    },
+    "why_excludes": {
+      "p1": ["kids"],
+      "p2": ["classic space", "$85", "$65"]
+    }
+  }
+}

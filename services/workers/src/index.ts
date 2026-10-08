@@ -70,6 +70,7 @@ const prospector: Omit<ProspectorDeps, "review"> | null = env.MATCHER_URL
         candidatesPerAsk: env.PROSPECT_CANDIDATES_PER_ASK,
         maxEmbedsPerRun: env.PROSPECT_MAX_EMBEDS,
         matcherTimeLimitSeconds: env.MATCHER_TIME_LIMIT_SECONDS,
+        maxItemsPerLeg: env.PROSPECT_MAX_ITEMS_PER_LEG,
       },
       logger,
     }

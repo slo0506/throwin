@@ -44,6 +44,8 @@ export interface WantCandidate {
   askId: string;
   wanterId: string;
   cashCeilingCents: number;
+  /** How many Items the Ask takes. */
+  maxItems: number;
   itemId: string;
   giverId: string;
   giverAskId: string;
@@ -109,6 +111,8 @@ export interface ProspectorConfig {
   /** Asks embedded per run at most, the asker's first, so 1 run stays inside its budget. */
   maxEmbedsPerRun: number;
   matcherTimeLimitSeconds: number;
+  /** Items 1 person may hand another in 1 Deal: 1 means 1 Item each way, more allows bundles. */
+  maxItemsPerLeg: number;
 }
 
 export interface ProspectorDeps {
@@ -196,8 +200,8 @@ export async function reviewParticipants(
   return deal.users.map((userId) => ({
     userId,
     firstName: ctx.names.get(userId) ?? null,
-    gives: item(deal.item_legs.find((l) => l.giver === userId)?.item_id),
-    gets: item(deal.item_legs.find((l) => l.receiver === userId)?.item_id),
+    gives: deal.item_legs.filter((l) => l.giver === userId).map((l) => item(l.item_id)),
+    gets: deal.item_legs.filter((l) => l.receiver === userId).map((l) => item(l.item_id)),
     paysCents: cash((c) => c.payer === userId),
     receivesCents: cash((c) => c.payee === userId),
     facts: ctx.facts.get(userId) ?? [],
@@ -281,6 +285,7 @@ async function runMatching(
         giver_ask_id: c.giverAskId,
         value_cents: c.valueMidCents,
         cash_ceiling_cents: c.cashCeilingCents,
+        max_items: c.maxItems,
       });
       stored.set(`${c.askId}|${c.itemId}|${c.giverAskId}`, {
         fromUser: c.wanterId,
@@ -307,6 +312,7 @@ async function runMatching(
       edges,
       ...(anchor && { anchor_user: anchor.userId }),
       time_limit_seconds: config.matcherTimeLimitSeconds,
+      max_items_per_leg: config.maxItemsPerLeg,
     });
     matched.push(...result.deals.map((deal) => ({ circleId, deal })));
   }

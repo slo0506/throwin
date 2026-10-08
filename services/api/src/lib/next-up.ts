@@ -32,6 +32,9 @@ const short = (title: string) => (title.split(",")[0] ?? title).trim();
 const dollars = (cents: number) => `$${Math.round(cents / 100).toLocaleString("en-US")}`;
 const range = (low: number, high: number) => `${dollars(low)} to ${dollars(high)}`;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+/** "Zelda", or "Zelda and 2 more" for a bundle. */
+const side = (legs: { item: { title: string } }[]) =>
+  `${short(legs[0]?.item.title ?? "")}${legs.length > 1 ? ` and ${legs.length - 1} more` : ""}`;
 const hoursLeft = (until: Date, now: Date) =>
   Math.max(1, Math.round((until.getTime() - now.getTime()) / 3_600_000));
 const askName = (a: AskRecord) => short(a.title ?? a.target?.name ?? a.rawText);
@@ -59,15 +62,16 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     )
     .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime());
   for (const d of waiting) {
-    const get = d.legs.find((l) => l.receiverId === userId);
-    const give = d.legs.find((l) => l.giverId === userId);
-    if (!get || !give) continue;
+    const gets = d.legs.filter((l) => l.receiverId === userId);
+    const gives = d.legs.filter((l) => l.giverId === userId);
+    const [get] = gets;
+    if (!get || gives.length === 0) continue;
     const from = d.participants.find((p) => p.userId === get.giverId)?.displayName;
     out.push({
       ...blank,
       id: `deal:${d.id}`,
       kind: "approve_deal",
-      title: `${from ? `${from}'s ` : ""}${short(get.item.title)} for your ${short(give.item.title)}`,
+      title: `${from ? `${from}'s ` : ""}${side(gets)} for your ${side(gives)}`,
       detail: `Waiting on you. Expires in ${plural(hoursLeft(d.expiresAt, now), "hour")}.`,
       cta: "Review",
       deal_id: d.id,

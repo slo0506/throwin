@@ -551,7 +551,7 @@ struct DealWaitingRow: View {
                     Text("Found 1. Your Deal Sheet is ready.")
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundStyle(Palette.ink)
-                    Text(deal.receive.first.map { "\($0.title), real photos inside" } ?? "Real photos inside")
+                    Text(deal.getTitle.map { "\($0), real photos inside" } ?? "Real photos inside")
                         .font(Typo.footnote)
                         .foregroundStyle(Palette.inkSecondary)
                         .lineLimit(1)

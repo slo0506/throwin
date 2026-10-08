@@ -17,6 +17,9 @@ const Item = z.strictObject({
   value_high_cents: cents.nullable().default(null),
 });
 
+/** 1 Item, or a list of them for a bundle. */
+const Side = z.union([Item, z.array(Item).min(1)]).transform((s) => (Array.isArray(s) ? s : [s]));
+
 const Fact = z.strictObject({ key: z.string(), value: z.string(), category: z.string() });
 
 /** `state.participants`, in Loop order. Refs p1, p2, ... follow this order. */
@@ -25,8 +28,8 @@ export const ReviewCaseState = z.strictObject({
     .array(
       z.strictObject({
         first_name: z.string(),
-        gives: Item,
-        gets: Item,
+        gives: Side,
+        gets: Side,
         pays_cents: cents.default(0),
         receives_cents: cents.default(0),
         facts: z.array(Fact).default([]),
@@ -64,8 +67,8 @@ export function participantsOf(c: SnapshotCase): ReviewParticipant[] {
   return state.participants.map((p, i) => ({
     userId: `p${i + 1}`,
     firstName: p.first_name,
-    gives: item(p.gives),
-    gets: item(p.gets),
+    gives: p.gives.map(item),
+    gets: p.gets.map(item),
     paysCents: p.pays_cents,
     receivesCents: p.receives_cents,
     facts: p.facts,

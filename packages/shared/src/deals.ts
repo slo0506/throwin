@@ -32,17 +32,23 @@ export const DealSheet = z.object({
   id: z.uuid(),
   status: DealStatus,
   expires_at: z.iso.datetime({ offset: true }),
-  /** The caller's side: what leaves their Shelf and what comes to them. */
-  you_give: DealItem,
+  /**
+   * The caller's side: what leaves their Shelf and what comes to them. Several Items on a
+   * side is a bundle; `gets` starts with the Items for the Ask the Deal fills.
+   */
+  gives: z.array(DealItem).min(1),
   give_to: DealPerson,
-  you_get: DealItem,
+  gets: z.array(DealItem).min(1),
   get_from: DealPerson,
+  /** The first of `gives` and `gets`, for app builds from before bundles. */
+  you_give: DealItem,
+  you_get: DealItem,
   /** Cash Throw-Ins the caller pays or receives, in total. */
   cash: z.object({
     pay_cents: z.number().int().nonnegative(),
     receive_cents: z.number().int().nonnegative(),
   }),
-  /** "You give about $X in value and get about $Y": the 2 Items' mid values. */
+  /** "You give about $X in value and get about $Y": each side's mid values, summed. */
   fairness: z.object({
     give_cents: z.number().int().nonnegative(),
     get_cents: z.number().int().nonnegative(),
@@ -56,7 +62,10 @@ export const DealSheet = z.object({
   your_approval: ApprovalState,
   /** Why the GM likes it, from the user's side. Null until the Prospector's review writes it. */
   why: z.string().nullable(),
-  /** The caller's own Ask this Deal fills. Null for a Drop leg that isn't tied to an Ask. */
+  /**
+   * The caller's own Ask this Deal fills: the 1 they give for. A bundle can fill more of
+   * their Asks too. Null for a Drop leg that isn't tied to an Ask.
+   */
   your_ask_id: z.uuid().nullable(),
 });
 export type DealSheet = z.infer<typeof DealSheet>;

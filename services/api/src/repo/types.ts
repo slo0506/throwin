@@ -250,8 +250,18 @@ export interface DealRecord {
   id: string;
   status: DealStatus;
   expiresAt: Date;
-  /** `askId` is the receiver's Ask the leg fills, when it fills 1. */
-  legs: { giverId: string; receiverId: string; askId: string | null; item: DealItemRecord }[];
+  /**
+   * `askId` is the receiver's Ask the leg fills, when it fills 1. `giverAskId` is the giver's
+   * Ask whose offer set held the Item (the 1 the Deal fills for the giver); null on legs
+   * staged before bundles.
+   */
+  legs: {
+    giverId: string;
+    receiverId: string;
+    askId: string | null;
+    giverAskId: string | null;
+    item: DealItemRecord;
+  }[];
   throwIns: { payerId: string; payeeId: string; amountCents: number }[];
   participants: (DealPersonRecord & { approval: ApprovalState; why: string | null })[];
 }
