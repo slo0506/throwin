@@ -80,8 +80,9 @@ begin
   end if;
 end $$;
 
--- 3. A Deal's Item cannot take new photos.
-insert into public.deals (id) values ('50000000-0000-4000-8000-000000000041');
+-- 3. A Deal out for approval locks its Item's photos; a staged Deal, which is waiting for
+--    showcase photos, takes them.
+insert into public.deals (id, status) values ('50000000-0000-4000-8000-000000000041', 'pending_approvals');
 do $$
 begin
   update public.items set status = 'reserved', reserved_by_deal_id = '50000000-0000-4000-8000-000000000041'
@@ -90,6 +91,22 @@ begin
     '[{"path": "00000000-0000-4000-8000-000000000004/items/20000000-0000-4000-8000-000000000042/a.jpg"}]'::jsonb);
   raise exception 'reserved item accepted new photos';
 exception when object_in_use then null;
+end $$;
+do $$
+begin
+  -- The block above rolled back its own update when the exception was caught.
+  update public.deals set status = 'staged' where id = '50000000-0000-4000-8000-000000000041';
+  update public.items set status = 'reserved', reserved_by_deal_id = '50000000-0000-4000-8000-000000000041'
+   where id = '20000000-0000-4000-8000-000000000042';
+  if public.submit_item_media('00000000-0000-4000-8000-000000000004', '20000000-0000-4000-8000-000000000042',
+       '[{"path": "00000000-0000-4000-8000-000000000004/items/20000000-0000-4000-8000-000000000042/b.jpg"}]'::jsonb) is null then
+    raise exception 'a staged Deal''s Item should take its showcase photos';
+  end if;
+  if (select status from public.items where id = '20000000-0000-4000-8000-000000000042') <> 'reserved'
+     or (select reserved_by_deal_id from public.items where id = '20000000-0000-4000-8000-000000000042')
+        <> '50000000-0000-4000-8000-000000000041' then
+    raise exception 'the Item must stay held by its Deal';
+  end if;
 end $$;
 
 -- 4. The price cache keeps ranges ordered and is invisible to clients.
