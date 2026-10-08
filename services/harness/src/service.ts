@@ -703,6 +703,11 @@ export class GmService {
         // Possible injection: alert on these (PRD "Observability").
         this.#logger.warn("gm_allow_list_rejected", { user_id: userId, ...e.payload });
       }
+      if (e.type === "tool_failed") {
+        // The user only sees a generic error; the cause belongs in the logs (resolve_target
+        // failed silently in production for a day before this).
+        this.#logger.warn("gm_tool_failed", { user_id: userId, ...e.payload });
+      }
     }
   }
 }
