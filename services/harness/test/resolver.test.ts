@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dollarAmounts, usd, usdRange } from "../src/format.js";
 import { greetingFor, parseFrontmatter } from "../src/prompts.js";
-import { ClaudeTargetResolver, type ResolverRun } from "../src/resolver.js";
+import { ClaudeTargetResolver, extractionJsonSchema, type ResolverRun } from "../src/resolver.js";
 import { FakeModelClient } from "../src/testing.js";
 import { testPrompts } from "./support.js";
 
@@ -170,5 +170,21 @@ describe("ClaudeTargetResolver product images", () => {
 
     const none = await resolveWith({ text: "the Batmobile" }, {}, null);
     expect(none.target.image_url).toBeNull();
+  });
+});
+
+describe("the extraction schema", () => {
+  // The API refuses a schema whose enum values don't match every declared type, which broke
+  // every resolve_target call in production from #41 until this test.
+  it("never puts an enum under a list of types (nullable enums use anyOf)", () => {
+    const bad: string[] = [];
+    const walk = (node: unknown, path: string) => {
+      if (!node || typeof node !== "object") return;
+      const n = node as Record<string, unknown>;
+      if (Array.isArray(n.enum) && (Array.isArray(n.type) || n.enum.includes(null))) bad.push(path);
+      for (const [k, v] of Object.entries(n)) walk(v, `${path}.${k}`);
+    };
+    walk(extractionJsonSchema, "$");
+    expect(bad).toEqual([]);
   });
 });

@@ -40,7 +40,7 @@ const EXTRACT_SYSTEM = `Turn research notes into the structured target of a trad
 const nullableString = { type: ["string", "null"] };
 const nullableInt = { type: ["integer", "null"] };
 
-const extractionJsonSchema = {
+export const extractionJsonSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
@@ -63,7 +63,11 @@ const extractionJsonSchema = {
         required: ["name", "detail"],
       },
     },
-    prohibited_reason: { type: ["string", "null"], enum: [...ProhibitedReason.options, null] },
+    // A nullable enum must be anyOf: the API refuses enum values that don't match every
+    // declared type ("Enum value 'person' does not match declared type ['string', 'null']").
+    prohibited_reason: {
+      anyOf: [{ type: "string", enum: ProhibitedReason.options }, { type: "null" }],
+    },
   },
   required: [
     "kind",
