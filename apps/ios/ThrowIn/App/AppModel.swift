@@ -891,6 +891,48 @@ final class AppModel {
         await refreshNextUp()
     }
 
+    // MARK: Live updates
+
+    /// Home refreshes itself while the app is in front: every 15 seconds on Home, every 45
+    /// on other tabs. Nothing changes until the user is looking, and nobody pulls to refresh.
+    private var liveTask: Task<Void, Never>?
+    /// True once Home has its first answer from the server, so it can stop showing placeholders.
+    private(set) var hasLoadedHome = false
+
+    func setAppActive(_ active: Bool) {
+        guard isLive, phase == .main else { return }
+        if active {
+            guard liveTask == nil else { return }
+            liveTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    await self.refreshHome()
+                    let seconds: Double = self.tab == .home ? 15 : 45
+                    try? await Task.sleep(for: .seconds(seconds))
+                }
+            }
+        } else {
+            liveTask?.cancel()
+            liveTask = nil
+        }
+    }
+
+    /// Everything Home shows: Asks, Deals and Next up (which brings the questions it names).
+    func refreshHome() async {
+        guard isLive else { return }
+        async let asks: Void = refreshAsks()
+        async let deals: Void = refreshDeals()
+        _ = await (asks, deals)
+        if !hasLoadedHome {
+            withAnimation(Motion.soft) { hasLoadedHome = true }
+        }
+    }
+
+    /// The GM is doing something right now: looking for an Ask, or reading new photos.
+    var isGMWorking: Bool {
+        asks.contains { $0.status == .prospecting && !$0.offerItemIds.isEmpty } || shelf.contains { $0.isAppraising }
+    }
+
     /// Yes makes the guess a want and your GM looks again; no keeps it away from that Ask.
     func answerInquiry(_ inquiry: Inquiry, yes: Bool) async throws {
         guard let api else { return }

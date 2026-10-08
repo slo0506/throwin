@@ -411,6 +411,8 @@ nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
     var countersLeft: Int = 3
     /// Set when an accepted counter replaced this Deal and the new version isn't out yet.
     var supersededBy: String?
+    /// First name of the person whose Items come to you.
+    var getFromName: String? = nil
 
     /// What you get, by name: "Galaxy Explorer", or "Zelda and 1 more" for a bundle.
     var getTitle: String? {

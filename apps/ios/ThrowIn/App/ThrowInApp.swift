@@ -35,6 +35,7 @@ struct RootView: View {
 /// The signed-in app: 4 tabs kept alive in a stack, the floating Loop tab bar, and the GM.
 struct MainShell: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var rippleOrigin: CGPoint = .zero
     @State private var rippleTrigger = 0
 
@@ -63,6 +64,13 @@ struct MainShell: View {
                 }
             }
             .padding(.bottom, 2)
+        }
+        // Home keeps itself fresh while the app is in front, and catches up on coming back.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            model.setAppActive(phase == .active)
+        }
+        .onChange(of: model.tab) { _, tab in
+            if tab == .home { Task { await model.refreshHome() } }
         }
         .sheet(isPresented: $model.isGMPresented) {
             GMChatView()
