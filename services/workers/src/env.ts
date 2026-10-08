@@ -86,6 +86,8 @@ const EnvSchema = z.object({
   PROSPECT_INFER_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.15),
   /** Guesses per Ask the matcher may try. */
   PROSPECT_INFER_PER_ASK: z.coerce.number().int().min(1).max(10).default(3),
+  /** Owners told "someone wants your Item" per live run that staged nothing (0 turns it off). */
+  PROSPECT_INTERESTS_PER_ASK: z.coerce.number().int().min(0).max(5).default(2),
   /** SDK retries per Anthropic call (429 and 5xx, with backoff). */
   ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(4),
   /**

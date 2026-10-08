@@ -32,6 +32,7 @@ import {
   type DealRecord,
   type DemandRecord,
   type InquiryRecord,
+  type InterestRecord,
   type InvitePreviewRecord,
   type InviteRecord,
   type ItemRecord,
@@ -136,6 +137,16 @@ export class MemoryRepository implements Repository {
     userId: string;
     itemId: string;
     status: "pending" | "yes" | "no" | "expired";
+    expiresAt: Date;
+  }[] = [];
+  /** Mirrors interests. */
+  readonly interests: {
+    id: string;
+    askId: string;
+    wanterId: string;
+    itemId: string;
+    ownerId: string;
+    status: "pending" | "accepted" | "declined" | "expired";
     expiresAt: Date;
   }[] = [];
   readonly captures: CaptureRecord[] = [];
@@ -802,6 +813,68 @@ export class MemoryRepository implements Repository {
     if (yes)
       this.jobs.push({ kind: "prospect_ask", payload: { ask_id: q.askId, user_id: userId } });
     else this.askExclusions.push({ askId: q.askId, itemId: q.itemId });
+    return "ok" as const;
+  }
+
+  async listInterests(userId: string): Promise<InterestRecord[]> {
+    const free = (id: string) =>
+      this.items.find((i) => i.id === id && i.status === "on_shelf" && !i.reservedByDealId);
+    return this.interests
+      .filter((n) => n.ownerId === userId && n.status === "pending" && n.expiresAt > new Date())
+      .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime())
+      .flatMap((n) => {
+        const ask = this.asks.find((a) => a.id === n.askId && a.status === "prospecting");
+        const item = this.items.find((i) => i.id === n.itemId);
+        const theirOffer = (ask?.offerItemIds ?? []).flatMap((id) => {
+          const i = free(id);
+          return i ? [this.#dealItem(i)] : [];
+        });
+        if (!ask || !item || theirOffer.length === 0) return [];
+        const name = this.users.get(n.wanterId)?.displayName ?? null;
+        return [
+          {
+            id: n.id,
+            wanterFirstName: name?.trim().split(/\s+/)[0] || null,
+            askTitle: ask.title ?? ask.rawText,
+            item: this.#dealItem(item),
+            theirOffer,
+            expiresAt: n.expiresAt,
+          },
+        ];
+      });
+  }
+
+  /** Mirrors public.answer_interest. */
+  async answerInterest(userId: string, interestId: string, wantItemId: string | null) {
+    const n = this.interests.find((x) => x.id === interestId && x.ownerId === userId);
+    if (!n) return "not_found" as const;
+    const ask = this.asks.find((a) => a.id === n.askId);
+    if (n.status !== "pending" || n.expiresAt <= new Date() || ask?.status !== "prospecting") {
+      return "closed" as const;
+    }
+    if (wantItemId === null) {
+      n.status = "declined";
+      this.askExclusions.push({ askId: n.askId, itemId: n.itemId });
+      return "ok" as const;
+    }
+    const want = this.items.find(
+      (i) =>
+        i.id === wantItemId &&
+        i.ownerId === n.wanterId &&
+        i.status === "on_shelf" &&
+        !i.reservedByDealId,
+    );
+    if (!want || !ask.offerItemIds.includes(wantItemId)) return "invalid" as const;
+    n.status = "accepted";
+    const made = this.addAsk({
+      id: randomUUID(),
+      userId,
+      rawText: want.title,
+      title: want.title,
+      status: "prospecting",
+      offerItemIds: [n.itemId],
+    });
+    this.jobs.push({ kind: "prospect_ask", payload: { ask_id: made.id, user_id: userId } });
     return "ok" as const;
   }
 

@@ -5,6 +5,7 @@ import type {
   DealRecord,
   DemandRecord,
   InquiryRecord,
+  InterestRecord,
   ItemRecord,
   PhotoRequestRecord,
 } from "../repo/types.js";
@@ -27,6 +28,8 @@ export interface NextUpInput {
   demand: DemandRecord[];
   /** The Liaison's open questions to the user. */
   inquiries: InquiryRecord[];
+  /** Circle-mates who want an Item the user offers for nothing. */
+  interests: InterestRecord[];
   /** Signed photo URLs by storage path. */
   urls: Map<string, string | null>;
 }
@@ -176,6 +179,22 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
       item_id: q.item.id,
       thumbnail_url: photo(q.item.photoPath),
       expires_at: q.expiresAt.toISOString(),
+    });
+  }
+
+  // 4b. Someone wants an Item the user offers for nothing: see what they'd trade.
+  for (const n of input.interests) {
+    const who = n.wanterFirstName ?? "Someone in your Circles";
+    out.push({
+      ...blank,
+      id: `interest:${n.id}`,
+      kind: "someone_wants",
+      title: `${who} is looking for your ${short(n.item.title)}`,
+      detail: `See what ${n.wanterFirstName ?? "they"} would trade. Open for ${plural(hoursLeft(n.expiresAt, now), "hour")}.`,
+      cta: "See trade",
+      item_id: n.item.id,
+      thumbnail_url: photo(n.item.photoPath),
+      expires_at: n.expiresAt.toISOString(),
     });
   }
 

@@ -58,6 +58,8 @@ final class AppModel {
     var dealsWaiting: [DealSheet] = []
     /// The Liaison's open questions: would an Item close to what you asked for work?
     var inquiries: [Inquiry] = []
+    /// Circle-mates looking for an Item you offer for nothing.
+    var interests: [Interest] = []
     var circles: [TradeCircle] = []
     var tasteFacts: [TasteFact] = []
     /// Which deals the GM brings you, for every Ask. Lives on the profile, not on each Ask.
@@ -875,6 +877,18 @@ final class AppModel {
         if items.contains(where: { $0.kind == .answerInquiry }) {
             inquiries = (try? await api.inquiries()) ?? inquiries
         }
+        if items.contains(where: { $0.kind == .someoneWants }) {
+            interests = (try? await api.interests()) ?? interests
+        }
+    }
+
+    /// Picking 1 of their Items makes you an Ask for it and your GM looks for the trade; nil passes.
+    func answerInterest(_ interest: Interest, wantItemId: String?) async throws {
+        guard let api else { return }
+        try await api.answerInterest(interest.id, wantItemId: wantItemId)
+        withAnimation(Motion.bouncy) { interests.removeAll { $0.id == interest.id } }
+        await refreshAsks()
+        await refreshNextUp()
     }
 
     /// Yes makes the guess a want and your GM looks again; no keeps it away from that Ask.

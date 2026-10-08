@@ -41,6 +41,7 @@ import {
   type DealRecord,
   type DemandRecord,
   type InquiryRecord,
+  type InterestRecord,
   type InvitePreviewRecord,
   type InviteRecord,
   type ItemRecord,
@@ -1298,6 +1299,69 @@ export class SupabaseRepository implements Repository {
     });
     if (error) throw new RepositoryError("answerInquiry", error);
     return z.object({ result: z.enum(["ok", "not_found", "closed"]) }).parse(data).result;
+  }
+
+  async listInterests(userId: string): Promise<InterestRecord[]> {
+    const { data, error } = await this.db
+      .from("interests")
+      .select(
+        `id, expires_at, users!interests_wanter_id_fkey(display_name),
+         asks!interests_ask_id_fkey(title, raw_text, status,
+           offer_sets(items(${DEAL_ITEM_SELECT}, status, reserved_by_deal_id))),
+         items!interests_item_id_fkey(${DEAL_ITEM_SELECT})`,
+      )
+      .eq("owner_id", userId)
+      .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
+      .order("expires_at", { ascending: true });
+    if (error) throw new RepositoryError("listInterests", error);
+    const OfferedRow = DealItemRow.extend({
+      status: z.string(),
+      reserved_by_deal_id: z.string().nullable(),
+    });
+    return z
+      .array(
+        z.object({
+          id: z.string(),
+          expires_at: ts,
+          users: z.object({ display_name: z.string().nullable() }),
+          asks: z.object({
+            title: z.string().nullable(),
+            raw_text: z.string(),
+            status: z.string(),
+            offer_sets: z.array(z.object({ items: OfferedRow })),
+          }),
+          items: DealItemRow,
+        }),
+      )
+      .parse(data ?? [])
+      .filter((r) => r.asks.status === "prospecting")
+      .map((r) => ({
+        id: r.id,
+        wanterFirstName: r.users.display_name?.trim().split(/\s+/)[0] || null,
+        askTitle: r.asks.title ?? r.asks.raw_text,
+        item: toDealItem(r.items),
+        theirOffer: r.asks.offer_sets
+          .map((o) => o.items)
+          .filter((i) => i.status === "on_shelf" && i.reserved_by_deal_id === null)
+          .map(toDealItem),
+        expiresAt: r.expires_at,
+      }))
+      .filter((r) => r.theirOffer.length > 0);
+  }
+
+  async answerInterest(userId: string, interestId: string, wantItemId: string | null) {
+    if (!isUuid(interestId) || (wantItemId !== null && !isUuid(wantItemId))) {
+      return "not_found" as const;
+    }
+    const { data, error } = await this.db.rpc("answer_interest", {
+      p_user_id: userId,
+      p_interest_id: interestId,
+      p_want_item_id: wantItemId,
+    });
+    if (error) throw new RepositoryError("answerInterest", error);
+    return z.object({ result: z.enum(["ok", "not_found", "closed", "invalid"]) }).parse(data)
+      .result;
   }
 
   async getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]> {

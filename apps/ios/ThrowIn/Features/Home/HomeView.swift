@@ -11,6 +11,7 @@ struct HomeView: View {
     @State private var shoot: HomeShootRoute?
     @State private var tuneUp: TuneUpRoute?
     @State private var inquiry: Inquiry?
+    @State private var interest: Interest?
     @State private var isCapturing = false
 
     var body: some View {
@@ -101,6 +102,11 @@ struct HomeView: View {
                     .presentationDetents([.medium])
                     .presentationCornerRadius(32)
             }
+            .sheet(item: $interest) { interest in
+                InterestSheet(interest: interest)
+                    .presentationDetents([.large])
+                    .presentationCornerRadius(32)
+            }
         }
     }
 
@@ -159,6 +165,16 @@ struct HomeView: View {
                 Task {
                     await model.refreshNextUp()
                     inquiry = model.inquiries.first(where: { $0.id == id })
+                }
+            }
+        case .someoneWants:
+            let id = item.id.replacingOccurrences(of: "interest:", with: "")
+            if let found = model.interests.first(where: { $0.id == id }) {
+                interest = found
+            } else {
+                Task {
+                    await model.refreshNextUp()
+                    interest = model.interests.first(where: { $0.id == id })
                 }
             }
         case .inDemand:
@@ -541,6 +557,7 @@ struct NextUpRow: View {
         case .approveDeal: ("arrow.triangle.2.circlepath", Palette.iris)
         case .showcasePhotos: ("camera.fill", Palette.give)
         case .answerInquiry: ("questionmark.bubble.fill", Palette.iris)
+        case .someoneWants: ("hand.wave.fill", Palette.receive)
         case .offerForAsk: ("hand.point.up.left.fill", Palette.iris)
         case .joinCircle: ("person.3.fill", Palette.receive)
         case .weakOffer: ("scalemass.fill", Palette.gold)

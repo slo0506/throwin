@@ -14,6 +14,7 @@ import { demandRoutes } from "./routes/demand.js";
 import { gmRoutes } from "./routes/gm.js";
 import { healthRoutes } from "./routes/health.js";
 import { inquiryRoutes } from "./routes/inquiries.js";
+import { interestRoutes } from "./routes/interests.js";
 import { itemRoutes } from "./routes/items.js";
 import { meRoutes } from "./routes/me.js";
 import { nextUpRoutes } from "./routes/next-up.js";
@@ -50,6 +51,7 @@ export function createApp(deps: AppDeps) {
   v1.route("/next-up", nextUpRoutes(deps.repo, deps.media, now));
   v1.route("/demand", demandRoutes(deps.repo));
   v1.route("/inquiries", inquiryRoutes(deps.repo, deps.media));
+  v1.route("/interests", interestRoutes(deps.repo, deps.media));
   v1.route(
     "/gm",
     gmRoutes({

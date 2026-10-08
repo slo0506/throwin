@@ -314,6 +314,20 @@ final class APIClient {
         )
     }
 
+    /// Circle-mates looking for an Item the user offers for nothing.
+    func interests() async throws -> [Interest] {
+        let response: InterestsResponse = try await send("GET", "v1/interests")
+        return response.interests
+    }
+
+    /// A want Item means yes (an Ask for it is made and matching starts); nil means no.
+    func answerInterest(_ id: String, wantItemId: String?) async throws {
+        let _: InquiryAnswerResult = try await send(
+            "POST", "v1/interests/\(id)/answer",
+            body: InterestAnswerRequest(answer: wantItemId == nil ? "no" : "yes", wantItemId: wantItemId)
+        )
+    }
+
     /// What needs the user, best first.
     func nextUp() async throws -> [NextUpItem] {
         let response: NextUpResponse = try await send("GET", "v1/next-up")
