@@ -231,7 +231,8 @@ function sniffImage(bytes: Uint8Array): LoadedImage["mediaType"] | null {
  * GmData on Supabase with the service role. The service role bypasses row-level security,
  * so every query filters by the acting user explicitly. Network reads mirror the
  * `network_items` security-definer function (which keys on auth.uid() and so cannot run
- * under the service role), plus the showcase rule.
+ * under the service role), plus the identified rule: other people's Items show once the GM
+ * knows what they are, the same bar a Deal uses.
  */
 export class SupabaseGmData implements GmData {
   constructor(private readonly db: SupabaseClient) {}
@@ -362,7 +363,8 @@ export class SupabaseGmData implements GmData {
       .select(NETWORK_SELECT)
       .in("owner_id", [...names.keys()])
       .eq("status", "on_shelf")
-      .eq("readiness", "showcase")
+      // Identified or better: what can go in a Deal (docs/specs/trust-and-verification.md).
+      .in("readiness", ["identified", "showcase"])
       .neq("willingness", "not_available")
       .order("updated_at", { ascending: false })
       .limit(query.limit);

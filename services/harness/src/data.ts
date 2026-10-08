@@ -68,8 +68,8 @@ export interface OwnItem {
 
 /**
  * Another Circle member's Item, with only the fields that are safe to share. Only
- * `on_shelf`, `showcase`, tradeable Items of members who share a Circle with the user and
- * have not blocked them (or been blocked) ever come back.
+ * `on_shelf`, identified or showcase, tradeable Items of members who share a Circle with the
+ * user and have not blocked them (or been blocked) ever come back.
  */
 export interface NetworkItem {
   id: string;

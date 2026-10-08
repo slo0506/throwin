@@ -20,7 +20,7 @@ export interface RenderScope {
   data: GmData;
 }
 
-/** Item cards in the order asked. Own Items render in full; others only while showcase. */
+/** Item cards in the order asked. Own Items render in full; others once identified. */
 export async function renderItemCards(
   scope: RenderScope,
   ids: string[],
