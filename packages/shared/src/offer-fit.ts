@@ -1,8 +1,9 @@
-// Whether an Ask's offer can pay for what it's after. Every Deal swaps exactly 1 Item each
-// way plus cash, and each person must come out within the matcher's tolerance (15% of the
-// larger Item or $10, whichever is more; docs/contracts/m3-matcher.md). So what counts is
-// the best single Item plus the cash ceiling, never the sum of the offer. The iOS Ask page
-// runs the same rules on device (OfferFit.swift) so it can answer as you tap.
+// Whether an Ask's offer can pay for what it's after. Each person must come out within the
+// matcher's tolerance (15% of the larger side or $10, whichever is more;
+// docs/contracts/m3-matcher.md). Most Deals swap 1 Item each way plus cash; the matcher adds
+// more of the offer only when the other side wants several, which nobody can count on. So
+// what counts is the best single Item plus the cash ceiling, never the sum of the offer. The
+// iOS Ask page runs the same rules on device (OfferFit.swift) so it can answer as you tap.
 
 export const OFFER_TOLERANCE_PCT = 0.15;
 export const OFFER_TOLERANCE_FLOOR_CENTS = 1000;

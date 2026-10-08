@@ -272,6 +272,7 @@ describe("PATCH /v1/asks/:id", () => {
         await patch(ask.id, {
           raw_text: "the 2021 Tumbler",
           cash_ceiling_cents: 100000,
+          max_items: 3,
           autonomy: "likely_yes",
           deadline: "2026-10-20T00:00:00Z",
         })
@@ -280,6 +281,7 @@ describe("PATCH /v1/asks/:id", () => {
     expect(set).toMatchObject({
       raw_text: "the 2021 Tumbler",
       cash_ceiling_cents: 100000,
+      max_items: 3,
       autonomy: "likely_yes",
       deadline: "2026-10-20T00:00:00.000Z",
     });
@@ -310,6 +312,8 @@ describe("PATCH /v1/asks/:id", () => {
       {},
       { cash_ceiling_cents: -1 },
       { cash_ceiling_cents: 100001 },
+      { max_items: 0 },
+      { max_items: 6 },
       { offer_item_ids: ["nope"] },
       {
         offer_item_ids: Array.from(

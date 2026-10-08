@@ -83,6 +83,8 @@ nonisolated struct Ask: Codable, Identifiable, Hashable, Sendable {
     var offerValue: CentsRange?
     /// Only ever returned to the Ask's owner.
     var cashCeilingCents: Int
+    /// How many Items it takes: 1, or several from 1 trade ("2 or 3 board games").
+    var maxItems: Int = 1
     var autonomy: AutonomyLevel
     var deadline: String?
     var createdAt: String?
@@ -119,7 +121,7 @@ nonisolated struct Ask: Codable, Identifiable, Hashable, Sendable {
 nonisolated extension Ask {
     enum CodingKeys: String, CodingKey {
         case id, rawText, title, status, statusLine, target, offerItemIds, offerValue
-        case cashCeilingCents, autonomy, deadline, createdAt, updatedAt
+        case cashCeilingCents, maxItems, autonomy, deadline, createdAt, updatedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -133,6 +135,7 @@ nonisolated extension Ask {
         offerItemIds = (try? c.decodeIfPresent([String].self, forKey: .offerItemIds)) ?? []
         offerValue = try? c.decodeIfPresent(CentsRange.self, forKey: .offerValue)
         cashCeilingCents = (try? c.decodeIfPresent(Int.self, forKey: .cashCeilingCents)) ?? 0
+        maxItems = (try? c.decodeIfPresent(Int.self, forKey: .maxItems)) ?? 1
         autonomy = (try? c.decodeIfPresent(AutonomyLevel.self, forKey: .autonomy)) ?? .everyDeal
         deadline = try? c.decodeIfPresent(String.self, forKey: .deadline)
         createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
@@ -158,6 +161,7 @@ nonisolated struct AskPatch: Encodable, Sendable {
     var target: AskTarget?
     var offerItemIds: [String]?
     var cashCeilingCents: Int?
+    var maxItems: Int?
     var autonomy: AutonomyLevel?
     var deadline: String?
     var status: AskStatus?
@@ -168,6 +172,7 @@ nonisolated struct AskPatch: Encodable, Sendable {
         if let target { ask.target = target }
         if let offerItemIds { ask.offerItemIds = offerItemIds }
         if let cashCeilingCents { ask.cashCeilingCents = cashCeilingCents }
+        if let maxItems { ask.maxItems = maxItems }
         if let autonomy { ask.autonomy = autonomy }
         if let deadline { ask.deadline = deadline }
         if let status { ask.status = status }

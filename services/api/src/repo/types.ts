@@ -143,6 +143,8 @@ export interface AskRecord {
   offerItems: OfferItemRecord[];
   /** Private to the owner. Never leaves through network reads. */
   cashCeilingCents: number;
+  /** How many Items the Ask takes (bundles). */
+  maxItems: number;
   autonomy: AutonomyLevel;
   deadline: Date | null;
   createdAt: Date;
@@ -155,6 +157,7 @@ export interface AskInsert {
   title: string | null;
   status: AskStatus;
   cashCeilingCents: number;
+  maxItems: number;
   autonomy: AutonomyLevel;
 }
 
@@ -165,6 +168,7 @@ export interface AskUpdate {
   title?: string | null;
   offerItemIds?: string[];
   cashCeilingCents?: number;
+  maxItems?: number;
   autonomy?: AutonomyLevel;
   deadline?: Date | null;
   cancel?: true;

@@ -108,6 +108,8 @@ export interface AskRecord {
   status: AskStatus;
   target: AskTarget | null;
   cashCeilingCents: number;
+  /** How many Items it takes: 1, or several for a bundle. */
+  maxItems: number;
   deadline: Date | null;
   autonomy: AutonomyLevel;
   offerItemIds: string[];
@@ -120,6 +122,8 @@ export interface NewAsk {
   title: string | null;
   target: AskTarget | null;
   status: AskStatus;
+  /** 1 when omitted. */
+  maxItems?: number;
   autonomy: AutonomyLevel;
   deadline: Date | null;
 }
@@ -136,6 +140,7 @@ export interface AskPatch {
   /** Replaces the offer set. Items must be the owner's, on the Shelf and not reserved. */
   offerItemIds?: string[];
   cashCeilingCents?: number;
+  maxItems?: number;
   autonomy?: AutonomyLevel;
   deadline?: Date | null;
 }

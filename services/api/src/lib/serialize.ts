@@ -42,6 +42,7 @@ export function toOwnAsk(r: AskRecord): Ask {
     offer_item_ids: r.offerItems.map((i) => i.id),
     offer_value: offerValue,
     cash_ceiling_cents: r.cashCeilingCents,
+    max_items: r.maxItems,
     autonomy: r.autonomy,
     deadline: r.deadline ? r.deadline.toISOString() : null,
     created_at: r.createdAt.toISOString(),

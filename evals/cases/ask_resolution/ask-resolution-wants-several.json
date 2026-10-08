@@ -1,7 +1,7 @@
 {
-  "id": "ask-resolution-category-want",
+  "id": "ask-resolution-wants-several",
   "suite": "ask_resolution",
-  "description": "A category want is saved as a category target, not forced into 1 product, and \"any racing game\" still takes 1",
+  "description": "A want for several things (\"2 or 3 Switch games for the kids\") is 1 Ask that takes 3 Items, with no question about quantity",
   "state": {
     "user": {
       "first_name": "Sam"
@@ -46,27 +46,28 @@
     ],
     "resolver_target": {
       "kind": "category",
-      "name": "Switch racing game",
-      "brand": null,
+      "name": "Nintendo Switch games for kids",
+      "brand": "Nintendo",
       "model": null,
       "category": "games/switch",
-      "constraints": ["any racing game"],
+      "constraints": ["kid-friendly"],
       "anchor": {
         "retail_cents": null,
-        "used_low_cents": 2000,
-        "used_high_cents": 4500
+        "used_low_cents": 1500,
+        "used_high_cents": 4000
       },
       "confidence": 0.8,
       "alternatives": []
     }
   },
   "conversation": [],
-  "message": "Any Switch racing game, I'm not picky",
+  "message": "I'd love 2 or 3 Switch games for my kids, anything kid-friendly",
   "expect": {
     "tools_called": ["resolve_target", "upsert_ask"],
     "max_choice_questions": 0,
     "asks_min": 1,
-    "prices_grounded": true,
-    "ask_max_items": 1
+    "asks_max": 1,
+    "ask_max_items": 3,
+    "prices_grounded": true
   }
 }

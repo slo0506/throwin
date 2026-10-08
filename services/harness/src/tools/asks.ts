@@ -1,4 +1,4 @@
-import { AutonomyLevel, cantTrade, fenceUntrusted } from "@throwin/shared";
+import { AutonomyLevel, cantTrade, fenceUntrusted, MAX_ASK_ITEMS } from "@throwin/shared";
 import { z } from "zod";
 import type { AskPatch, AskRecord, AskTarget } from "../data.js";
 import { askTitle, clean, offerValue, statusLine, usd, usdRange } from "../format.js";
@@ -133,6 +133,15 @@ export const upsertAsk = defineTool({
       .optional()
       .describe("The user's own conditions, e.g. 'built is fine'"),
     deadline: z.iso.date().optional().describe("YYYY-MM-DD, only if the user gave one"),
+    max_items: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_ASK_ITEMS)
+      .optional()
+      .describe(
+        "How many Items they'd take, only when they want several ('2 or 3 board games', 'any Switch games'). Omit for 1.",
+      ),
   }),
   progress: (input) => (input.ask_id ? "Updating your Ask" : "Saving your Ask"),
   async run(ctx, input) {
@@ -158,6 +167,7 @@ export const upsertAsk = defineTool({
         title: target?.name ?? null,
         target: target ? toAskTarget(target, input.constraints) : null,
         status: target ? "offering" : "drafting",
+        maxItems: input.max_items ?? 1,
         // Which deals to bring is 1 profile setting for every Ask (set_autonomy).
         autonomy: (await ctx.data.getUser(ctx.userId))?.autonomy ?? "every_deal",
         deadline: deadline ?? null,
@@ -188,6 +198,7 @@ export const upsertAsk = defineTool({
       ...(nextTarget && { target: nextTarget }),
       ...(target && { title: target.name }),
       ...(deadline && { deadline }),
+      ...(input.max_items !== undefined && { maxItems: input.max_items }),
     });
     return {
       content: `Updated the Ask.\n${await describeAsk(ctx, ask)}`,

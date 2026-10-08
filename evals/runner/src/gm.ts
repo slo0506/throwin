@@ -75,6 +75,7 @@ const AskEntry = z.strictObject({
   target: AskCardTarget.optional(),
   offer_item_ids: z.array(z.uuid()).default([]),
   cash_ceiling_cents: cents.default(0),
+  max_items: z.number().int().min(1).max(5).default(1),
 });
 
 /** `state` of a GM snapshot case: the database the turn starts from. */
@@ -118,6 +119,8 @@ export const GmExpect = z.strictObject({
   max_choice_questions: z.number().int().optional(),
   /** The first Ask's offer set, exactly. */
   offer_items: z.array(z.uuid()).optional(),
+  /** How many Items the first Ask takes, exactly. */
+  ask_max_items: z.number().int().min(1).max(5).optional(),
   /** The user's profile setting afterwards: which deals to bring them. */
   autonomy: AutonomyLevel.optional(),
 });
@@ -188,6 +191,7 @@ function seed(state: GmCaseState, data: MemoryGmData) {
       status: a.status,
       target: a.target ?? null,
       cashCeilingCents: a.cash_ceiling_cents,
+      maxItems: a.max_items,
       deadline: null,
       autonomy: state.user.autonomy ?? "every_deal",
       offerItemIds: a.offer_item_ids,
@@ -385,6 +389,9 @@ export async function runGmCase(c: SnapshotCase, model: ModelClient): Promise<Gm
     const want = [...expect.offer_items].sort();
     if (JSON.stringify(got) !== JSON.stringify(want))
       failures.push(`offer set is [${got.join(", ")}]`);
+  }
+  if (expect.ask_max_items !== undefined && asks[0]?.maxItems !== expect.ask_max_items) {
+    failures.push(`the Ask takes ${asks[0]?.maxItems ?? "nothing"}, not ${expect.ask_max_items}`);
   }
   if (expect.autonomy) {
     const level = (await data.getUser(EVAL_USER))?.autonomy;

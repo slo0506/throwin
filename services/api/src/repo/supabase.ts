@@ -233,6 +233,7 @@ const AskRow = z.object({
   status: AskStatus,
   target: z.unknown(),
   cash_ceiling_cents: z.number().int(),
+  max_items: z.number().int(),
   autonomy: AutonomyLevel,
   deadline: ts.nullable(),
   created_at: ts,
@@ -271,6 +272,7 @@ function toAsk(r: z.infer<typeof AskRow>): AskRecord {
     target: parseTarget(r.target),
     offerItems,
     cashCeilingCents: r.cash_ceiling_cents,
+    maxItems: r.max_items,
     autonomy: r.autonomy,
     deadline: r.deadline,
     createdAt: r.created_at,
@@ -295,7 +297,7 @@ const PatchAskRow = z.object({
 });
 
 const ASK_SELECT =
-  "id, user_id, raw_text, title, status, target, cash_ceiling_cents, autonomy, deadline, created_at, updated_at, offer_sets(item_id, items(status, value_low_cents, value_high_cents))";
+  "id, user_id, raw_text, title, status, target, cash_ceiling_cents, max_items, autonomy, deadline, created_at, updated_at, offer_sets(item_id, items(status, value_low_cents, value_high_cents))";
 const TASTE_FACT_SELECT =
   "id, user_id, key, value, category, source, always_on, status, created_at";
 
@@ -750,6 +752,7 @@ export class SupabaseRepository implements Repository {
         title: input.title,
         status: input.status,
         cash_ceiling_cents: input.cashCeilingCents,
+        max_items: input.maxItems,
         autonomy: input.autonomy,
       })
       .select(ASK_SELECT)
@@ -765,6 +768,7 @@ export class SupabaseRepository implements Repository {
     if (update.title !== undefined) patch.title = update.title;
     if (update.offerItemIds !== undefined) patch.offer_item_ids = update.offerItemIds;
     if (update.cashCeilingCents !== undefined) patch.cash_ceiling_cents = update.cashCeilingCents;
+    if (update.maxItems !== undefined) patch.max_items = update.maxItems;
     if (update.autonomy !== undefined) patch.autonomy = update.autonomy;
     if (update.deadline !== undefined) patch.deadline = update.deadline?.toISOString() ?? null;
     if (update.cancel) patch.status = "cancelled";

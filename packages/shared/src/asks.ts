@@ -48,6 +48,10 @@ const cashCeiling = z.number().int().min(0).max(CASH_CEILING_MAX_CENTS);
 /** Items in 1 offer set, at most. */
 export const MAX_OFFER_ITEMS = 20;
 
+/** Items 1 Ask takes, at most ("2 or 3 board games"). */
+export const MAX_ASK_ITEMS = 5;
+const maxItems = z.number().int().min(1).max(MAX_ASK_ITEMS);
+
 export const Ask = z.object({
   id: z.uuid(),
   raw_text: z.string(),
@@ -62,6 +66,8 @@ export const Ask = z.object({
   offer_value: OfferValue,
   /** The owner's max cash Throw-In. Only ever returned to the Ask's owner. */
   cash_ceiling_cents: cashCeiling,
+  /** How many Items it takes: 1, or several for a bundle ("2 or 3 board games"). */
+  max_items: maxItems.default(1),
   autonomy: AutonomyLevel,
   deadline: z.iso.datetime({ offset: true }).nullable(),
   created_at: z.iso.datetime({ offset: true }),
@@ -76,6 +82,7 @@ export const AskCreate = z.strictObject({
   raw_text: z.string().trim().min(1).max(500),
   target: AskTarget.optional(),
   cash_ceiling_cents: cashCeiling.optional(),
+  max_items: maxItems.optional(),
   autonomy: AutonomyLevel.optional(),
 });
 export type AskCreate = z.infer<typeof AskCreate>;
@@ -90,6 +97,7 @@ export const AskPatch = z
       .max(MAX_OFFER_ITEMS)
       .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))]),
     cash_ceiling_cents: cashCeiling,
+    max_items: maxItems,
     autonomy: AutonomyLevel,
     deadline: z.iso.datetime({ offset: true }).nullable(),
     /** The only status a client may set. */
