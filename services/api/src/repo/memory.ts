@@ -7,6 +7,7 @@ import {
   computeReadiness,
   DEFAULT_NOTIFICATION_PREFS,
   type DealStatus,
+  IDENTIFIED_CONFIDENCE,
   MAX_COUNTER_ROUNDS,
   type QuestionKind,
   type QuestionStatus,
@@ -710,8 +711,8 @@ export class MemoryRepository implements Repository {
           .filter((l) => l.dealId === d.id && l.giverId === userId && l.itemId)
           .flatMap((l) => {
             const item = this.items.find((i) => i.id === l.itemId);
-            // A Deal only waits on Items the GM can't identify yet.
-            if (item?.readiness !== "logged") return [];
+            // A Deal only waits on Items the GM can't tell what they are (item_identity_known).
+            if (!item || (item.identityConf ?? 0) >= IDENTIFIED_CONFIDENCE) return [];
             return [
               {
                 dealId: d.id,
