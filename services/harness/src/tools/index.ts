@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { GmPrompts } from "../prompts.js";
 import { getAskStatus, resolveTarget, setAutonomy, setOfferSet, upsertAsk } from "./asks.js";
+import { getDeals, stageCounter } from "./deals.js";
 import { defineTool, type GmTool, ToolError, ToolRegistry } from "./registry.js";
 import { presentAsk, presentChoices, presentItems, presentRecap, requestMedia } from "./render.js";
 import { getItem, searchMyShelf, searchNetwork, updateItem } from "./shelf.js";
@@ -72,6 +73,8 @@ export function gmTools(prompts: GmPrompts): GmTool[] {
     setAutonomy,
     updateItem,
     getAskStatus,
+    getDeals,
+    stageCounter,
     presentItems,
     presentChoices,
     requestMedia,
@@ -84,9 +87,14 @@ export function gmTools(prompts: GmPrompts): GmTool[] {
 
 export const createToolRegistry = (prompts: GmPrompts) => new ToolRegistry(gmTools(prompts));
 
-/** There is deliberately no tool that approves a Deal, moves money or releases an Item. */
+/**
+ * There is deliberately no tool that approves a Deal, sends or answers a counter, moves
+ * money or releases an Item.
+ */
 export const FORBIDDEN_TOOL_NAMES = [
   "approve_deal",
+  "send_counter",
+  "accept_counter",
   "pay",
   "release_item",
   "send_message_to_user",

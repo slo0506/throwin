@@ -61,7 +61,7 @@ export async function renderAskCard(scope: RenderScope, askId: string) {
   return toAskCard(ask, items, stats);
 }
 
-const shownNote = (kind: string, id: string) =>
+export const shownNote = (kind: string, id: string) =>
   `Shown to the user as a ${kind} card (component ${id}). Don't repeat its details in text.`;
 
 export const presentItems = defineTool({

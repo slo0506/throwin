@@ -100,6 +100,7 @@ describe("money and prompts", () => {
     expect(prompts.version).toMatch(/^gm-\d+\.\d+\.\d+\+[0-9a-f]{8}$/);
     expect([...prompts.skills.keys()].sort()).toEqual([
       "ask-resolution",
+      "counters",
       "deal-explanation",
       "handoff-help",
       "intake",

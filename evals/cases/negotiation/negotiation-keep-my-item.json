@@ -1,0 +1,140 @@
+{
+  "id": "negotiation-keep-my-item",
+  "suite": "negotiation",
+  "description": "In a 2-for-1, the user wants to keep 1 of their games: the GM stages a counter that takes the Kirby game out",
+  "state": {
+    "user": {
+      "first_name": "Sam"
+    },
+    "shelf": [
+      {
+        "id": "aaaaaaaa-2222-4000-8000-000000000001",
+        "title": "Zelda: Tears of the Kingdom (Switch)",
+        "category": "games/switch",
+        "condition_grade": "A",
+        "value_cents": {
+          "low": 3500,
+          "mid": 4000,
+          "high": 4500
+        },
+        "status": "reserved"
+      },
+      {
+        "id": "aaaaaaaa-2222-4000-8000-000000000002",
+        "title": "Kirby and the Forgotten Land (Switch)",
+        "category": "games/switch",
+        "condition_grade": "B",
+        "value_cents": {
+          "low": 2500,
+          "mid": 3000,
+          "high": 3500
+        }
+      }
+    ],
+    "circle": [
+      {
+        "user_id": "bbbbbbbb-2222-4000-8000-000000000001",
+        "first_name": "Maya",
+        "items": [
+          {
+            "id": "bbbbbbbb-2222-4000-8000-0000000000a2",
+            "title": "Vintage 90s Nike windbreaker, size M",
+            "category": "apparel",
+            "condition_grade": "B",
+            "value_cents": {
+              "low": 3000,
+              "mid": 3500,
+              "high": 4000
+            }
+          },
+          {
+            "id": "bbbbbbbb-2222-4000-8000-0000000000a3",
+            "title": "LEGO City Bus 60200",
+            "category": "toys/lego",
+            "condition_grade": "A",
+            "value_cents": {
+              "low": 2000,
+              "mid": 2500,
+              "high": 3000
+            }
+          },
+          {
+            "id": "bbbbbbbb-2222-4000-8000-0000000000a4",
+            "title": "Mario Kart 8 Deluxe (Switch)",
+            "category": "games/switch",
+            "condition_grade": "A",
+            "value_cents": {
+              "low": 3500,
+              "mid": 4000,
+              "high": 4500
+            }
+          },
+          {
+            "id": "bbbbbbbb-2222-4000-8000-0000000000a5",
+            "title": "Animal Crossing: New Horizons (Switch)",
+            "category": "games/switch",
+            "condition_grade": "A",
+            "value_cents": {
+              "low": 3000,
+              "mid": 3500,
+              "high": 4000
+            }
+          }
+        ]
+      }
+    ],
+    "deals": [
+      {
+        "id": "dddddddd-2222-4000-8000-000000000001",
+        "with": {
+          "user_id": "bbbbbbbb-2222-4000-8000-000000000001",
+          "first_name": "Maya"
+        },
+        "gives": [
+          {
+            "id": "aaaaaaaa-2222-4000-8000-000000000001",
+            "title": "Zelda: Tears of the Kingdom (Switch)",
+            "value_cents": {
+              "low": 3500,
+              "mid": 4000,
+              "high": 4500
+            }
+          },
+          {
+            "id": "aaaaaaaa-2222-4000-8000-000000000002",
+            "title": "Kirby and the Forgotten Land (Switch)",
+            "value_cents": {
+              "low": 2500,
+              "mid": 3000,
+              "high": 3500
+            }
+          }
+        ],
+        "gets": [
+          {
+            "id": "bbbbbbbb-2222-4000-8000-0000000000a1",
+            "title": "LEGO Galaxy Explorer 10497",
+            "value_cents": {
+              "low": 7500,
+              "mid": 8000,
+              "high": 8500
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "conversation": [],
+  "message": "Actually I'd rather keep my Kirby game. Can we do the trade without it?",
+  "expect": {
+    "tools_called": ["get_deals", "stage_counter"],
+    "counter_changes": [
+      {
+        "op": "remove",
+        "item_id": "aaaaaaaa-2222-4000-8000-000000000002"
+      }
+    ],
+    "components": ["counter_card"],
+    "prices_grounded": true
+  }
+}

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ShelfItem, ValueRange } from "./api.js";
+import { CounterChange, DealCounter, DealItem, DealPerson, MAX_COUNTER_CHANGES } from "./deals.js";
 import { AskStatus, AutonomyLevel, ConditionGrade } from "./enums.js";
 import { ItemReadiness } from "./readiness.js";
 
@@ -144,12 +145,33 @@ export const RecapData = z.object({
 });
 export type RecapData = z.infer<typeof RecapData>;
 
+/**
+ * A counter the GM staged from the user's words. It goes out only when the user taps Send:
+ * the app posts `changes` to /v1/deals/{deal_id}/counters. Everything else is what it would
+ * do, from the user's side, as of when it was staged.
+ */
+export const CounterCardData = z.object({
+  deal_id: z.uuid(),
+  changes: z.array(CounterChange).min(1).max(MAX_COUNTER_CHANGES),
+  /** Each change with its Item and people. */
+  lines: DealCounter.shape.changes,
+  gives: z.array(DealItem),
+  gets: z.array(DealItem),
+  /** Cash as it would be, and as it is now. */
+  cash: DealCounter.shape.cash,
+  cash_now: DealCounter.shape.cash,
+  /** Who would have to accept. */
+  waiting_on: z.array(DealPerson),
+});
+export type CounterCardData = z.infer<typeof CounterCardData>;
+
 export const GmComponentKind = z.enum([
   "item_cards",
   "choices",
   "camera_request",
   "ask_card",
   "recap",
+  "counter_card",
 ]);
 export type GmComponentKind = z.infer<typeof GmComponentKind>;
 
@@ -159,6 +181,7 @@ export const GmComponent = z.discriminatedUnion("kind", [
   z.object({ id: z.string(), kind: z.literal("camera_request"), data: CameraRequestData }),
   z.object({ id: z.string(), kind: z.literal("ask_card"), data: AskCardData }),
   z.object({ id: z.string(), kind: z.literal("recap"), data: RecapData }),
+  z.object({ id: z.string(), kind: z.literal("counter_card"), data: CounterCardData }),
 ]);
 export type GmComponent = z.infer<typeof GmComponent>;
 

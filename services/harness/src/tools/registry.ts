@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { type GmComponent, UnknownIdError } from "@throwin/shared";
 import { z } from "zod";
 import type { GmData } from "../data.js";
+import type { DealDesk } from "../deals.js";
 import { dollarAmounts } from "../format.js";
 import type { ResolvedTargetData, ToolCallRecord } from "../history.js";
 import type { GmPrompts } from "../prompts.js";
@@ -12,6 +13,8 @@ export interface ToolContext {
   userId: string;
   session: GmSession;
   data: GmData;
+  /** Deals and counters. Null where there are none to reach (no matcher, or offline evals). */
+  deals: DealDesk | null;
   resolver: TargetResolver;
   prompts: GmPrompts;
   now: () => Date;
@@ -232,4 +235,6 @@ export class ToolRegistry {
 }
 
 /** Card kinds whose data comes only from the tool input, so history keeps it as rendered. */
-export const STATIC_KINDS = new Set(["choices", "camera_request", "recap"]);
+// A counter card keeps what it showed when it was staged: re-planning it on every reload
+// would call the matcher, and the Deal Sheet is the live view anyway.
+export const STATIC_KINDS = new Set(["choices", "camera_request", "recap", "counter_card"]);

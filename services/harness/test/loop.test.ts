@@ -361,6 +361,8 @@ describe("untrusted text", () => {
       "set_autonomy",
       "update_item",
       "get_ask_status",
+      "get_deals",
+      "stage_counter",
       "present_items",
       "present_choices",
       "request_media",

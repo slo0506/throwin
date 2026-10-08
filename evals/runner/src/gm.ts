@@ -24,6 +24,7 @@ import {
 } from "@throwin/shared";
 import { z } from "zod";
 import type { SnapshotCase } from "./cases.js";
+import { EvalDeal, EvalDealDesk } from "./deals.js";
 
 /** Suites the GM runner grades. */
 export const GM_SUITES = [
@@ -31,6 +32,7 @@ export const GM_SUITES = [
   "intake",
   "ask_resolution",
   "offer_building",
+  "negotiation",
   "safety",
 ] as const;
 
@@ -92,6 +94,8 @@ export const GmCaseState = z.strictObject({
   resolver_target: ResolvedTargetData.optional(),
   /** Shelf Items the new message says were just added (`added_item_ids` on the message). */
   added_item_ids: z.array(z.uuid()).optional(),
+  /** Open Deals, from the user's side (get_deals, stage_counter). */
+  deals: z.array(EvalDeal).default([]),
 });
 export type GmCaseState = z.infer<typeof GmCaseState>;
 
@@ -121,6 +125,10 @@ export const GmExpect = z.strictObject({
   offer_items: z.array(z.uuid()).optional(),
   /** How many Items the first Ask takes, exactly. */
   ask_max_items: z.number().int().min(1).max(5).optional(),
+  /** The changes of the last counter card staged, in any order. */
+  counter_changes: z
+    .array(z.strictObject({ op: z.enum(["add", "remove"]), item_id: z.uuid() }))
+    .optional(),
   /** The user's profile setting afterwards: which deals to bring them. */
   autonomy: AutonomyLevel.optional(),
 });
@@ -291,8 +299,22 @@ export async function runGmCase(c: SnapshotCase, model: ModelClient): Promise<Gm
     },
     create: (params) => model.create(params),
   };
+  const desk = new EvalDealDesk(
+    { id: EVAL_USER, firstName: state.user.first_name },
+    state.deals,
+    (id) => {
+      const own = state.shelf.find((s) => s.id === id);
+      if (own) return { id, ownerId: EVAL_USER, title: own.title, value: own.value_cents ?? null };
+      for (const m of state.circle) {
+        const i = m.items.find((x) => x.id === id);
+        if (i) return { id, ownerId: m.user_id, title: i.title, value: i.value_cents ?? null };
+      }
+      return null;
+    },
+  );
   const gm = new GmService({
     data,
+    deals: desk,
     model: recording,
     prompts: await loadGmPrompts(PROMPT_DIR),
     ...(state.resolver_target && { resolver: new CannedResolver(state.resolver_target) }),
@@ -392,6 +414,20 @@ export async function runGmCase(c: SnapshotCase, model: ModelClient): Promise<Gm
   }
   if (expect.ask_max_items !== undefined && asks[0]?.maxItems !== expect.ask_max_items) {
     failures.push(`the Ask takes ${asks[0]?.maxItems ?? "nothing"}, not ${expect.ask_max_items}`);
+  }
+  if (expect.counter_changes) {
+    const staged = calls.filter((t) => t.name === "stage_counter" && t.ok).at(-1);
+    const got = (staged?.input as { changes?: { op: string; item_id: string }[] } | undefined)
+      ?.changes;
+    const key = (cs: { op: string; item_id: string }[]) =>
+      cs
+        .map((c) => `${c.op}:${c.item_id}`)
+        .sort()
+        .join(",");
+    if (!got) failures.push("expected a counter card");
+    else if (key(got) !== key(expect.counter_changes)) {
+      failures.push(`counter was ${key(got)}, not ${key(expect.counter_changes)}`);
+    }
   }
   if (expect.autonomy) {
     const level = (await data.getUser(EVAL_USER))?.autonomy;

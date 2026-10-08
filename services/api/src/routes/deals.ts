@@ -164,17 +164,20 @@ function sides(legs: DealLegRecord[], firstAsk: string | null): DealLegRecord[] 
  * server can't verify one until App Attest or passkeys ship (needs the Apple Developer
  * account), so for now the app does the Face ID check locally before calling approve.
  */
+/** Signed photo URLs for every Item these Deals and their counters show. */
+export async function signDealPhotos(media: MediaStore, deals: DealRecord[]) {
+  const paths = deals.flatMap((d) =>
+    [...d.legs, ...(d.counter?.legs ?? [])].flatMap((l) =>
+      l.item.photoPath ? [l.item.photoPath] : [],
+    ),
+  );
+  return paths.length
+    ? media.signedReadUrls([...new Set(paths)])
+    : new Map<string, string | null>();
+}
+
 export const dealRoutes = (repo: Repository, media: MediaStore, counters: Counters | null) => {
-  const sign = async (deals: DealRecord[]) => {
-    const paths = deals.flatMap((d) =>
-      [...d.legs, ...(d.counter?.legs ?? [])].flatMap((l) =>
-        l.item.photoPath ? [l.item.photoPath] : [],
-      ),
-    );
-    return paths.length
-      ? media.signedReadUrls([...new Set(paths)])
-      : new Map<string, string | null>();
-  };
+  const sign = (deals: DealRecord[]) => signDealPhotos(media, deals);
   const sheet = async (d: DealRecord, userId: string) => {
     const out = toDealSheet(d, userId, await sign([d]));
     if (!out) throw notFound();

@@ -72,6 +72,33 @@ describe("runGmCase", () => {
     expect(result.tools).toEqual([{ name: "set_offer_set", ok: false }]);
   });
 
+  it("grades a counter on exactly what it staged", async () => {
+    const c = await gmCase("negotiation-asks-for-more-vintage-nike");
+    const NIKE = "bbbbbbbb-2222-4000-8000-0000000000a2";
+    const BUS = "bbbbbbbb-2222-4000-8000-0000000000a3";
+    const script = (itemId: string) =>
+      new FakeModelClient([
+        { tools: [{ name: "get_deals", input: {} }] },
+        { tools: [{ name: "search_network", input: {} }] },
+        {
+          tools: [
+            {
+              name: "stage_counter",
+              input: {
+                deal_id: "dddddddd-2222-4000-8000-000000000001",
+                changes: [{ op: "add", item_id: itemId }],
+              },
+            },
+          ],
+        },
+        { text: "Here's the counter. Tap Send if it looks right." },
+      ]);
+    const good = await runGmCase(c, script(NIKE));
+    expect(good.failures).toEqual([]);
+    const bad = await runGmCase(c, script(BUS));
+    expect(bad.failures).toContain(`counter was add:${BUS}, not add:${NIKE}`);
+  });
+
   it("fails a reply that quotes a price no tool or session showed", async () => {
     const c = await gmCase("grounding-shelf-value-from-session");
     const good = await runGmCase(c, new FakeModelClient([{ text: "About $90 to $130." }]));
