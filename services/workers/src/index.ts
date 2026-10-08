@@ -77,6 +77,7 @@ const prospector: Omit<ProspectorDeps, "review"> | null = env.MATCHER_URL
         inferred: env.PROSPECT_INFERRED_EDGES
           ? { minSimilarity: env.PROSPECT_INFER_MIN_SIMILARITY, perAsk: env.PROSPECT_INFER_PER_ASK }
           : null,
+        interestsPerAsk: env.PROSPECT_INTERESTS_PER_ASK,
       },
       logger,
     }
@@ -322,6 +323,8 @@ async function expireLoop() {
       if (expired > 0) logger.info("deals_expired", { count: expired });
       const unanswered = await prospectorStore.expireInquiries();
       if (unanswered > 0) logger.info("inquiries_expired", { count: unanswered });
+      const untold = await prospectorStore.expireInterests();
+      if (untold > 0) logger.info("interests_expired", { count: untold });
     } catch (err) {
       logger.error("expire_deals_failed", { error: String(err) });
     }

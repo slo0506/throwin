@@ -10,6 +10,8 @@ import {
   askEmbeddingText,
   embeddingHash,
   type InquiryResult,
+  type InterestCandidate,
+  type InterestResult,
   inferCandidate,
   type ProspectingAsk,
   type ProspectorConfig,
@@ -125,6 +127,8 @@ class FakeStore implements ProspectorStore {
   yes = new Set<string>();
   inquiries: { askId: string; itemId: string; giverId: string }[] = [];
   inquiryResults: InquiryResult[] = [];
+  interestCandidatesByAsk = new Map<string, InterestCandidate[]>();
+  interests: { askId: string; itemId: string }[] = [];
 
   async getAsk(userId: string, askId: string) {
     const ask = this.asks.find((a) => a.id === askId && a.userId === userId);
@@ -164,6 +168,13 @@ class FakeStore implements ProspectorStore {
   async createInquiry(askId: string, itemId: string, giverId: string): Promise<InquiryResult> {
     this.inquiries.push({ askId, itemId, giverId });
     return this.inquiryResults.shift() ?? "ok";
+  }
+  async interestCandidates(askId: string) {
+    return this.interestCandidatesByAsk.get(askId) ?? [];
+  }
+  async createInterest(askId: string, itemId: string): Promise<InterestResult> {
+    this.interests.push({ askId, itemId });
+    return "ok";
   }
   async reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext> {
     return {
@@ -228,6 +239,7 @@ function world(config: Partial<ProspectorConfig> = {}) {
       matcherTimeLimitSeconds: 5,
       maxItemsPerLeg: 3,
       inferred: null,
+      interestsPerAsk: 0,
       ...config,
     },
     logger: { info: () => {} },
@@ -259,6 +271,88 @@ const ask = (
   embeddingHash: null,
   status: "prospecting",
   ...over,
+});
+
+describe("someone wants your Item", () => {
+  const onShelf = (over: Partial<InterestCandidate> = {}): InterestCandidate => ({
+    itemId: "item-tumbler",
+    ownerId: MAYA,
+    similarity: 0.7,
+    title: "Batmobile Tumbler",
+    category: "toys/lego",
+    brand: "LEGO",
+    model: "76240",
+    ...over,
+  });
+
+  it("tells owners of the best Items that clear the bar when nothing went out", async () => {
+    const w = world({ interestsPerAsk: 2 });
+    w.store.asks = [ask("ask-jordan", JORDAN, { target: BATMOBILE })];
+    w.store.circles.set(JORDAN, ["circle-1"]);
+    w.store.interestCandidatesByAsk.set("ask-jordan", [
+      onShelf({ itemId: "item-close", model: null, similarity: 0.5 }),
+      onShelf(),
+      // Another top-level category: not what Jordan asked for.
+      onShelf({ itemId: "item-game", category: "video_games", model: null, similarity: 0.9 }),
+      onShelf({ itemId: "item-far", model: null, similarity: 0.1 }),
+      onShelf({ itemId: "item-third", model: null, similarity: 0.4 }),
+    ]);
+    const out = await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(w.store.interests.map((i) => i.itemId)).toEqual(["item-tumbler", "item-close"]);
+    expect(out).toMatchObject({ status: "matched", interests: ["ok", "ok"] });
+  });
+
+  it("stays quiet when a Deal went out for the Ask, or when turned off", async () => {
+    const w = world({ interestsPerAsk: 2 });
+    w.store.asks = [ask("ask-jordan", JORDAN, { target: BATMOBILE }), ask("ask-maya", MAYA)];
+    w.store.circles.set(JORDAN, ["circle-1"]);
+    w.store.candidatesByCircle.set("circle-1", [
+      candidate(),
+      candidate({
+        askId: "ask-maya",
+        wanterId: MAYA,
+        giverId: JORDAN,
+        giverAskId: "ask-jordan",
+        itemId: "item-zelda",
+        similarity: 0.62,
+      }),
+    ]);
+    w.store.interestCandidatesByAsk.set("ask-jordan", [onShelf()]);
+    const leg = (giver: string, receiver: string, item: string, askId: string) => ({
+      giver,
+      receiver,
+      item_id: item,
+      value_cents: 20000,
+      ask_id: askId,
+      giver_ask_id: null,
+      kind: "explicit" as const,
+    });
+    w.respond({
+      ...EMPTY_MATCH,
+      deals: [
+        {
+          users: [JORDAN, MAYA],
+          item_legs: [
+            leg(MAYA, JORDAN, "item-batmobile", "ask-jordan"),
+            leg(JORDAN, MAYA, "item-zelda", "ask-maya"),
+          ],
+          cash_legs: [],
+          fairness: [],
+          cash_moved_cents: 0,
+          score: 1,
+        },
+      ],
+    });
+    await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(w.store.interests).toEqual([]);
+
+    const off = world();
+    off.store.asks = [ask("ask-jordan", JORDAN, { target: BATMOBILE })];
+    off.store.circles.set(JORDAN, ["circle-1"]);
+    off.store.interestCandidatesByAsk.set("ask-jordan", [onShelf()]);
+    await prospectAsk("ask-jordan", JORDAN, off.deps);
+    expect(off.store.interests).toEqual([]);
+  });
 });
 
 describe("prospectAsk", () => {

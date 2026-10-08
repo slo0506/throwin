@@ -308,6 +308,18 @@ export interface InquiryRecord {
   expiresAt: Date;
 }
 
+/** A Circle-mate wants an Item the user offers for nothing (public.interests). */
+export interface InterestRecord {
+  id: string;
+  wanterFirstName: string | null;
+  askTitle: string;
+  /** The user's own Item. */
+  item: DealItemRecord;
+  /** What the asker offers for that Ask that's still free to trade. */
+  theirOffer: DealItemRecord[];
+  expiresAt: Date;
+}
+
 /** A want in the user's Circles, as a count (public.circle_demand). Never who. */
 export interface DemandRecord {
   label: string;
@@ -491,6 +503,14 @@ export interface Repository {
     inquiryId: string,
     yes: boolean,
   ): Promise<"ok" | "not_found" | "closed">;
+  /** Open "someone wants your Item" notes for the user, soonest to close first. */
+  listInterests(userId: string): Promise<InterestRecord[]>;
+  /** public.answer_interest, as the owner: an Item they'd take (yes) or null (no). */
+  answerInterest(
+    userId: string,
+    interestId: string,
+    wantItemId: string | null,
+  ): Promise<"ok" | "not_found" | "closed" | "invalid">;
   /** Items a counter may add, by ID. Missing IDs are skipped. */
   getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]>;
   /** Each Ask's cash ceiling, to re-balance a counter. Server only: never shown to others. */

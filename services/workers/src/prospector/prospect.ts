@@ -15,6 +15,11 @@
  * 6. Stage the kept Deals best first (public.stage_deal re-checks everything and holds the
  *    Items).
  *
+ * Someone wants your Item: when a live run stages nothing for the Ask, the best few Items on
+ * Circle-mates' Shelves that clear the bar but are offered for nothing are raised with their
+ * owners (public.create_interest). An owner who picks something the asker offers gets an
+ * Ask for it, and matching runs again from their side.
+ *
  * Guesses: an Item in the same top-level category as an Ask that didn't clear the bar (a
  * PS5 for an Xbox Ask) becomes an inferred edge. A Deal that rests on 1 isn't reviewed or
  * staged; the wanter's side is asked first (public.create_inquiry, then the Liaison). Yes
@@ -73,6 +78,20 @@ export interface StoredEdge {
   kind: "explicit" | "inferred";
 }
 
+/** An Item on a Circle-mate's Shelf, offered for nothing, near an Ask. */
+export interface InterestCandidate {
+  itemId: string;
+  ownerId: string;
+  similarity: number;
+  title: string;
+  category: string | null;
+  brand: string | null;
+  model: string | null;
+}
+
+/** public.create_interest's answer. */
+export type InterestResult = "ok" | "exists" | "limited" | "invalid";
+
 /** public.create_inquiry's answer. */
 export type InquiryResult = "ok" | "exists" | "limited" | "invalid";
 
@@ -96,10 +115,17 @@ export interface ProspectorStore {
   ): Promise<StageResult>;
   /** Records that these Asks were just prospected, for the 6-hour sweep. */
   markProspected(askIds: string[]): Promise<void>;
-  /** Guesses the wanter said yes to, which are wants now, as "askId|itemId". */
+  /**
+   * Wants settled by a person, as "askId|itemId": guesses the wanter said yes to, and the
+   * Item an owner picked when told someone wanted theirs (for the Ask that made).
+   */
   answeredYes(askIds: string[]): Promise<Set<string>>;
   /** public.create_inquiry: ask the wanter's side about a guess, within the limits. */
   createInquiry(askId: string, itemId: string, giverId: string): Promise<InquiryResult>;
+  /** Items near this Ask on Circle-mates' Shelves that their owners offer for nothing. */
+  interestCandidates(askId: string, model: string, limit: number): Promise<InterestCandidate[]>;
+  /** public.create_interest: tell the owner someone wants their Item, within the limits. */
+  createInterest(askId: string, itemId: string): Promise<InterestResult>;
   /** What the review reads: participants' names and taste facts, and the Items' details. */
   reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext>;
 }
@@ -130,6 +156,8 @@ export interface ProspectorConfig {
   maxItemsPerLeg: number;
   /** Guesses: the similarity they need, and how many per Ask. Null turns them off. */
   inferred: { minSimilarity: number; perAsk: number } | null;
+  /** Owners told per live run when nothing was staged for the Ask. 0 turns it off. */
+  interestsPerAsk: number;
 }
 
 export interface ProspectorDeps {
@@ -143,7 +171,14 @@ export interface ProspectorDeps {
 
 export type ProspectOutcome =
   | { status: "skipped"; reason: "not_prospecting" | "no_circle" | "no_asks" }
-  | { status: "matched"; edges: number; embedded: number; deals: CircleDeal[] };
+  | {
+      status: "matched";
+      edges: number;
+      embedded: number;
+      deals: CircleDeal[];
+      /** Owners told someone wants their Item (live runs only). */
+      interests?: InterestResult[];
+    };
 
 export interface CircleDeal {
   circleId: string;
@@ -255,8 +290,42 @@ export async function prospectAsk(
   if (circleIds.length === 0) return { status: "skipped", reason: "no_circle" };
   const run = await runMatching(circleIds, { userId, askId }, deps);
   await deps.store.markProspected([askId]);
-  deps.logger.info("prospect_matched", { ask_id: askId, ...run.log });
-  return run.outcome;
+  const interests = await tellOwners(
+    askId,
+    run.asks.find((a) => a.id === askId)?.target,
+    run.outcome.deals,
+    deps,
+  );
+  deps.logger.info("prospect_matched", { ask_id: askId, ...run.log, told: interests.length });
+  return { ...run.outcome, interests };
+}
+
+/**
+ * When nothing went out for the Ask, raises the best few Items that clear the bar but sit on
+ * Shelves offered for nothing with their owners. Guesses never: only what the Ask names.
+ */
+async function tellOwners(
+  askId: string,
+  target: unknown,
+  deals: CircleDeal[],
+  deps: ProspectorDeps,
+): Promise<InterestResult[]> {
+  const { store, embedder, config } = deps;
+  if (config.interestsPerAsk === 0) return [];
+  const pending = deals.some(
+    (d) =>
+      (d.staged.result === "ok" || d.staged.result === "asked") &&
+      d.deal.item_legs.some((l) => l.ask_id === askId),
+  );
+  if (pending) return [];
+  const scored = (await store.interestCandidates(askId, embedder.model, 10))
+    .map((c) => ({ c, score: scoreCandidate(target, c, config.minSimilarity) }))
+    .filter((s): s is { c: InterestCandidate; score: number } => s.score !== null)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, config.interestsPerAsk);
+  const results: InterestResult[] = [];
+  for (const { c } of scored) results.push(await store.createInterest(askId, c.itemId));
+  return results;
 }
 
 /**
@@ -406,6 +475,7 @@ async function runMatching(
     deals.push({ ...m, staged: await store.stageDeal(m.deal, whys, mode) });
   }
   return {
+    asks,
     askIds: asks.map((a) => a.id),
     outcome: { status: "matched", edges: stored.size, embedded: stale.length, deals } as const,
     log: {

@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { MatchDeal } from "./matcher.js";
 import type {
   InquiryResult,
+  InterestCandidate,
+  InterestResult,
   ProspectingAsk,
   ProspectorStore,
   ReviewContext,
@@ -273,12 +275,73 @@ export class SupabaseProspectorStore implements ProspectorStore {
       .in("ask_id", askIds)
       .eq("status", "yes");
     if (error) fail("answeredYes", error);
-    return new Set(
-      z
+    const picked = await this.db
+      .from("interests")
+      .select("answer_ask_id, want_item_id")
+      .in("answer_ask_id", askIds)
+      .eq("status", "accepted");
+    if (picked.error) fail("answeredYes", picked.error);
+    return new Set([
+      ...z
         .array(z.object({ ask_id: z.string(), item_id: z.string() }))
         .parse(data ?? [])
         .map((r) => `${r.ask_id}|${r.item_id}`),
-    );
+      ...z
+        .array(z.object({ answer_ask_id: z.string(), want_item_id: z.string().nullable() }))
+        .parse(picked.data ?? [])
+        .flatMap((r) => (r.want_item_id ? [`${r.answer_ask_id}|${r.want_item_id}`] : [])),
+    ]);
+  }
+
+  async interestCandidates(
+    askId: string,
+    model: string,
+    limit: number,
+  ): Promise<InterestCandidate[]> {
+    const { data, error } = await this.db.rpc("shelf_interest_candidates", {
+      p_ask_id: askId,
+      p_model: model,
+      p_limit: limit,
+    });
+    if (error) fail("interestCandidates", error);
+    return z
+      .array(
+        z.object({
+          item_id: z.string(),
+          owner_id: z.string(),
+          similarity: z.number(),
+          title: z.string(),
+          category: z.string().nullable(),
+          brand: z.string().nullable(),
+          model: z.string().nullable(),
+        }),
+      )
+      .parse(data ?? [])
+      .map((r) => ({
+        itemId: r.item_id,
+        ownerId: r.owner_id,
+        similarity: r.similarity,
+        title: r.title,
+        category: r.category,
+        brand: r.brand,
+        model: r.model,
+      }));
+  }
+
+  async createInterest(askId: string, itemId: string): Promise<InterestResult> {
+    const { data, error } = await this.db.rpc("create_interest", {
+      p_ask_id: askId,
+      p_item_id: itemId,
+    });
+    if (error) fail("createInterest", error);
+    return z.object({ result: z.enum(["ok", "exists", "limited", "invalid"]) }).parse(data).result;
+  }
+
+  /** public.expire_interests: closes what owners didn't answer in 48 hours. Returns how many. */
+  async expireInterests(): Promise<number> {
+    const { data, error } = await this.db.rpc("expire_interests");
+    if (error) fail("expireInterests", error);
+    return z.number().int().parse(data);
   }
 
   async createInquiry(askId: string, itemId: string, giverId: string): Promise<InquiryResult> {

@@ -12,6 +12,8 @@ export const NextUpKind = z.enum([
   "showcase_photos",
   /** Would an Item close to what the user asked for work? 1 tap. */
   "answer_inquiry",
+  /** A Circle-mate wants an Item the user offers for nothing: see what they'd trade. */
+  "someone_wants",
   /** An Ask with nothing offered yet: the GM can't look until there is. */
   "offer_for_ask",
   /** Open Asks, but no Circle to trade in. */

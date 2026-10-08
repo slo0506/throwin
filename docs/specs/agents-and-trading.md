@@ -26,7 +26,7 @@ Everything an agent does reaches the user in 1 of 4 places: **Next up** on Home 
 | Look for trades for every Ask | Prospector + matcher | New Ask, offer change, every 6 hours | Ask status line, Next up, Deal Sheets | Built |
 | Clear the whole Circle, 3 and 4-way Loops included | Prospector + matcher | Sunday 9am Pacific | "You're in a 4-way trade" | Built |
 | Ask for showcase photos when someone's waiting | Prospector | A staged Deal includes your unready Item | "Bob wants your LEGO Typewriter. 1 photo and the deal can go out." | In Next up (#42); push in M4 |
-| Tell you when someone wants your Item | Prospector → Liaison | Another Ask matches your Item | "Maya is looking for a Switch game you have" | Not built (M3) |
+| Tell you when someone wants your Item | Prospector → Liaison | Another Ask matches your Item | "Maya is looking for your Zelda": pick what you'd take from her offer | In Next up; push in M4 |
 | Ask the other GM when a trade rests on a guess | Liaison | A Loop needs an inferred edge | "Would a PS5 work instead of an Xbox?" | Not built (M3) |
 | Spot trades 1 Item away (brokering) | Prospector (drop) | Weekly | "You could make a 3-way happen with Kobe 11s" | Proposed |
 | Keep values fresh | Refiner | Weekly, for Items in active offers | Ranges move; the Ask page fit updates | Proposed |
