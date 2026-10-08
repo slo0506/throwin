@@ -143,3 +143,50 @@ describe("GET /v1/next-up", () => {
     });
   });
 });
+
+describe("a Deal waiting on an Item the GM can't identify yet", () => {
+  it("asks its owner the quick questions first, and only logged Items hold a Deal", async () => {
+    const h = makeHarness();
+    const { repo } = h;
+    repo.addItem({
+      id: ITEM(1),
+      ownerId: ALICE,
+      title: "PlayStation 4, with controller",
+      readiness: "logged",
+    });
+    repo.addItem({
+      id: ITEM(2),
+      ownerId: ALICE,
+      title: "Crocs Classic Clog",
+      identityConf: 0.9,
+      valueLowCents: 1500,
+      valueMidCents: 2000,
+      valueHighCents: 2500,
+    });
+    repo.addItem({ id: ITEM(3), ownerId: BOB, title: "Insta360 X3", readiness: "identified" });
+    repo.addQuestion({ id: "q1", itemId: ITEM(1) });
+    repo.addQuestion({ id: "q2", itemId: ITEM(1), prompt: "Which model is it?" });
+    repo.addDeal({
+      id: DEAL(1),
+      status: "staged",
+      expiresAt: new Date("2026-10-04T00:00:00Z"),
+      legs: [
+        { giverId: BOB, receiverId: ALICE, itemId: ITEM(3) },
+        { giverId: ALICE, receiverId: BOB, itemId: ITEM(1) },
+        { giverId: ALICE, receiverId: BOB, itemId: ITEM(2) },
+      ],
+    });
+    const items = await nextUp(h);
+    const pins = items.filter((i) => i.kind === "pin_down_item");
+    expect(pins).toEqual([
+      expect.objectContaining({
+        title: "Bob wants your PlayStation 4",
+        detail: "2 quick answers and the deal can go out. Held for 12 hours.",
+        cta: "Answer",
+        item_id: ITEM(1),
+      }),
+    ]);
+    // The identified Crocs don't hold the Deal up.
+    expect(items.some((i) => i.item_id === ITEM(2) && i.kind === "showcase_photos")).toBe(false);
+  });
+});

@@ -448,7 +448,7 @@ Each feasible cycle gets a score: the sum of utility gained by participants, min
 2. **Graph and cycles:** The matcher builds edges and searches cycles.
 3. **Prospector review:** The LLM checks each top candidate against the user's taste facts and never-trade list, removes anything odd, and writes the 1 or 2-sentence "why" for each participant.
 4. **Liaison inquiries:** Inferred edges get structured inquiries. Answers update edge confidence, and the matcher re-runs.
-5. **Showcase check:** Every Item in the candidate must be `showcase`. If one is not, its owner gets a just-in-time photo request, and the candidate waits up to 24 hours before the matcher moves on.
+5. **Identified check:** Every Item in the candidate must be at least `identified` (decided Oct 7, 2026; `docs/specs/trust-and-verification.md`). If one is only `logged`, its owner gets the cheapest way to pin it down (quick answers, then photos), and the candidate waits up to 24 hours before the matcher moves on. Showcase photos make an offer stronger but don't hold a Deal Sheet back; proof that the Item exists and matches comes from a live photo before the handoff.
 6. **Stage:** The Deal is created in `pending_approvals` and every Item in it is reserved.
 7. **Deal Sheets:** Each participant gets their own Deal Sheet, written from their side.
 8. **Approvals:** Every participant approves in the app. A decline or a 48-hour timeout releases the Items and triggers a re-match for everyone else.
@@ -809,6 +809,7 @@ Build in 7 milestones, each ending in something a person can use on a phone, and
 
 ### Milestone 4: Handoffs and Throw-Ins
 
+- [ ] Trust before anyone travels (`docs/specs/trust-and-verification.md`): photo provenance, a live photo of each Item checked against its listing before scheduling, a handoff scan (photo and serial), and reputation with a trust ladder.
 - [ ] Handoff coordinator: slot proposals, confirmation, reminders, check-in, complete and dispute.
 - [ ] Stripe Connect onboarding, Apple Pay authorization at approval, capture at confirmation, webhooks.
 - [ ] Ratings, and automatic Shelf add of received Items.

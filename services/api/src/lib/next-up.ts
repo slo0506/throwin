@@ -137,10 +137,25 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 3. Someone's waiting on photos of the user's Item before a Deal can go out.
+  // 3. Someone's waiting on the user's Item before a Deal can go out: the GM can't tell
+  //    what it is yet. Quick answers settle that cheapest; photos when there's nothing to ask.
   for (const r of [...input.photoRequests].sort(
     (a, b) => a.expiresAt.getTime() - b.expiresAt.getTime(),
   )) {
+    if (r.openQuestions > 0) {
+      out.push({
+        ...blank,
+        id: `pin:${r.dealId}:${r.itemId}`,
+        kind: "pin_down_item",
+        title: `${r.wantedBy ?? "Someone"} wants your ${short(r.itemTitle)}`,
+        detail: `${plural(r.openQuestions, "quick answer")} and the deal can go out. Held for ${plural(hoursLeft(r.expiresAt, now), "hour")}.`,
+        cta: "Answer",
+        item_id: r.itemId,
+        thumbnail_url: photo(r.thumbnailPath),
+        expires_at: r.expiresAt.toISOString(),
+      });
+      continue;
+    }
     const angles = (r.missingAngles.length ? r.missingAngles : ["Front", "Back"]).slice(0, 5);
     out.push({
       ...blank,

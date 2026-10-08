@@ -70,6 +70,10 @@ begin
   if exists (select 1 from public.deals) then raise exception 'a refused Deal was written'; end if;
 end $$;
 
+-- Neither Item is identified yet: the GM isn't sure what they are.
+update public.items set identity_conf = 0.5
+ where id in ('20000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000003');
+
 -- 2. A valid Deal is staged: Items held, legs and participants written, Asks proposed.
 do $$
 declare
@@ -77,7 +81,7 @@ declare
   deal uuid := (r->>'deal_id')::uuid;
 begin
   if r->>'result' <> 'ok' then raise exception 'stage failed: %', r; end if;
-  -- Neither Item is showcase yet, so it waits up to 24 hours for photos.
+  -- Neither Item is identified yet, so it waits up to 24 hours for its owners to pin them down.
   if (select status from public.deals where id = deal) <> 'staged' then raise exception 'should be staged'; end if;
   if (select expires_at from public.deals where id = deal) not between now() + interval '23 hours' and now() + interval '25 hours' then
     raise exception 'staged Deals should wait 24 hours';
@@ -117,21 +121,25 @@ begin
    where id in ('30000000-0000-4000-8000-000000000091', '30000000-0000-4000-8000-000000000092');
 end $$;
 
--- 4. When the last Item reaches showcase, the Deal goes out for approval with 48 hours.
+-- 4. When the last Item is identified, the Deal goes out for approval with 48 hours. It
+--    doesn't wait for showcase photos (decided Oct 7, 2026).
 do $$
 declare
   deal uuid := (select id from public.deals);
 begin
-  update public.items set photo_score = 80, missing_angles = '{}' where id = '20000000-0000-4000-8000-000000000003';
-  if (select readiness from public.items where id = '20000000-0000-4000-8000-000000000003') <> 'showcase' then
-    raise exception 'Galaxy should be showcase now';
+  update public.items set identity_conf = 0.9 where id = '20000000-0000-4000-8000-000000000003';
+  if (select readiness from public.items where id = '20000000-0000-4000-8000-000000000003') = 'logged' then
+    raise exception 'Galaxy should be identified now';
   end if;
   if (select status from public.deals where id = deal) <> 'staged' then
-    raise exception 'promoted with 1 Item still below showcase';
+    raise exception 'promoted with 1 Item still only logged';
   end if;
-  update public.items set photo_score = 80, missing_angles = '{}' where id = '20000000-0000-4000-8000-000000000002';
+  update public.items set identity_conf = 0.9 where id = '20000000-0000-4000-8000-000000000002';
+  if (select readiness from public.items where id = '20000000-0000-4000-8000-000000000002') = 'showcase' then
+    raise exception 'this case needs Zelda below showcase';
+  end if;
   if (select status from public.deals where id = deal) <> 'pending_approvals' then
-    raise exception 'should be pending approvals once every Item is showcase';
+    raise exception 'should be pending approvals once every Item is identified';
   end if;
   if (select expires_at from public.deals where id = deal) < now() + interval '47 hours' then
     raise exception 'the approval clock should restart at 48 hours';
@@ -164,8 +172,8 @@ begin
   if public.expire_deals() <> 0 then raise exception 'expired twice'; end if;
 end $$;
 
--- 6. A Deal whose Items are all showcase skips straight to approval, and each person's why
---    from the review is stored on their own participant row.
+-- 6. A Deal whose Items are all identified skips straight to approval, and each person's
+--    why from the review is stored on their own participant row.
 do $$
 declare
   r jsonb := public.stage_deal(pg_temp.deal() || jsonb_build_object('whys', jsonb_build_object(
@@ -175,7 +183,7 @@ declare
 begin
   if r->>'result' <> 'ok' then raise exception 'restage failed: %', r; end if;
   if (select status from public.deals where id = deal) <> 'pending_approvals' then
-    raise exception 'showcase Items should skip staging';
+    raise exception 'identified Items should skip staging';
   end if;
   if (select why from public.deal_participants where deal_id = deal and user_id = '00000000-0000-4000-8000-000000000001')
        <> 'You said you wanted a space set.'
