@@ -4,6 +4,7 @@ import type {
   CircleRecord,
   DealRecord,
   DemandRecord,
+  InquiryRecord,
   ItemRecord,
   PhotoRequestRecord,
 } from "../repo/types.js";
@@ -24,6 +25,8 @@ export interface NextUpInput {
   circles: CircleRecord[];
   /** What people in the user's Circles want, as counts (circle_demand). */
   demand: DemandRecord[];
+  /** The Liaison's open questions to the user. */
+  inquiries: InquiryRecord[];
   /** Signed photo URLs by storage path. */
   urls: Map<string, string | null>;
 }
@@ -160,7 +163,23 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     ]),
   );
 
-  // 4. Asks the GM can't work on until the user picks something to offer.
+  // 4. The Liaison's questions: 1 tap decides whether a guess becomes a want.
+  for (const q of input.inquiries) {
+    out.push({
+      ...blank,
+      id: `inquiry:${q.id}`,
+      kind: "answer_inquiry",
+      title: `Would ${short(q.item.title)} work for your ${short(q.askTitle)}?`,
+      detail: `Someone in your Circles could trade it to you. Open for ${plural(hoursLeft(q.expiresAt, now), "hour")}.`,
+      cta: "Answer",
+      ask_id: q.askId,
+      item_id: q.item.id,
+      thumbnail_url: photo(q.item.photoPath),
+      expires_at: q.expiresAt.toISOString(),
+    });
+  }
+
+  // 5. Asks the GM can't work on until the user picks something to offer.
   for (const a of openAsks.filter((a) => a.target && a.offerItems.length === 0)) {
     out.push({
       ...blank,
@@ -174,7 +193,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 5. Open Asks but nowhere to trade.
+  // 6. Open Asks but nowhere to trade.
   if (openAsks.length > 0 && input.circles.length === 0) {
     out.push({
       ...blank,
@@ -186,7 +205,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 6. Offers that can't land as they stand.
+  // 7. Offers that can't land as they stand.
   for (const a of openAsks) {
     const anchor = a.target?.anchor;
     if (!anchor || a.offerItems.length === 0) continue;
@@ -216,7 +235,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 7. Something people want that 1 of the user's Items could fill, and that Item isn't
+  // 8. Something people want that 1 of the user's Items could fill, and that Item isn't
   //    offered for anything yet: a reason to trade it. Counts only, never who.
   const offered = new Set(openAsks.flatMap((a) => a.offerItems.map((i) => i.id)));
   const shelf = new Map(input.items.map((i) => [i.id, i]));
@@ -236,7 +255,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     break;
   }
 
-  // 8. Tune up: the cheapest way to tighten the Shelf.
+  // 9. Tune up: the cheapest way to tighten the Shelf.
   const asking = input.items.filter((i) => i.openQuestions > 0 && !i.appraising);
   const questions = asking.reduce((n, i) => n + i.openQuestions, 0);
   if (questions > 0) {
@@ -250,7 +269,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 9. Identified Items a few photos from ready to show, most valuable first.
+  // 10. Identified Items a few photos from ready to show, most valuable first.
   const nearlyReady = input.items
     .filter((i) => i.readiness === "identified" && !i.appraising && i.status === "on_shelf")
     .sort((a, b) => (b.valueMidCents ?? 0) - (a.valueMidCents ?? 0))
@@ -270,7 +289,7 @@ export function buildNextUp(input: NextUpInput): NextUpItem[] {
     });
   }
 
-  // 10. Getting started.
+  // 11. Getting started.
   if (input.items.length === 0) {
     out.push({
       ...blank,

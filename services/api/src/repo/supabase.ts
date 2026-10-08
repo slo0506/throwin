@@ -40,6 +40,7 @@ import {
   type DealLegRecord,
   type DealRecord,
   type DemandRecord,
+  type InquiryRecord,
   type InvitePreviewRecord,
   type InviteRecord,
   type ItemRecord,
@@ -1256,6 +1257,47 @@ export class SupabaseRepository implements Repository {
         askers: r.askers,
         itemIds: r.item_ids ?? [],
       }));
+  }
+
+  async listInquiries(userId: string): Promise<InquiryRecord[]> {
+    const { data, error } = await this.db
+      .from("inquiries")
+      .select(`id, ask_id, expires_at, asks(title, raw_text), items(${DEAL_ITEM_SELECT})`)
+      .eq("user_id", userId)
+      .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
+      .order("expires_at", { ascending: true });
+    if (error) throw new RepositoryError("listInquiries", error);
+    return z
+      .array(
+        z.object({
+          id: z.string(),
+          ask_id: z.string(),
+          expires_at: ts,
+          asks: z.object({ title: z.string().nullable(), raw_text: z.string() }),
+          items: DealItemRow,
+        }),
+      )
+      .parse(data ?? [])
+      .map((r) => ({
+        id: r.id,
+        askId: r.ask_id,
+        askTitle: r.asks.title ?? r.asks.raw_text,
+        item: toDealItem(r.items),
+        expiresAt: r.expires_at,
+      }));
+  }
+
+  async answerInquiry(userId: string, inquiryId: string, yes: boolean) {
+    if (!isUuid(inquiryId)) return "not_found" as const;
+    const { data, error } = await this.db.rpc("answer_inquiry", {
+      p_user_id: userId,
+      p_inquiry_id: inquiryId,
+      p_yes: yes,
+      p_by: "user",
+    });
+    if (error) throw new RepositoryError("answerInquiry", error);
+    return z.object({ result: z.enum(["ok", "not_found", "closed"]) }).parse(data).result;
   }
 
   async getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]> {

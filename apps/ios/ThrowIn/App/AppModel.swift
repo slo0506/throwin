@@ -56,6 +56,8 @@ final class AppModel {
     var shelf: [ShelfItem] = []
     var asks: [Ask] = []
     var dealsWaiting: [DealSheet] = []
+    /// The Liaison's open questions: would an Item close to what you asked for work?
+    var inquiries: [Inquiry] = []
     var circles: [TradeCircle] = []
     var tasteFacts: [TasteFact] = []
     /// Which deals the GM brings you, for every Ask. Lives on the profile, not on each Ask.
@@ -870,6 +872,17 @@ final class AppModel {
     func refreshNextUp() async {
         guard let api, let items = try? await api.nextUp() else { return }
         withAnimation(Motion.bouncy) { nextUp = items }
+        if items.contains(where: { $0.kind == .answerInquiry }) {
+            inquiries = (try? await api.inquiries()) ?? inquiries
+        }
+    }
+
+    /// Yes makes the guess a want and your GM looks again; no keeps it away from that Ask.
+    func answerInquiry(_ inquiry: Inquiry, yes: Bool) async throws {
+        guard let api else { return }
+        try await api.answerInquiry(inquiry.id, yes: yes)
+        withAnimation(Motion.bouncy) { inquiries.removeAll { $0.id == inquiry.id } }
+        await refreshNextUp()
     }
 
     /// Call only after the device confirmation (Face ID or passcode) succeeded.

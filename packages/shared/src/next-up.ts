@@ -10,6 +10,8 @@ export const NextUpKind = z.enum([
   "approve_deal",
   /** A staged Deal is waiting for showcase photos of the user's Item. */
   "showcase_photos",
+  /** Would an Item close to what the user asked for work? 1 tap. */
+  "answer_inquiry",
   /** An Ask with nothing offered yet: the GM can't look until there is. */
   "offer_for_ask",
   /** Open Asks, but no Circle to trade in. */

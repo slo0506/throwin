@@ -31,6 +31,7 @@ import {
   type DealItemRecord,
   type DealRecord,
   type DemandRecord,
+  type InquiryRecord,
   type InvitePreviewRecord,
   type InviteRecord,
   type ItemRecord,
@@ -128,6 +129,15 @@ export class MemoryRepository implements Repository {
   readonly askExclusions: { askId: string; itemId: string }[] = [];
   /** What circle_demand would return, by user. Tests set it. */
   readonly demand = new Map<string, DemandRecord[]>();
+  /** Mirrors inquiries. */
+  readonly inquiries: {
+    id: string;
+    askId: string;
+    userId: string;
+    itemId: string;
+    status: "pending" | "yes" | "no" | "expired";
+    expiresAt: Date;
+  }[] = [];
   readonly captures: CaptureRecord[] = [];
   readonly captureMedia: (CaptureMediaInput & { captureId: string })[] = [];
   readonly itemMedia: (CaptureMediaInput & { itemId: string })[] = [];
@@ -761,6 +771,38 @@ export class MemoryRepository implements Repository {
 
   async getDemand(userId: string): Promise<DemandRecord[]> {
     return this.demand.get(userId) ?? [];
+  }
+
+  async listInquiries(userId: string): Promise<InquiryRecord[]> {
+    return this.inquiries
+      .filter((q) => q.userId === userId && q.status === "pending" && q.expiresAt > new Date())
+      .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime())
+      .flatMap((q) => {
+        const ask = this.asks.find((a) => a.id === q.askId);
+        const item = this.items.find((i) => i.id === q.itemId);
+        if (!ask || !item) return [];
+        return [
+          {
+            id: q.id,
+            askId: q.askId,
+            askTitle: ask.title ?? ask.rawText,
+            item: this.#dealItem(item),
+            expiresAt: q.expiresAt,
+          },
+        ];
+      });
+  }
+
+  /** Mirrors public.answer_inquiry. */
+  async answerInquiry(userId: string, inquiryId: string, yes: boolean) {
+    const q = this.inquiries.find((x) => x.id === inquiryId && x.userId === userId);
+    if (!q) return "not_found" as const;
+    if (q.status !== "pending" || q.expiresAt <= new Date()) return "closed" as const;
+    q.status = yes ? "yes" : "no";
+    if (yes)
+      this.jobs.push({ kind: "prospect_ask", payload: { ask_id: q.askId, user_id: userId } });
+    else this.askExclusions.push({ askId: q.askId, itemId: q.itemId });
+    return "ok" as const;
   }
 
   async getCounterItems(itemIds: string[]): Promise<CounterItemRecord[]> {
