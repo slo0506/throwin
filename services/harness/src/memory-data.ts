@@ -54,6 +54,8 @@ export class MemoryGmData implements GmData {
   readonly jobs: { kind: string; payload: Record<string, unknown> }[] = [];
   readonly images = new Map<string, LoadedImage>();
   now: () => Date = () => new Date();
+  /** When each run was recorded, for spend windows. */
+  readonly #runTimes = new Map<string, Date>();
 
   addUser(id: string, overrides: Partial<GmUser> = {}): GmUser {
     const user: GmUser = { id, firstName: null, autonomy: "every_deal", ...overrides };
@@ -300,6 +302,14 @@ export class MemoryGmData implements GmData {
 
   async recordRun(run: AgentRun) {
     this.runs.push(run);
+    this.#runTimes.set(run.id, this.now());
+  }
+
+  async gmSpendCents(since: Date, userId: string | null) {
+    return this.runs
+      .filter((r) => r.agent === "gm" && (userId === null || r.userId === userId))
+      .filter((r) => (this.#runTimes.get(r.id) ?? this.now()) >= since)
+      .reduce((sum, r) => sum + r.costCents, 0);
   }
 
   async recordEvents(events: AgentEvent[]) {

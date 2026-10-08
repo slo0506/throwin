@@ -4,6 +4,7 @@ import { ClaudeVision, type ModelRun, type PricingConfig } from "./appraiser/cla
 import { VoyageEmbedder } from "./appraiser/embeddings.js";
 import { type AppraiserDeps, appraiseCapture, reappraiseItem } from "./appraiser/pipeline.js";
 import { CachedPricer } from "./appraiser/price-cache.js";
+import { SpendGuard } from "./budget.js";
 import { loadEnv } from "./env.js";
 import { createLogger } from "./log.js";
 import { ExtractMemoryPayload, extractMemory } from "./memory/extract.js";
@@ -28,6 +29,11 @@ const db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const queue = new SupabaseQueue(db);
+const budget = new SpendGuard(
+  (since) => queue.spentSince(since),
+  env.WORKER_DAILY_BUDGET_CENTS,
+  logger,
+);
 // The Refiner's store is the Appraiser's plus questions, so 1 instance serves both.
 const store = new SupabaseRefinerStore(db);
 const memoryStore = new SupabaseMemoryStore(db);
@@ -262,11 +268,14 @@ async function runJob(job: Job) {
 /** Jobs run at once. Refiner passes are short and independent, so 1 capture must not queue them. */
 const CONCURRENCY = Math.max(1, Number(process.env.WORKER_CONCURRENCY ?? 4));
 
-/** 1 lane: claim a job, run it, repeat. claim_job uses SKIP LOCKED, so lanes never collide. */
+/**
+ * 1 lane: claim a job, run it, repeat. claim_job uses SKIP LOCKED, so lanes never collide.
+ * Every job kind calls a model, so nothing is claimed while the day's budget is spent.
+ */
 async function lane() {
   while (!stopping) {
     try {
-      const job = await queue.claim(KINDS);
+      const job = (await budget.allows()) ? await queue.claim(KINDS) : null;
       if (job) {
         await runJob(job);
         continue;
@@ -333,6 +342,7 @@ async function main() {
     pipeline,
     refiner,
     concurrency: CONCURRENCY,
+    daily_budget_cents: budget.budgetCents,
   });
   await Promise.all([
     ...Array.from({ length: CONCURRENCY }, () => lane()),

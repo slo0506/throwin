@@ -254,6 +254,8 @@ export interface GmData {
   intakeFinished(userId: string): Promise<boolean>;
 
   recordRun(run: AgentRun): Promise<void>;
+  /** GM model spend in cents since `since`: 1 person's, or everyone's when `userId` is null. */
+  gmSpendCents(since: Date, userId: string | null): Promise<number>;
   recordEvents(events: AgentEvent[]): Promise<void>;
   enqueueJob(kind: string, payload: Record<string, unknown>): Promise<void>;
 

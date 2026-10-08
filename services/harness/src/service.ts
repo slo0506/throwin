@@ -61,12 +61,22 @@ export interface GmServiceDeps {
   maxSteps?: number;
   /** Stored rows the model sees: the newest N, trimmed to a turn start. */
   historyLimit?: number;
+  /** Daily spend caps (docs/setup.md, "Spend caps"). Without them, turns aren't capped. */
+  budget?: GmBudget;
+}
+
+/** GM model spend allowed in any 24 hours, in cents. */
+export interface GmBudget {
+  /** Per person. */
+  userDailyCents: number;
+  /** Everyone's GM together. */
+  dailyCents: number;
 }
 
 /** A bad request the client can fix. `message` is safe to show. */
 export class GmInputError extends Error {
   constructor(
-    readonly status: 400 | 404 | 410,
+    readonly status: 400 | 404 | 410 | 429,
     readonly code: string,
     message: string,
   ) {
@@ -88,6 +98,7 @@ const EMPTY_REPLY = "Sorry, I lost my train of thought there. Could you say that
 const CLIENT_HISTORY_LIMIT = 200;
 const MAX_LISTED_CONVERSATIONS = 50;
 const TITLE_LENGTH = 48;
+const DAY_MS = 86_400_000;
 
 /** A conversation's title: the user's first words in it, cut at a word near 48 characters. */
 export function conversationTitle(text: string): string {
@@ -115,6 +126,7 @@ export class GmService {
   readonly #maxTokens: number;
   readonly #maxSteps: number;
   readonly #historyLimit: number;
+  readonly #budget: GmBudget | null;
 
   constructor(deps: GmServiceDeps) {
     this.#data = deps.data;
@@ -130,6 +142,7 @@ export class GmService {
     this.#maxTokens = deps.maxTokens ?? 1500;
     this.#maxSteps = deps.maxSteps ?? 8;
     this.#historyLimit = deps.historyLimit ?? 80;
+    this.#budget = deps.budget ?? null;
     this.registry = createToolRegistry(deps.prompts);
   }
 
@@ -285,6 +298,7 @@ export class GmService {
    */
   async prepareTurn(userId: string, body: PostGmMessage): Promise<PreparedTurn> {
     const user = await this.#user(userId);
+    await this.#checkBudget(userId);
     const conversation = await this.#conversation(user, body.conversation_id);
     const rows = trimToTurnStart(
       await this.#data.listMessages(userId, conversation.id, this.#historyLimit),
@@ -322,6 +336,42 @@ export class GmService {
       run: (emit) =>
         this.#run({ user, session, rows, content, messageId, screen: body.screen, emit, tick }),
     };
+  }
+
+  /**
+   * Refuses the turn once GM spend in the last 24 hours reaches a cap, before anything is
+   * stored. A turn that starts under the cap may finish a little over it.
+   */
+  async #checkBudget(userId: string) {
+    if (!this.#budget) return;
+    const since = new Date(this.#now().getTime() - DAY_MS);
+    const [mine, everyone] = await Promise.all([
+      this.#data.gmSpendCents(since, userId),
+      this.#data.gmSpendCents(since, null),
+    ]);
+    if (mine >= this.#budget.userDailyCents) {
+      this.#logger.warn("gm_user_budget_reached", {
+        user_id: userId,
+        spent_cents: mine,
+        budget_cents: this.#budget.userDailyCents,
+      });
+      throw new GmInputError(
+        429,
+        "gm_daily_limit",
+        "You've reached today's limit with your GM. Try again tomorrow.",
+      );
+    }
+    if (everyone >= this.#budget.dailyCents) {
+      this.#logger.error("gm_budget_reached", {
+        spent_cents: everyone,
+        budget_cents: this.#budget.dailyCents,
+      });
+      throw new GmInputError(
+        429,
+        "gm_paused",
+        "Your GM is taking a break. Try again in a few hours.",
+      );
+    }
   }
 
   async #userContent(

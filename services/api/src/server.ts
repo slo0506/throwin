@@ -37,6 +37,10 @@ const gm = env.ANTHROPIC_API_KEY
       model: AnthropicModelClient.fromApiKey(env.ANTHROPIC_API_KEY, env.ANTHROPIC_MAX_RETRIES),
       prompts: await loadGmPrompts(env.GM_PROMPT_DIR ?? findPromptDir()),
       logger,
+      budget: {
+        userDailyCents: env.GM_USER_DAILY_BUDGET_CENTS,
+        dailyCents: env.GM_DAILY_BUDGET_CENTS,
+      },
       ...(env.BRAVE_SEARCH_API_KEY && {
         imageSearch: (query: string) => braveImageSearch(query, env.BRAVE_SEARCH_API_KEY as string),
       }),
@@ -46,6 +50,8 @@ if (gm) {
   logger.info("gm_ready", {
     prompt_version: gm.promptVersion,
     product_images: env.BRAVE_SEARCH_API_KEY ? "brave" : "pages_only",
+    user_daily_budget_cents: env.GM_USER_DAILY_BUDGET_CENTS,
+    daily_budget_cents: env.GM_DAILY_BUDGET_CENTS,
   });
 } else logger.warn("gm_disabled", { reason: "ANTHROPIC_API_KEY is not set" });
 

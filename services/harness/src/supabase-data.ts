@@ -648,6 +648,16 @@ export class SupabaseGmData implements GmData {
     if (error) throw new GmDataError("recordRun", error);
   }
 
+  async gmSpendCents(since: Date, userId: string | null): Promise<number> {
+    const { data, error } = await this.db.rpc("model_spend_cents", {
+      p_since: since.toISOString(),
+      p_user: userId,
+      p_gm: true,
+    });
+    if (error) throw new GmDataError("gmSpendCents", error);
+    return Number(data ?? 0);
+  }
+
   async recordEvents(events: AgentEvent[]): Promise<void> {
     if (events.length === 0) return;
     const { error } = await this.db.from("agent_events").insert(
