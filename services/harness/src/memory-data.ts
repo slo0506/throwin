@@ -172,7 +172,7 @@ export class MemoryGmData implements GmData {
     const members = this.#coMembers(userId);
     const ids = query.ids ? new Set(query.ids) : null;
     return this.networkItems
-      .filter((i) => members.has(i.ownerId) && i.readiness === "showcase")
+      .filter((i) => members.has(i.ownerId) && i.readiness !== "logged")
       .filter((i) => !ids || ids.has(i.id))
       .filter((i) =>
         matches([i.title, i.brand, i.model, i.category].filter(Boolean).join(" "), query.query),

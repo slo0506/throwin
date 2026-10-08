@@ -98,6 +98,13 @@ Counters need bundles, since "add a little more" means a second Item, so they co
 
 Multi-way trades already run end to end in the matcher, from staging to Deal Sheets. Autonomy today only filters what you're shown: "Bring me every deal" or "Only likely yeses", set once on your profile (#40). Nothing ever executes without every person's approval in the app. That's a PRD rule, and Terms must say the GM proposes and only the user approves.
 
+## Negotiating for real (Oct 7, from dogfooding)
+
+Jackson's GM was asked "can we get a little more? Ask Anto to throw in their LEGO set", then "ask for $20 more cash instead". Both dead-ended:
+
+- **The GM couldn't see the LEGO set.** It only saw other people's Items once they were showcase, while Deals now go out at identified. Fixed: the GM sees Circle-mates' Items once they're identified, the same bar a Deal uses. The API's counter plan already took any tradeable Item on the other person's Shelf, not only their offer for that Ask; Logged Items stay hidden, since nobody can price them yet.
+- **Counters can't move cash.** The matcher sets the Throw-In to the least cash that's fair, so "a little more cash" isn't something a counter can say, though the PRD lists "a different Throw-In" as a counter. To build: a counter that asks for "a bit more", which re-balances with the cash at the edge of the fair range (15% or $10) in the asker's favor, never over the payer's private ceiling. The payer still approves, and the GM never says what the ceiling is.
+
 ## Finding what you didn't know you wanted (Oct 7, from dogfooding)
 
 Sean: "Somebody might want to trade Gucci shoes for a PS5... the thing about agents and trading is that it makes things I might not know I want work." The rules, from first principles:
