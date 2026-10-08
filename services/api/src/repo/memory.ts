@@ -710,7 +710,8 @@ export class MemoryRepository implements Repository {
           .filter((l) => l.dealId === d.id && l.giverId === userId && l.itemId)
           .flatMap((l) => {
             const item = this.items.find((i) => i.id === l.itemId);
-            if (!item || item.readiness === "showcase") return [];
+            // A Deal only waits on Items the GM can't identify yet.
+            if (item?.readiness !== "logged") return [];
             return [
               {
                 dealId: d.id,
@@ -718,6 +719,9 @@ export class MemoryRepository implements Repository {
                 itemId: item.id,
                 itemTitle: item.title,
                 missingAngles: item.missingAngles,
+                openQuestions: this.questions.filter(
+                  (q) => q.itemId === item.id && q.status === "open",
+                ).length,
                 thumbnailPath: item.thumbnailPath,
                 wantedBy: this.users.get(l.receiverId)?.displayName ?? null,
               },

@@ -98,6 +98,20 @@ Counters need bundles, since "add a little more" means a second Item, so they co
 
 Multi-way trades already run end to end in the matcher, from staging to Deal Sheets. Autonomy today only filters what you're shown: "Bring me every deal" or "Only likely yeses", set once on your profile (#40). Nothing ever executes without every person's approval in the app. That's a PRD rule, and Terms must say the GM proposes and only the user approves.
 
+## Finding what you didn't know you wanted (Oct 7, from dogfooding)
+
+Sean: "Somebody might want to trade Gucci shoes for a PS5... the thing about agents and trading is that it makes things I might not know I want work." The rules, from first principles:
+
+| Question | Rule | Why |
+| --- | --- | --- |
+| Can any Item trade for any other? | Yes, always. What you give is never limited by category: Gucci shoes for a PS5 works when the PS5's owner wants the shoes. | Value balance (ranges and Throw-Ins) is the only hard constraint on what changes hands. |
+| Does an Item fill an Ask it doesn't resemble? | No, not as a want. An Ask for a PS5 isn't filled by sneakers just because they're worth the same. The check compares kinds of thing (video games, toys, sneakers...), not spellings (#56). | An Ask is your words. Filling it with something else is a guess, so it has to be asked about. |
+| Where does the agent's unlock come from? | Guesses grounded in you: taste facts, what you approved, what you passed on. Today guesses must share the Ask's kind (a PS5 for an Xbox Ask). Next, guesses come from anywhere your taste points, each with the fact behind it, and the Liaison always asks first: "You said you collect vintage Nike. Would Maya's '94 windbreaker work for your Switch games?" | That's the trade a person wouldn't think to search for, and it's where a GM beats a marketplace. Asking first keeps it a suggestion, never a surprise. |
+| What if I don't know what I want? | An "Open to offers" Ask: "Anything good for my Zelda." The GM brings the best guesses from your taste, ranked, each with its reason. | People know what they'd give up long before they know what they'd want back. |
+| When the Circle changes, does the GM change my Asks? | Never. It looks again (a new friend, a new Shelf Item) and may suggest a tweak: "Your offer is a long shot; adding $20 or your Crocs would close it." Only you change an Ask. | Matching only proposes Deal Sheets you still approve, so looking again is free; editing your intent is yours. |
+
+To build next, in order: taste-fact embeddings as candidate queries (PRD "From candidate to Deal Sheet", step 1, which today only embeds Ask text); a Haiku judge that keeps a cross-kind guess only when it can cite the person's own fact; "Open to offers" Asks; and re-matching when someone joins a Circle or adds to a Shelf (a trigger migration is written and waiting on Sean's OK).
+
 ## Guardrails
 
 **Built (#41):**

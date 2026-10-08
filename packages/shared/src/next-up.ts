@@ -8,8 +8,10 @@ export const NextUpKind = z.enum([
   "answer_counter",
   /** A Deal Sheet waiting on the user's approval. */
   "approve_deal",
-  /** A staged Deal is waiting for showcase photos of the user's Item. */
+  /** A staged Deal is waiting for photos of the user's Item. */
   "showcase_photos",
+  /** A staged Deal is waiting for the user to pin down what their Item is: quick answers. */
+  "pin_down_item",
   /** Would an Item close to what the user asked for work? 1 tap. */
   "answer_inquiry",
   /** A Circle-mate wants an Item the user offers for nothing: see what they'd trade. */

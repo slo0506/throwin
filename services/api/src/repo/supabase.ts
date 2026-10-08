@@ -1021,12 +1021,15 @@ export class SupabaseRepository implements Repository {
     const [items, users] = await Promise.all([
       this.db
         .from("items")
-        .select("id, title, readiness, missing_angles, item_media(storage_path, position)")
+        .select(
+          "id, title, readiness, missing_angles, item_media(storage_path, position), item_questions(status)",
+        )
         .in(
           "id",
           legRows.map((l) => l.item_id),
         )
-        .neq("readiness", "showcase"),
+        // A Deal only waits on Items the GM can't identify yet.
+        .eq("readiness", "logged"),
       this.db
         .from("users")
         .select("id, display_name")
@@ -1044,6 +1047,7 @@ export class SupabaseRepository implements Repository {
             item_media: z
               .array(z.object({ storage_path: z.string(), position: z.number() }))
               .nullable(),
+            item_questions: z.array(z.object({ status: z.string() })).nullable(),
           }),
         )
         .parse(items.data ?? [])
@@ -1066,6 +1070,7 @@ export class SupabaseRepository implements Repository {
           itemId: item.id,
           itemTitle: item.title,
           missingAngles: item.missing_angles ?? [],
+          openQuestions: (item.item_questions ?? []).filter((q) => q.status === "open").length,
           thumbnailPath: firstPhoto(item.item_media),
           wantedBy: names.get(l.receiver_id) ?? null,
         },

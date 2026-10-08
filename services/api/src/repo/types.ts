@@ -378,6 +378,8 @@ export interface PhotoRequestRecord {
   itemId: string;
   itemTitle: string;
   missingAngles: string[];
+  /** Open Tune up questions on the Item: answering them is the cheapest way to identify it. */
+  openQuestions: number;
   thumbnailPath: string | null;
   /** First name of the person the Item would go to. */
   wantedBy: string | null;
