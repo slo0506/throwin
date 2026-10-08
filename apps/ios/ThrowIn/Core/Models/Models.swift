@@ -405,6 +405,12 @@ nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
     var askID: String?
     /// First names of the people who haven't approved yet.
     var waitingOn: [String] = []
+    /// An open counter. While it's open, nobody can approve.
+    var counter: DealCounter?
+    /// How many more counters this Deal can have.
+    var countersLeft: Int = 3
+    /// Set when an accepted counter replaced this Deal and the new version isn't out yet.
+    var supersededBy: String?
 
     /// What you get, by name: "Galaxy Explorer", or "Zelda and 1 more" for a bundle.
     var getTitle: String? {
@@ -416,6 +422,48 @@ nonisolated struct DealSheet: Identifiable, Hashable, Sendable {
     var getValue: Int { receive.compactMap(\.value?.midCents).reduce(0, +) }
     var isLoop: Bool { participants.count > 2 }
     var expiresInHours: Int { max(0, Int(expiresAt.timeIntervalSinceNow / 3600)) }
+}
+
+/// Someone asked to change a Deal's Items, from your side: what changes, what you'd give,
+/// get and pay, and whose answer it waits on.
+nonisolated struct DealCounter: Identifiable, Hashable, Sendable {
+    enum Answer: String, Hashable, Sendable { case pending, accepted, declined }
+
+    struct Change: Identifiable, Hashable, Sendable {
+        var id: String { "\(isAdd ? "add" : "remove"):\(item.id)" }
+        var isAdd: Bool
+        var item: ShelfItem
+        var giver: String
+        var receiver: String
+        var fromMe: Bool
+        var toMe: Bool
+
+        /// "You add your Kirby", "Maya adds her Nike windbreaker", "You keep your Kirby".
+        var line: String {
+            let title = item.title
+            switch (isAdd, fromMe, toMe) {
+            case (true, true, _): return "You add your \(title)"
+            case (true, _, true): return "\(giver) adds their \(title)"
+            case (true, _, _): return "\(giver) adds \(title) for \(receiver)"
+            case (false, true, _): return "You keep your \(title)"
+            case (false, _, true): return "\(giver) keeps their \(title)"
+            case (false, _, _): return "\(giver) keeps \(title)"
+            }
+        }
+    }
+
+    var id: String
+    var proposer: String
+    /// You proposed it.
+    var isMine: Bool
+    var changes: [Change]
+    var give: [ShelfItem]
+    var receive: [ShelfItem]
+    /// Positive: you'd pay; negative: you'd receive.
+    var throwInCents: Int
+    /// Nil when the counter doesn't ask you.
+    var yourAnswer: Answer?
+    var waitingOn: [String]
 }
 
 nonisolated struct TradeCircle: Identifiable, Hashable, Sendable {

@@ -202,8 +202,9 @@ final class AppModel {
 
     /// Opens the GM sheet. `screen` tells the GM where it was opened from, like `new_ask`,
     /// and focuses the composer.
-    func openGM(screen: String? = nil) {
-        gm.prepare(screen: screen)
+    /// `seed` starts the composer with words the user can finish, like "About the Galaxy trade: ".
+    func openGM(screen: String? = nil, seed: String? = nil) {
+        gm.prepare(screen: screen, seed: seed)
         isGMPresented = true
     }
 
@@ -890,6 +891,40 @@ final class AppModel {
         }
         withAnimation(Motion.bouncy) { dealsWaiting.removeAll { $0.id == deal.id } }
         if isLive { await refreshAsks() }
+    }
+
+    /// Sends a counter the GM staged. Everyone else whose side changes answers it on their
+    /// Deal Sheet; until then nobody can approve.
+    @discardableResult
+    func sendCounter(dealID: String, changes: [CounterChange]) async throws -> DealSheet? {
+        guard let api else { return nil }
+        let updated = DealSheet(try await api.proposeCounter(dealID, changes: changes))
+        replaceDeal(updated)
+        await refreshNextUp()
+        return updated
+    }
+
+    /// Accepting the last open answer makes a new version that everyone approves again, so
+    /// the Deal on screen moves to it. Declining leaves the Deal as it was.
+    func answerCounter(_ deal: DealSheet, accept: Bool) async throws {
+        guard let api, let counter = deal.counter else { return }
+        let next = DealSheet(try await api.answerCounter(deal.id, counterID: counter.id, accept: accept))
+        if next.id != deal.id {
+            withAnimation(Motion.bouncy) {
+                dealsWaiting.removeAll { $0.id == deal.id }
+                dealsWaiting.insert(next, at: 0)
+            }
+            if presentedDeal?.id == deal.id { presentedDeal = next }
+        } else {
+            replaceDeal(next)
+        }
+        await refreshDeals()
+    }
+
+    func withdrawCounter(_ deal: DealSheet) async throws {
+        guard let api, let counter = deal.counter else { return }
+        replaceDeal(DealSheet(try await api.withdrawCounter(deal.id, counterID: counter.id)))
+        await refreshNextUp()
     }
 
     private func replaceDeal(_ deal: DealSheet) {

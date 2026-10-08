@@ -72,9 +72,13 @@ final class GMChatModel {
         self.app = app
     }
 
-    func prepare(screen: String?) {
+    /// Words to start the composer with, taken once by the chat view.
+    var composerSeed: String?
+
+    func prepare(screen: String?, seed: String? = nil) {
         self.screen = screen
-        wantsComposerFocus = screen != nil
+        composerSeed = seed
+        wantsComposerFocus = screen != nil || seed != nil
     }
 
     func reset() {

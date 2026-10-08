@@ -58,6 +58,10 @@ struct GMChatView: View {
         .quietBanner()
         .task {
             await chat.load(intake: isIntake)
+            if let seed = chat.composerSeed {
+                draft = seed
+                chat.composerSeed = nil
+            }
             guard chat.wantsComposerFocus else { return }
             chat.wantsComposerFocus = false
             try? await Task.sleep(for: .milliseconds(350))
@@ -339,6 +343,9 @@ struct GMChatView: View {
             RecapCard(data: data, answer: answer, isEnabled: canAct) { optionID, echo in
                 chat.choose(component, optionIDs: [optionID], echo: echo)
             }
+        case let .counterCard(data):
+            CounterCardView(data: data, isEnabled: canAct)
+                .padding(.trailing, Space.xl)
         case .unknown:
             EmptyView()
         }
