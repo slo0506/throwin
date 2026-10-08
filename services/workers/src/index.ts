@@ -241,8 +241,9 @@ async function runJob(job: Job) {
         depsFor(userId, "item_photos", runs).appraiser,
       );
       await queue.finish(job.id);
-      // New photos: the Refiner scores them and re-ranks the questions.
-      if (outcome === "updated") {
+      // New photos: the Refiner scores them and re-ranks the questions. Rejected ones too,
+      // so the owner sees why a photo of something else wasn't used.
+      if (outcome === "updated" || outcome === "rejected") {
         await store
           .enqueueRefine(itemId, userId, "photos")
           .catch((err) => logger.warn("refine_handoff_failed", { error: String(err) }));

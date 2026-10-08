@@ -122,6 +122,45 @@ describe("reappraiseItem", () => {
     expect(new Set(store.item(itemId).media.map((m) => m.position)).size).toBe(3);
   });
 
+  it("never lets a photo of something else change the Item", async () => {
+    // Found dogfooding: a stock photo of a camera, sent as a pair of Crocs' size tag, made
+    // them a $120 to $260 camera with the camera as their hero.
+    const { store, itemId } = await itemWithNewPhotos(await checkerJpeg());
+    const vision = fakeVision({ objects: [] }, []);
+    vision.sameItemImpl = async (photos) => photos.map(() => "other_item" as const);
+    vision.reidentifyImpl = async (previous) => ({
+      ...previous,
+      title: "Insta360 X3",
+      category: "electronics",
+    });
+    expect(
+      await reappraiseItem(itemId, USER, { store, vision, embedder, logger: silentLogger }),
+    ).toBe("rejected");
+    const item = store.item(itemId);
+    expect(vision.reidentifyCalls).toBe(0);
+    expect(vision.priceCalls).toBe(0);
+    expect(item.title).toBe("Air Jordan 1 Mid");
+    expect(item.media.find((m) => m.position === 0)?.path).toContain("/crops/");
+    expect(store.embeddings).toHaveLength(0);
+    expect(item.appraising).toBe(false);
+  });
+
+  it("reads unclear close-ups but only makes a photo of the same item the hero", async () => {
+    const { store, itemId } = await itemWithNewPhotos(await checkerJpeg());
+    const vision = fakeVision({ objects: [] }, []);
+    vision.sameItemImpl = async (photos) => photos.map(() => "unclear" as const);
+    vision.reidentifyImpl = async (previous, photos) => {
+      expect(photos).toHaveLength(1);
+      return previous;
+    };
+    expect(
+      await reappraiseItem(itemId, USER, { store, vision, embedder, logger: silentLogger }),
+    ).toBe("updated");
+    expect(vision.reidentifyCalls).toBe(1);
+    // The sharper photo would have won on size alone; unclear isn't enough to be the hero.
+    expect(store.item(itemId).media.find((m) => m.position === 0)?.path).toContain("/crops/");
+  });
+
   it("keeps the crop as hero when the new photo is not sharper", async () => {
     const { store, itemId } = await itemWithNewPhotos();
     const vision = fakeVision({ objects: [] }, []);

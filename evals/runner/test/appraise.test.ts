@@ -97,6 +97,13 @@ class FakeVision implements Vision {
     throw new Error(`identify should never see ${hint}`);
   }
 
+  async sameItem(
+    _hero: unknown,
+    photos: unknown[],
+  ): Promise<("same_item" | "other_item" | "unclear")[]> {
+    return photos.map(() => "same_item" as const);
+  }
+
   async reidentify(previous: Identification): Promise<Identification> {
     return previous;
   }

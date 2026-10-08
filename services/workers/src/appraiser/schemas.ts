@@ -321,3 +321,23 @@ export const valueJsonSchema = strict({
   },
   required: ["low_usd", "mid_usd", "high_usd", "basis", "confidence"],
 } as const);
+
+/** Whether a follow-up photo shows the same physical item as the hero. */
+export const PhotoMatch = z.enum(["same_item", "other_item", "unclear"]);
+export type PhotoMatch = z.infer<typeof PhotoMatch>;
+
+export const SameItemResult = z.object({
+  photos: z.array(PhotoMatch),
+});
+
+export const sameItemJsonSchema = strict({
+  type: "object",
+  properties: {
+    photos: {
+      type: "array",
+      description: "1 answer per new photo, in order",
+      items: { type: "string", enum: ["same_item", "other_item", "unclear"] },
+    },
+  },
+  required: ["photos"],
+} as const);
