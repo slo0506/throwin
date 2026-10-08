@@ -61,8 +61,10 @@ class Weights(BaseModel):
     """Score = utility - cash - logistics - risk. Defaults are a starting point for tuning."""
 
     utility: float = 1.0
-    # Per dollar of cash that changes hands.
-    cash_per_dollar: float = 0.02
+    # Times the share of the traded value that moves as cash (cash moved / Item value). A share,
+    # not dollars, so a $300 trade needing $80 of cash isn't priced out the way a flat
+    # per-dollar penalty prices it out.
+    cash_share: float = 1.0
     # Per person beyond 2 (each one is another handoff and another approval).
     extra_person: float = 0.25
     # Times (1 - the lowest edge confidence in the cycle).
