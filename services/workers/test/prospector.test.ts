@@ -9,6 +9,8 @@ import {
 import {
   askEmbeddingText,
   embeddingHash,
+  type InquiryResult,
+  inferCandidate,
   type ProspectingAsk,
   type ProspectorConfig,
   type ProspectorStore,
@@ -81,6 +83,20 @@ describe("scoreCandidate", () => {
   });
 });
 
+describe("inferCandidate", () => {
+  it("guesses within the Ask's top-level category, brand clashes included", () => {
+    // Mega Bloks for a LEGO Batmobile: not a want, but a fair question.
+    const megaBloks = { ...candidate(), brand: "Mega Bloks", model: null, similarity: 0.2 };
+    expect(scoreCandidate(BATMOBILE, megaBloks, 0.3)).toBeNull();
+    expect(inferCandidate(BATMOBILE, megaBloks, 0.15)).toBe(0.2);
+    expect(inferCandidate(BATMOBILE, { ...megaBloks, similarity: 0.1 }, 0.15)).toBeNull();
+    expect(inferCandidate(BATMOBILE, { ...megaBloks, category: "video_games" }, 0.15)).toBeNull();
+    // No category on either side: no basis for a guess.
+    expect(inferCandidate({}, megaBloks, 0.15)).toBeNull();
+    expect(inferCandidate(BATMOBILE, { ...megaBloks, category: null }, 0.15)).toBeNull();
+  });
+});
+
 describe("askEmbeddingText", () => {
   it("uses the resolved target, else the raw words", () => {
     expect(askEmbeddingText({ rawText: "the big Batmobile", target: BATMOBILE })).toBe(
@@ -106,6 +122,9 @@ class FakeStore implements ProspectorStore {
   /** Results to return from stageDeal, in order; ok with a fresh ID once they run out. */
   stageResults: StageResult[] = [];
   facts = new Map<string, ReviewFact[]>();
+  yes = new Set<string>();
+  inquiries: { askId: string; itemId: string; giverId: string }[] = [];
+  inquiryResults: InquiryResult[] = [];
 
   async getAsk(userId: string, askId: string) {
     const ask = this.asks.find((a) => a.id === askId && a.userId === userId);
@@ -138,6 +157,13 @@ class FakeStore implements ProspectorStore {
   }
   async markProspected(askIds: string[]) {
     this.prospected.push(askIds);
+  }
+  async answeredYes() {
+    return this.yes;
+  }
+  async createInquiry(askId: string, itemId: string, giverId: string): Promise<InquiryResult> {
+    this.inquiries.push({ askId, itemId, giverId });
+    return this.inquiryResults.shift() ?? "ok";
   }
   async reviewContext(userIds: string[], itemIds: string[]): Promise<ReviewContext> {
     return {
@@ -201,6 +227,7 @@ function world(config: Partial<ProspectorConfig> = {}) {
       maxEmbedsPerRun: 50,
       matcherTimeLimitSeconds: 5,
       maxItemsPerLeg: 3,
+      inferred: null,
       ...config,
     },
     logger: { info: () => {} },
@@ -490,6 +517,81 @@ describe("prospectAsk", () => {
     ).toEqual([
       [["item-zelda", "item-mario"], ["item-bat"]],
       [["item-bat"], ["item-zelda", "item-mario"]],
+    ]);
+  });
+
+  it("asks about a guess instead of staging a Loop that rests on it", async () => {
+    const w = world({ inferred: { minSimilarity: 0.15, perAsk: 1 } });
+    w.store.asks = [ask("ask-jordan", JORDAN, { target: BATMOBILE })];
+    w.store.circles.set(JORDAN, ["circle-1"]);
+    w.store.candidatesByCircle.set("circle-1", [
+      // 2 guesses for Jordan's Batmobile Ask; only the closer one is kept.
+      candidate({ itemId: "item-megabloks", brand: "Mega Bloks", model: null, similarity: 0.25 }),
+      candidate({ itemId: "item-cobi", brand: "Cobi", model: null, similarity: 0.2 }),
+      // A different category is never a guess.
+      candidate({ itemId: "item-game", category: "video_games", model: null, similarity: 0.25 }),
+    ]);
+    w.respond({
+      ...EMPTY_MATCH,
+      deals: [
+        {
+          users: [JORDAN, MAYA],
+          item_legs: [
+            {
+              giver: MAYA,
+              receiver: JORDAN,
+              item_id: "item-megabloks",
+              value_cents: 2000,
+              ask_id: "ask-jordan",
+              giver_ask_id: "ask-maya",
+              kind: "inferred",
+            },
+            {
+              giver: JORDAN,
+              receiver: MAYA,
+              item_id: "item-zelda",
+              value_cents: 2000,
+              ask_id: "ask-maya",
+              giver_ask_id: "ask-jordan",
+              kind: "explicit",
+            },
+          ],
+          cash_legs: [],
+          fairness: [],
+          cash_moved_cents: 0,
+          score: 0.5,
+        },
+      ],
+    });
+    const outcome = await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(w.requests[0]?.edges.map((e) => [e.item_id, e.kind, e.confidence])).toEqual([
+      ["item-megabloks", "inferred", 0.6],
+    ]);
+    expect(w.store.replaced?.edges.map((e) => [e.itemId, e.kind])).toEqual([
+      ["item-megabloks", "inferred"],
+    ]);
+    expect(outcome.status === "matched" && outcome.deals.map((d) => d.staged)).toEqual([
+      { result: "asked", inquiries: ["ok"] },
+    ]);
+    expect(w.store.inquiries).toEqual([
+      { askId: "ask-jordan", itemId: "item-megabloks", giverId: MAYA },
+    ]);
+    // Nothing reaches the review or staging until the wanter says yes.
+    expect(w.reviewed).toEqual([]);
+    expect(w.store.staged).toEqual([]);
+  });
+
+  it("treats a guess its wanter said yes to as a want", async () => {
+    const w = world({ inferred: { minSimilarity: 0.15, perAsk: 1 } });
+    w.store.asks = [ask("ask-jordan", JORDAN, { target: BATMOBILE })];
+    w.store.circles.set(JORDAN, ["circle-1"]);
+    w.store.candidatesByCircle.set("circle-1", [
+      candidate({ itemId: "item-megabloks", brand: "Mega Bloks", model: null, similarity: 0.25 }),
+    ]);
+    w.store.yes.add("ask-jordan|item-megabloks");
+    await prospectAsk("ask-jordan", JORDAN, w.deps);
+    expect(w.requests[0]?.edges).toEqual([
+      expect.objectContaining({ item_id: "item-megabloks", kind: "explicit", confidence: 0.9 }),
     ]);
   });
 

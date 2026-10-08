@@ -77,6 +77,15 @@ const EnvSchema = z.object({
   MATCHER_TIME_LIMIT_SECONDS: z.coerce.number().min(1).max(60).default(5),
   /** Items 1 person may hand another in 1 Deal (bundles, X for Y). 1 means 1 for 1. */
   PROSPECT_MAX_ITEMS_PER_LEG: z.coerce.number().int().min(1).max(5).default(3),
+  /** Guesses ("would a PS5 work instead of an Xbox?") the Liaison asks about ("false" turns them off). */
+  PROSPECT_INFERRED_EDGES: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  /** A guess shares the Ask's top-level category and reaches this embedding similarity. */
+  PROSPECT_INFER_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.15),
+  /** Guesses per Ask the matcher may try. */
+  PROSPECT_INFER_PER_ASK: z.coerce.number().int().min(1).max(10).default(3),
   /** SDK retries per Anthropic call (429 and 5xx, with backoff). */
   ANTHROPIC_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(4),
   /**
