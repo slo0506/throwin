@@ -18,7 +18,13 @@ import type { Identification } from "../appraiser/schemas.js";
 import type { Logger } from "../log.js";
 import { type CategorySpec, categoryOf, type Driver, unknownDrivers } from "./categories.js";
 import type { AnsweredQuestion, RefinerModels } from "./models.js";
-import { combine, DEFAULT_PHOTO_SCORE, measure, type PhotoScoreConfig } from "./photo-score.js";
+import {
+  combine,
+  DEFAULT_PHOTO_SCORE,
+  dropDuplicates,
+  measure,
+  type PhotoScoreConfig,
+} from "./photo-score.js";
 import type { QuestionDraft } from "./schemas.js";
 import { claimsAuthenticity, cleanDescription, plain } from "./text.js";
 
@@ -292,24 +298,31 @@ async function scorePhoto(item: RefineItem, spec: CategorySpec, deps: RefinerDep
   const ordered = [...item.media].sort((a, b) => a.position - b.position);
   const [heroRow, ...rest] = ordered;
   if (!heroRow) return null;
-  // Newest extra photos first: they are the ones taken to show an angle.
-  const extras = rest.slice(-4);
+  // The newest extra photos: they are the ones taken to show an angle.
+  const extras = rest.slice(-6);
   const [hero, ...others] = await Promise.all(
     [heroRow, ...extras].map(async (m) => prepare(await deps.store.download(m.path))),
+  );
+  // The same shot added twice counts once, and the model never sees the repeat.
+  const { kept, duplicates } = await dropDuplicates(
+    hero as PreparedImage,
+    others.map((image, i) => ({ image, value: extras[i] })),
   );
   const metrics = await measure(hero as PreparedImage);
   const judgment = await deps.models.judgePhoto(
     hero as PreparedImage,
-    others,
+    kept.slice(-4).map((k) => k.image),
     item.identification.title,
     spec.angles,
   );
-  const result = combine(metrics, judgment, spec.angles, deps.config?.photo);
+  const result = combine(metrics, judgment, spec.angles, deps.config?.photo, duplicates);
   deps.logger.info("refiner_photo_scored", {
     item_id: item.id,
     score: result.score,
     issues: result.issues,
     long_edge: metrics.longEdge,
+    extras: judgment.extras.map((e) => `${e.shows}${e.stock ? ",stock" : ""}`),
+    duplicates,
   });
   return result;
 }

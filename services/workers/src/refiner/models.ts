@@ -125,9 +125,10 @@ export class ClaudeRefinerModels implements RefinerModels {
       },
       { type: "text", text: "Main photo:" },
       imageBlock(main as PreparedImage),
-      ...(extra.length > 0
-        ? [{ type: "text" as const, text: "Extra photos:" }, ...extra.map(imageBlock)]
-        : []),
+      ...extra.flatMap((image, i) => [
+        { type: "text" as const, text: `Extra photo ${i + 1}:` },
+        imageBlock(image),
+      ]),
     ];
     return structuredCall(this.client, this.onRun, {
       agent: "refiner.score",
@@ -136,7 +137,7 @@ export class ClaudeRefinerModels implements RefinerModels {
       content,
       schema: photoJudgmentJsonSchema(angles),
       parser: PhotoJudgment,
-      maxTokens: 300,
+      maxTokens: 600,
     });
   }
 

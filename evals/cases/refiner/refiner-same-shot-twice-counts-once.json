@@ -1,0 +1,38 @@
+{
+  "id": "refiner-same-shot-twice-counts-once",
+  "suite": "refinement",
+  "description": "The same photo picked twice for 2 showcase angles counts once (a code check before the model) and is flagged duplicate_photo",
+  "state": {
+    "item": {
+      "status": "on_shelf",
+      "title": "Sony PlayStation 4",
+      "category": "video_games",
+      "brand": "Sony",
+      "model": "PlayStation 4",
+      "identity_confidence": 0.9,
+      "condition_confidence": 0.7,
+      "value_cents": { "low": 9500, "mid": 11750, "high": 14000 },
+      "photos": [
+        {
+          "source": "staged-photo",
+          "describe": "A black PS4 console on a wooden desk, front edge toward the camera."
+        },
+        {
+          "source": "staged-photo",
+          "describe": "The back of the same PS4 showing its ports and label."
+        },
+        {
+          "source": "staged-photo",
+          "describe": "Byte for byte the same file as the previous photo."
+        }
+      ]
+    },
+    "reason": "photos"
+  },
+  "conversation": [],
+  "message": "",
+  "expect": {
+    "photo_issues_include": ["duplicate_photo"],
+    "readiness_not": "showcase"
+  }
+}
